@@ -143,13 +143,20 @@ class ExcelExporter:
         ws[f'A{row}'] = "EXTRACTION STATISTICS"
         ws[f'A{row}'].font = Font(bold=True, size=14)
         
+        # Safely get stats with defaults
+        cross_ref_count = getattr(result, 'cross_reference_count', 0) or 0
+        extraction_coverage = getattr(result, 'extraction_coverage', 0.0) or 0.0
+        duration = getattr(result, 'duration_seconds', 0.0) or 0.0
+        stats_dict = getattr(result, 'stats', {}) or {}
+        req_graph = getattr(result, 'requirements_graph', {}) or {}
+        
         stats = [
-            ("Total Requirements", len(result.requirements_graph)),
-            ("Cross-References", result.cross_reference_count),
-            ("Documents Processed", result.stats.get('documents_processed', 0)),
-            ("Pages Analyzed", result.stats.get('total_pages', 0)),
-            ("Coverage Estimate", f"{result.extraction_coverage * 100:.0f}%"),
-            ("Processing Time", f"{result.duration_seconds:.1f}s"),
+            ("Total Requirements", len(req_graph)),
+            ("Cross-References", cross_ref_count),
+            ("Documents Processed", stats_dict.get('documents_processed', 0)),
+            ("Pages Analyzed", stats_dict.get('total_pages', 0)),
+            ("Coverage Estimate", f"{extraction_coverage * 100:.0f}%"),
+            ("Processing Time", f"{duration:.1f}s"),
         ]
         
         row += 1

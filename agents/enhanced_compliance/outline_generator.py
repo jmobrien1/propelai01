@@ -1092,103 +1092,295 @@ class OutlineGenerator:
         return warnings
     
     def generate_markdown_outline(self, result: OutlineResult) -> str:
-        """Generate markdown-formatted outline"""
+        """Generate a professional annotated proposal outline following Shipley methodology"""
         
         lines = []
-        lines.append("# Proposal Outline")
+        
+        # =============================================================
+        # HEADER
+        # =============================================================
+        lines.append("# ANNOTATED PROPOSAL OUTLINE")
+        lines.append("")
+        lines.append("---")
         lines.append("")
         
-        # Submission info
-        if result.submission_requirements.due_date:
-            lines.append(f"**Due Date:** {result.submission_requirements.due_date}")
-        if result.submission_requirements.submission_method:
-            lines.append(f"**Submission:** {result.submission_requirements.submission_method}")
-        if result.total_page_limit:
-            lines.append(f"**Total Page Limit:** {result.total_page_limit} pages")
+        # Key information box
+        lines.append("## Proposal Information")
+        lines.append("")
+        lines.append("| Field | Value |")
+        lines.append("|-------|-------|")
+        lines.append(f"| **Due Date** | {result.submission_requirements.due_date or 'TBD'} |")
+        lines.append(f"| **Submission Method** | {result.submission_requirements.submission_method or 'TBD'} |")
+        lines.append(f"| **Total Page Limit** | {result.total_page_limit or 'Not specified'} |")
+        lines.append(f"| **Number of Volumes** | {len(result.volumes)} |")
         lines.append("")
         
         # Format requirements
-        lines.append("## Format Requirements")
-        lines.append("")
         fr = result.format_requirements
-        if fr.font_name:
-            lines.append(f"- **Font:** {fr.font_name}")
-        if fr.font_size:
-            lines.append(f"- **Size:** {fr.font_size} pt")
-        if fr.margins:
-            lines.append(f"- **Margins:** {fr.margins}")
-        if fr.line_spacing:
-            lines.append(f"- **Spacing:** {fr.line_spacing}")
-        if fr.file_format:
-            lines.append(f"- **Format:** {fr.file_format}")
-        lines.append("")
-        
-        # Evaluation factors
-        lines.append("## Evaluation Factors")
-        lines.append("")
-        for factor in result.eval_factors:
-            weight_str = ""
-            if factor.weight:
-                weight_str = f" ({factor.weight}{factor.weight_type or '%'})"
-            elif factor.importance:
-                weight_str = f" - {factor.importance}"
-            
-            lines.append(f"### {factor.name}{weight_str}")
-            
-            if factor.subfactors:
-                for sub in factor.subfactors:
-                    lines.append(f"- {sub.name}")
-            
-            if factor.rating_scale:
-                lines.append(f"- Rating Scale: {', '.join(factor.rating_scale)}")
-            
+        if fr.font_name or fr.font_size or fr.margins:
+            lines.append("### Format Requirements")
+            lines.append("")
+            if fr.font_name:
+                lines.append(f"- **Font:** {fr.font_name}, {fr.font_size or 12}pt")
+            if fr.margins:
+                lines.append(f"- **Margins:** {fr.margins}")
+            if fr.line_spacing:
+                lines.append(f"- **Line Spacing:** {fr.line_spacing}")
+            if fr.file_format:
+                lines.append(f"- **File Format:** {fr.file_format}")
             lines.append("")
         
-        # Volumes and sections
-        lines.append("## Proposal Structure")
+        # =============================================================
+        # EVALUATION CRITERIA SUMMARY
+        # =============================================================
+        lines.append("---")
         lines.append("")
+        lines.append("## Evaluation Criteria Summary")
+        lines.append("")
+        lines.append("*Understand these factors to ensure every section addresses what evaluators are scoring.*")
+        lines.append("")
+        
+        if result.eval_factors:
+            lines.append("| Factor | Weight | Importance |")
+            lines.append("|--------|--------|------------|")
+            for factor in result.eval_factors:
+                weight_str = ""
+                if factor.weight:
+                    weight_str = f"{factor.weight} {factor.weight_type or 'pts'}"
+                importance = factor.importance or ""
+                lines.append(f"| {factor.name} | {weight_str} | {importance} |")
+            lines.append("")
+        else:
+            lines.append("*No evaluation factors extracted. Review RFP Section M manually.*")
+            lines.append("")
+        
+        # =============================================================
+        # ANNOTATED OUTLINE BY VOLUME
+        # =============================================================
+        lines.append("---")
+        lines.append("")
+        lines.append("## Annotated Outline by Volume")
+        lines.append("")
+        
+        section_number = 0
         
         for volume in sorted(result.volumes, key=lambda v: v.order):
-            page_str = f" ({volume.page_limit} pages)" if volume.page_limit else ""
-            lines.append(f"### {volume.name}{page_str}")
+            # Volume header
+            lines.append(f"### VOLUME: {volume.name.upper()}")
             lines.append("")
             
-            # Mapped eval factors
+            page_str = f"**Page Limit:** {volume.page_limit} pages" if volume.page_limit else "**Page Limit:** Not specified"
+            lines.append(page_str)
+            lines.append("")
+            
+            # Volume-level eval factors
             if volume.id in result.section_to_eval_mapping:
                 factor_ids = result.section_to_eval_mapping[volume.id]
                 factor_names = [f.name for f in result.eval_factors if f.id in factor_ids]
                 if factor_names:
-                    lines.append(f"*Evaluation Factors:* {', '.join(factor_names)}")
+                    lines.append(f"**Primary Evaluation Factors:** {', '.join(factor_names)}")
                     lines.append("")
             
-            # Sections
-            for section in sorted(volume.sections, key=lambda s: s.order):
-                page_str = f" ({section.page_limit} pages)" if section.page_limit else ""
-                lines.append(f"#### {section.title}{page_str}")
-                
-                if section.content_requirements:
-                    lines.append("")
-                    lines.append("**Content Requirements:**")
-                    for req in section.content_requirements[:3]:
-                        lines.append(f"- {req[:200]}...")
-                
-                if section.compliance_checkpoints:
-                    lines.append("")
-                    lines.append("**Compliance Checklist:**")
-                    for checkpoint in section.compliance_checkpoints[:5]:
-                        lines.append(checkpoint)
-                
-                lines.append("")
+            lines.append("---")
+            lines.append("")
+            
+            # Sections within volume
+            if volume.sections:
+                for section in sorted(volume.sections, key=lambda s: s.order):
+                    section_number += 1
+                    self._write_annotated_section(lines, section, section_number, result)
+            else:
+                # Create placeholder sections based on volume type
+                placeholder_sections = self._get_placeholder_sections(volume)
+                for idx, placeholder in enumerate(placeholder_sections):
+                    section_number += 1
+                    self._write_placeholder_section(lines, placeholder, section_number, volume)
         
-        # Warnings
+        # =============================================================
+        # COMPLIANCE CHECKLIST
+        # =============================================================
+        lines.append("---")
+        lines.append("")
+        lines.append("## Pre-Submission Compliance Checklist")
+        lines.append("")
+        lines.append("- [ ] All RFP requirements addressed")
+        lines.append("- [ ] Page limits verified for each volume")
+        lines.append("- [ ] Format requirements met (font, margins, spacing)")
+        lines.append("- [ ] All evaluation factors explicitly addressed")
+        lines.append("- [ ] Win themes woven throughout")
+        lines.append("- [ ] Graphics included and referenced in text")
+        lines.append("- [ ] Cross-references verified")
+        lines.append("- [ ] Executive Summary reflects key messages")
+        lines.append("- [ ] Proofreading complete")
+        lines.append("")
+        
+        # =============================================================
+        # WARNINGS
+        # =============================================================
         if result.warnings:
-            lines.append("## ⚠️ Warnings")
+            lines.append("---")
+            lines.append("")
+            lines.append("## ⚠️ Parser Warnings")
+            lines.append("")
+            lines.append("*These items may require manual review:*")
             lines.append("")
             for warning in result.warnings:
                 lines.append(f"- {warning}")
             lines.append("")
         
         return "\n".join(lines)
+    
+    def _write_annotated_section(self, lines: List[str], section, section_num: int, result: 'OutlineResult'):
+        """Write a fully annotated section with all guidance fields"""
+        
+        # Section header
+        page_str = f" *({section.page_limit} pages)*" if section.page_limit else ""
+        lines.append(f"#### Section {section_num}: {section.title}{page_str}")
+        lines.append("")
+        
+        # Annotation table
+        lines.append("| Annotation | Details |")
+        lines.append("|------------|---------|")
+        
+        # RFP Requirement IDs
+        req_ids = section.id if section.id else "TBD"
+        lines.append(f"| **RFP Reference** | {req_ids} |")
+        
+        # Evaluation factors
+        eval_factors = ", ".join(section.eval_factors) if section.eval_factors else "*Map to Section M*"
+        lines.append(f"| **Eval Factors** | {eval_factors} |")
+        
+        # Page allocation
+        page_alloc = f"{section.page_limit} pages" if section.page_limit else "TBD"
+        lines.append(f"| **Page Allocation** | {page_alloc} |")
+        
+        lines.append("")
+        
+        # Win Theme placeholder
+        lines.append("**🎯 Win Theme(s):**")
+        if section.suggested_win_themes:
+            for theme in section.suggested_win_themes:
+                lines.append(f"- {theme}")
+        else:
+            lines.append("- *[Insert win theme that differentiates your solution]*")
+            lines.append("- *[Consider: What makes your approach better than competitors?]*")
+        lines.append("")
+        
+        # Content requirements
+        if section.content_requirements:
+            lines.append("**📋 Content Requirements (from RFP):**")
+            for req in section.content_requirements[:5]:
+                # Truncate long requirements
+                req_text = req[:200] + "..." if len(req) > 200 else req
+                lines.append(f"- {req_text}")
+            lines.append("")
+        
+        # Solution components
+        lines.append("**🔧 Solution Components to Describe:**")
+        lines.append("- *[Describe specific tools, technologies, or approaches]*")
+        lines.append("- *[Include methodology or process overview]*")
+        lines.append("- *[Reference relevant standards or frameworks]*")
+        lines.append("")
+        
+        # Proof points
+        lines.append("**📊 Proof Points / Evidence:**")
+        lines.append("- *[Past project reference: Project name, metrics achieved]*")
+        lines.append("- *[Relevant certifications or qualifications]*")
+        lines.append("- *[Client testimonial or quote placeholder]*")
+        lines.append("- *[Quantified results: \"Reduced X by Y%\"]*")
+        lines.append("")
+        
+        # Graphics ideas
+        lines.append("**🖼️ Graphics Suggestions:**")
+        lines.append("- *[Process flow diagram]*")
+        lines.append("- *[Organizational chart]*")
+        lines.append("- *[Timeline or schedule graphic]*")
+        lines.append("- *[Comparison table]*")
+        lines.append("")
+        
+        # Compliance checklist
+        if section.compliance_checkpoints:
+            lines.append("**✅ Section Compliance Checklist:**")
+            for checkpoint in section.compliance_checkpoints[:5]:
+                lines.append(checkpoint)
+            lines.append("")
+        
+        # Writing guidance
+        lines.append("**✍️ Writing Guidance:**")
+        lines.append("- Use active voice and customer-focused language")
+        lines.append("- Begin paragraphs with explicit compliance statements")
+        lines.append("- Quantify benefits wherever possible")
+        lines.append("- Use RFP terminology (don't paraphrase)")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
+    def _write_placeholder_section(self, lines: List[str], title: str, section_num: int, volume):
+        """Write a placeholder section when no specific sections were extracted"""
+        
+        lines.append(f"#### Section {section_num}: {title}")
+        lines.append("")
+        lines.append("| Annotation | Details |")
+        lines.append("|------------|---------|")
+        lines.append(f"| **RFP Reference** | *Review RFP Section L for specific requirements* |")
+        lines.append(f"| **Eval Factors** | *Map to Section M evaluation criteria* |")
+        lines.append(f"| **Page Allocation** | TBD |")
+        lines.append("")
+        lines.append("**🎯 Win Theme(s):**")
+        lines.append("- *[Insert win theme]*")
+        lines.append("")
+        lines.append("**📋 Content Requirements:**")
+        lines.append("- *[Extract from RFP Section L]*")
+        lines.append("")
+        lines.append("**📊 Proof Points:**")
+        lines.append("- *[Add relevant experience and evidence]*")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
+    def _get_placeholder_sections(self, volume) -> List[str]:
+        """Generate placeholder section titles based on volume type"""
+        
+        placeholders = {
+            VolumeType.TECHNICAL: [
+                "Executive Summary",
+                "Technical Approach",
+                "Methodology",
+                "Tools and Technologies",
+                "Quality Assurance",
+                "Risk Management"
+            ],
+            VolumeType.MANAGEMENT: [
+                "Management Approach",
+                "Organizational Structure",
+                "Key Personnel",
+                "Communication Plan",
+                "Transition Plan"
+            ],
+            VolumeType.PAST_PERFORMANCE: [
+                "Past Performance Overview",
+                "Relevant Experience #1",
+                "Relevant Experience #2",
+                "Relevant Experience #3"
+            ],
+            VolumeType.COST_PRICE: [
+                "Pricing Summary",
+                "Cost Assumptions",
+                "Basis of Estimate"
+            ],
+            VolumeType.STAFFING: [
+                "Staffing Approach",
+                "Key Personnel",
+                "Staffing Plan",
+                "Retention Strategy"
+            ]
+        }
+        
+        return placeholders.get(volume.volume_type, [
+            "Section Overview",
+            "Detailed Approach",
+            "Supporting Information"
+        ])
     
     def generate_json_outline(self, result: OutlineResult) -> Dict:
         """Generate JSON-formatted outline"""
