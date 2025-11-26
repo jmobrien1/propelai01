@@ -187,6 +187,31 @@ app.add_middleware(
 )
 
 
+# ============== Root Route (Web UI) ==============
+
+@app.get("/")
+async def root():
+    """Serve the PropelAI web interface"""
+    # Try to serve index.html
+    web_paths = [
+        Path("/app/web/index.html"),
+        Path(__file__).parent.parent / "web" / "index.html",
+    ]
+    
+    for path in web_paths:
+        if path.exists():
+            return HTMLResponse(content=path.read_text(), status_code=200)
+    
+    # Fallback HTML
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html><head><title>PropelAI</title></head>
+<body style="background:#0a0a0f;color:#fff;font-family:sans-serif;padding:40px;text-align:center;">
+<h1>PropelAI API</h1>
+<p>Web UI files not found. API is running.</p>
+<p><a href="/docs" style="color:#4f8cff">API Documentation</a></p>
+</body></html>""", status_code=200)
+
+
 # ============== Health Check ==============
 
 @app.get("/api/health")
@@ -783,39 +808,6 @@ async def get_outline(rfp_id: str, format: str = "json"):
         return {"format": "markdown", "content": markdown}
     
     return {"format": "json", "outline": outline}
-
-
-# ============== Serve Static Files ==============
-
-# Serve web UI
-WEB_DIR = Path(__file__).parent.parent / "web"
-
-@app.get("/")
-async def serve_root():
-    """Serve the main web UI"""
-    try:
-        index_path = WEB_DIR / "index.html"
-        print(f"Looking for index.html at: {index_path}")
-        print(f"WEB_DIR exists: {WEB_DIR.exists()}")
-        print(f"index.html exists: {index_path.exists()}")
-        
-        if index_path.exists():
-            content = index_path.read_text(encoding='utf-8')
-            return HTMLResponse(content=content, status_code=200)
-        else:
-            # List what's in the parent directory
-            parent = Path(__file__).parent.parent
-            print(f"Contents of {parent}: {list(parent.iterdir())}")
-            return HTMLResponse(
-                content=f"<h1>PropelAI API</h1><p>Web UI not found at {index_path}</p><p>API available at <a href='/docs'>/docs</a></p>",
-                status_code=200
-            )
-    except Exception as e:
-        print(f"Error serving root: {e}")
-        return HTMLResponse(
-            content=f"<h1>PropelAI API</h1><p>Error: {str(e)}</p><p>API docs at <a href='/docs'>/docs</a></p>",
-            status_code=200
-        )
 
 
 # ============== Main Entry ==============
