@@ -559,18 +559,42 @@ def process_rfp_semantic_background(rfp_id: str):
         # Parse documents into text
         store.set_status(rfp_id, "processing", 20, "Parsing documents...")
         
-        from agents.enhanced_compliance import MultiFormatParser
+        from agents.enhanced_compliance import MultiFormatParser, DocumentType
         parser = MultiFormatParser()
+        
+        def infer_doc_type(filename: str) -> DocumentType:
+            """Infer document type from filename"""
+            fname_lower = filename.lower()
+            if 'amendment' in fname_lower:
+                return DocumentType.AMENDMENT
+            elif 'attachment' in fname_lower or 'exhibit' in fname_lower:
+                return DocumentType.ATTACHMENT
+            elif 'sow' in fname_lower or 'statement of work' in fname_lower:
+                return DocumentType.STATEMENT_OF_WORK
+            elif 'pws' in fname_lower or 'performance work statement' in fname_lower:
+                return DocumentType.STATEMENT_OF_WORK
+            elif 'section_l' in fname_lower or 'instructions' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            elif 'section_m' in fname_lower or 'evaluation' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            elif 'rfp' in fname_lower or 'solicitation' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            else:
+                return DocumentType.ATTACHMENT
         
         documents = []
         for file_path in file_paths:
             try:
-                parsed = parser.parse_file(file_path)
-                documents.append({
-                    'text': parsed.text,
-                    'filename': parsed.filename,
-                    'pages': parsed.pages if parsed.pages else [parsed.text],
-                })
+                import os
+                filename = os.path.basename(file_path)
+                doc_type = infer_doc_type(filename)
+                parsed = parser.parse_file(file_path, doc_type)
+                if parsed:
+                    documents.append({
+                        'text': parsed.text,
+                        'filename': parsed.filename,
+                        'pages': parsed.pages if parsed.pages else [parsed.text],
+                    })
             except Exception as e:
                 print(f"Warning: Could not parse {file_path}: {e}")
         
