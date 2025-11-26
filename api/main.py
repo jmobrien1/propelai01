@@ -722,6 +722,69 @@ async def get_stats(rfp_id: str):
     }
 
 
+# ============== Proposal Outline ==============
+
+@app.post("/api/rfp/{rfp_id}/outline")
+async def generate_outline(rfp_id: str):
+    """Generate proposal outline from RFP"""
+    from agents.enhanced_compliance import OutlineGenerator
+    
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+    
+    if not rfp["file_paths"]:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    
+    try:
+        generator = OutlineGenerator()
+        
+        # Process first file (main RFP document)
+        result = generator.process_rfp(rfp["file_paths"][0])
+        
+        # Store outline
+        outline_data = generator.generate_json_outline(result)
+        store.update(rfp_id, {"outline": outline_data})
+        
+        return {
+            "status": "generated",
+            "outline": outline_data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Outline generation failed: {str(e)}")
+
+
+@app.get("/api/rfp/{rfp_id}/outline")
+async def get_outline(rfp_id: str, format: str = "json"):
+    """Get proposal outline"""
+    from agents.enhanced_compliance import OutlineGenerator
+    
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+    
+    outline = rfp.get("outline")
+    
+    if not outline:
+        # Generate if not exists
+        if not rfp["file_paths"]:
+            raise HTTPException(status_code=400, detail="No files uploaded")
+        
+        generator = OutlineGenerator()
+        result = generator.process_rfp(rfp["file_paths"][0])
+        outline = generator.generate_json_outline(result)
+        store.update(rfp_id, {"outline": outline})
+    
+    if format == "markdown":
+        # Regenerate markdown from stored data
+        generator = OutlineGenerator()
+        result = generator.process_rfp(rfp["file_paths"][0])
+        markdown = generator.generate_markdown_outline(result)
+        return {"format": "markdown", "content": markdown}
+    
+    return {"format": "json", "outline": outline}
+
+
 # ============== Serve Static Files ==============
 
 # Check if web directory exists

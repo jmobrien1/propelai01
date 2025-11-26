@@ -61,6 +61,19 @@ from .amendment_processor import (
     RequirementChange
 )
 
+from .outline_generator import (
+    OutlineGenerator,
+    OutlineResult,
+    ProposalVolume,
+    ProposalSection,
+    EvaluationFactor,
+    FormatRequirement,
+    SubmissionRequirement,
+    VolumeType,
+    parse_rfp_outline,
+    parse_rfp_outline_from_text
+)
+
 try:
     from .excel_export import ExcelExporter, export_to_excel
     from .excel_parser import ExcelMatrixParser, parse_excel_matrix, MatrixParseResult, ColumnType
@@ -116,6 +129,18 @@ __all__ = [
     "QAPair",
     "Modification",
     "RequirementChange",
+    
+    # Outline Generator
+    "OutlineGenerator",
+    "OutlineResult",
+    "ProposalVolume",
+    "ProposalSection",
+    "EvaluationFactor",
+    "FormatRequirement",
+    "SubmissionRequirement",
+    "VolumeType",
+    "parse_rfp_outline",
+    "parse_rfp_outline_from_text",
 ]
 
-__version__ = "2.3.0"  # Cycle 5 + quality tuning + Excel export + Amendment + Excel parser
+__version__ = "2.4.0"  # Cycle 5 + quality tuning + Excel + Amendment + Outline Generator

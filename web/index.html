@@ -335,6 +335,16 @@
             async getAmendments(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/amendments`);
                 return res.json();
+            },
+            
+            async getOutline(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/outline`);
+                return res.json();
+            },
+            
+            async generateOutline(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/outline`, { method: 'POST' });
+                return res.json();
             }
         };
         
@@ -522,12 +532,15 @@
                                 <Icon name="GitBranch" />
                                 <span>Amendments</span>
                             </div>
+                            <div 
+                                className={`nav-item ${currentView === 'outline' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
+                                onClick={() => stats && setCurrentView('outline')}
+                            >
+                                <Icon name="FileText" />
+                                <span>Proposal Outline</span>
+                            </div>
                             
                             <div className="nav-label" style={{ marginTop: 24 }}>Coming Soon</div>
-                            <div className="nav-item disabled">
-                                <Icon name="FileText" />
-                                <span>Section L Parser</span>
-                            </div>
                             <div className="nav-item disabled">
                                 <Icon name="Target" />
                                 <span>Win Themes</span>
@@ -535,7 +548,7 @@
                         </nav>
                         
                         <div className="sidebar-footer">
-                            <p>PropelAI v2.3</p>
+                            <p>PropelAI v2.4</p>
                             {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
                         </div>
                     </aside>
@@ -582,6 +595,10 @@
                         
                         {currentView === 'amendments' && stats && (
                             <AmendmentsView rfpId={currentRfpId} />
+                        )}
+                        
+                        {currentView === 'outline' && stats && (
+                            <OutlineView rfpId={currentRfpId} />
                         )}
                     </main>
                     
@@ -904,6 +921,291 @@
                             ))}
                         </div>
                     )}
+                </div>
+            );
+        }
+        
+        // Outline View
+        function OutlineView({ rfpId }) {
+            const [outline, setOutline] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [generating, setGenerating] = useState(false);
+            const [activeVolume, setActiveVolume] = useState(null);
+            
+            useEffect(() => {
+                if (rfpId) {
+                    loadOutline();
+                }
+            }, [rfpId]);
+            
+            const loadOutline = async () => {
+                setLoading(true);
+                try {
+                    const data = await api.getOutline(rfpId);
+                    setOutline(data.outline);
+                    if (data.outline?.volumes?.length > 0) {
+                        setActiveVolume(data.outline.volumes[0].id);
+                    }
+                } catch (e) {
+                    // Outline not generated yet
+                    setOutline(null);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
+            const generateOutline = async () => {
+                setGenerating(true);
+                try {
+                    const data = await api.generateOutline(rfpId);
+                    setOutline(data.outline);
+                    if (data.outline?.volumes?.length > 0) {
+                        setActiveVolume(data.outline.volumes[0].id);
+                    }
+                } catch (e) {
+                    console.error('Failed to generate outline:', e);
+                } finally {
+                    setGenerating(false);
+                }
+            };
+            
+            const getVolumeIcon = (type) => {
+                const icons = {
+                    technical: 'Cpu',
+                    management: 'Users',
+                    past_performance: 'Award',
+                    cost_price: 'DollarSign',
+                    staffing: 'UserCheck',
+                    small_business: 'Building',
+                    oral_presentation: 'Presentation',
+                    other: 'FileText'
+                };
+                return icons[type] || 'FileText';
+            };
+            
+            if (loading) {
+                return (
+                    <div className="animate-in" style={{ textAlign: 'center', padding: 60 }}>
+                        <div className="spinner"></div>
+                        <p style={{ marginTop: 16, color: 'var(--text-muted)' }}>Loading outline...</p>
+                    </div>
+                );
+            }
+            
+            if (!outline) {
+                return (
+                    <div className="animate-in">
+                        <div className="page-header">
+                            <h2>Proposal Outline</h2>
+                            <p>Generate a proposal outline from Section L/M</p>
+                        </div>
+                        
+                        <div className="card" style={{ textAlign: 'center', padding: 60 }}>
+                            <Icon name="FileText" size={48} />
+                            <h3 style={{ marginTop: 16, marginBottom: 8 }}>Generate Proposal Outline</h3>
+                            <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>
+                                Parse Section L (Instructions) and Section M (Evaluation Factors) to create a proposal-ready outline
+                            </p>
+                            <button 
+                                className="btn btn-primary" 
+                                onClick={generateOutline}
+                                disabled={generating}
+                            >
+                                {generating ? (
+                                    <>
+                                        <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }}></span>
+                                        Generating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Icon name="Zap" />
+                                        Generate Outline
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+            
+            const activeVolumeData = outline.volumes?.find(v => v.id === activeVolume);
+            
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>Proposal Outline</h2>
+                        <p>Structure your proposal based on RFP requirements</p>
+                    </div>
+                    
+                    {/* Submission & Format Info */}
+                    <div className="stats-grid" style={{ marginBottom: 24 }}>
+                        <div className="stat-card">
+                            <div className="label">Due Date</div>
+                            <div className="value" style={{ fontSize: 18 }}>
+                                {outline.submission?.due_date || 'TBD'}
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Submission</div>
+                            <div className="value" style={{ fontSize: 18, textTransform: 'capitalize' }}>
+                                {outline.submission?.method || 'Not specified'}
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Total Pages</div>
+                            <div className="value" style={{ fontSize: 18 }}>
+                                {outline.total_page_limit || 'No limit'}
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Volumes</div>
+                            <div className="value" style={{ fontSize: 18 }}>
+                                {outline.volumes?.length || 0}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24 }}>
+                        {/* Volumes Sidebar */}
+                        <div className="card" style={{ padding: 0 }}>
+                            <div style={{ padding: 16, borderBottom: '1px solid var(--border-color)' }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 600 }}>Proposal Volumes</h3>
+                            </div>
+                            {outline.volumes?.map((vol) => (
+                                <div 
+                                    key={vol.id}
+                                    onClick={() => setActiveVolume(vol.id)}
+                                    style={{ 
+                                        padding: 16, 
+                                        borderBottom: '1px solid var(--border-color)',
+                                        cursor: 'pointer',
+                                        background: activeVolume === vol.id ? 'rgba(79, 140, 255, 0.1)' : 'transparent',
+                                        borderLeft: activeVolume === vol.id ? '3px solid var(--accent-blue)' : '3px solid transparent'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <Icon name={getVolumeIcon(vol.type)} size={18} />
+                                        <div>
+                                            <div style={{ fontWeight: 500, fontSize: 14 }}>{vol.name}</div>
+                                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                {vol.page_limit ? `${vol.page_limit} pages` : 'No page limit'}
+                                                {vol.sections?.length > 0 && ` · ${vol.sections.length} sections`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        {/* Volume Detail */}
+                        <div>
+                            {/* Evaluation Factors */}
+                            <div className="card" style={{ marginBottom: 24 }}>
+                                <div className="card-header">
+                                    <h3 className="card-title">Evaluation Factors</h3>
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                                    {outline.evaluation_factors?.map((factor, idx) => (
+                                        <div key={idx} style={{ 
+                                            padding: '12px 16px', 
+                                            background: 'var(--bg-tertiary)', 
+                                            borderRadius: 8,
+                                            flex: '1 1 200px'
+                                        }}>
+                                            <div style={{ fontWeight: 500, marginBottom: 4 }}>{factor.name}</div>
+                                            {factor.weight && (
+                                                <span className="badge badge-blue">
+                                                    {factor.weight} {factor.weight_type || 'pts'}
+                                                </span>
+                                            )}
+                                            {factor.importance && (
+                                                <span className="badge badge-purple" style={{ marginLeft: 8 }}>
+                                                    {factor.importance}
+                                                </span>
+                                            )}
+                                            {factor.subfactors?.length > 0 && (
+                                                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                                                    {factor.subfactors.map((sf, i) => (
+                                                        <div key={i}>• {sf.name}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            {/* Active Volume Sections */}
+                            {activeVolumeData && (
+                                <div className="card">
+                                    <div className="card-header">
+                                        <h3 className="card-title">{activeVolumeData.name} - Sections</h3>
+                                        {activeVolumeData.page_limit && (
+                                            <span className="badge badge-blue">{activeVolumeData.page_limit} pages</span>
+                                        )}
+                                    </div>
+                                    
+                                    {activeVolumeData.sections?.length > 0 ? (
+                                        activeVolumeData.sections.map((section, idx) => (
+                                            <div key={idx} style={{ 
+                                                padding: 16, 
+                                                borderBottom: '1px solid var(--border-color)'
+                                            }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                    <div>
+                                                        <div style={{ fontWeight: 500, marginBottom: 8 }}>{section.title}</div>
+                                                        
+                                                        {section.content_requirements?.length > 0 && (
+                                                            <div style={{ marginBottom: 8 }}>
+                                                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>CONTENT REQUIREMENTS</div>
+                                                                {section.content_requirements.slice(0, 2).map((req, i) => (
+                                                                    <div key={i} style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 2 }}>
+                                                                        • {req.slice(0, 150)}{req.length > 150 ? '...' : ''}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {section.compliance_checkpoints?.length > 0 && (
+                                                            <div>
+                                                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>CHECKLIST</div>
+                                                                {section.compliance_checkpoints.slice(0, 3).map((cp, i) => (
+                                                                    <div key={i} style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                                                        {cp}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {section.page_limit && (
+                                                        <span className="badge badge-gray">{section.page_limit}p</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                            No detailed sections found for this volume
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            
+                            {/* Warnings */}
+                            {outline.warnings?.length > 0 && (
+                                <div className="card" style={{ marginTop: 24, background: 'rgba(251, 191, 36, 0.1)', borderColor: 'var(--accent-amber)' }}>
+                                    <div className="card-header">
+                                        <h3 className="card-title" style={{ color: 'var(--accent-amber)' }}>⚠️ Warnings</h3>
+                                    </div>
+                                    {outline.warnings.map((warning, idx) => (
+                                        <div key={idx} style={{ padding: '8px 16px', fontSize: 14 }}>
+                                            {warning}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             );
         }
