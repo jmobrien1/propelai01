@@ -790,17 +790,32 @@ async def get_outline(rfp_id: str, format: str = "json"):
 # Serve web UI
 WEB_DIR = Path(__file__).parent.parent / "web"
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def serve_root():
     """Serve the main web UI"""
-    index_path = WEB_DIR / "index.html"
-    if index_path.exists():
-        return index_path.read_text()
-    return HTMLResponse("<h1>PropelAI API</h1><p>Web UI not found. API available at /api/</p>")
-
-# Mount static files for any additional assets
-if WEB_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+    try:
+        index_path = WEB_DIR / "index.html"
+        print(f"Looking for index.html at: {index_path}")
+        print(f"WEB_DIR exists: {WEB_DIR.exists()}")
+        print(f"index.html exists: {index_path.exists()}")
+        
+        if index_path.exists():
+            content = index_path.read_text(encoding='utf-8')
+            return HTMLResponse(content=content, status_code=200)
+        else:
+            # List what's in the parent directory
+            parent = Path(__file__).parent.parent
+            print(f"Contents of {parent}: {list(parent.iterdir())}")
+            return HTMLResponse(
+                content=f"<h1>PropelAI API</h1><p>Web UI not found at {index_path}</p><p>API available at <a href='/docs'>/docs</a></p>",
+                status_code=200
+            )
+    except Exception as e:
+        print(f"Error serving root: {e}")
+        return HTMLResponse(
+            content=f"<h1>PropelAI API</h1><p>Error: {str(e)}</p><p>API docs at <a href='/docs'>/docs</a></p>",
+            status_code=200
+        )
 
 
 # ============== Main Entry ==============
