@@ -10,6 +10,7 @@ Components:
 - CrossReferenceResolver: Build requirements graph with cross-document edges
 - EnhancedComplianceAgent: Main agent orchestrating all components
 - ExcelExporter: Export compliance matrix to Excel
+- AmendmentProcessor: Track requirement changes across amendments
 
 Usage:
     from agents.enhanced_compliance import EnhancedComplianceAgent, export_to_excel
@@ -22,6 +23,14 @@ Usage:
     
     # Export to Excel
     export_to_excel(result, "compliance_matrix.xlsx", "75N96025R00004", "NIH NIEHS Contract")
+    
+    # Process amendments
+    from agents.enhanced_compliance import AmendmentProcessor
+    
+    processor = AmendmentProcessor()
+    processor.load_base_requirements(result.requirements_graph)
+    amendment_result = processor.process_amendment("/path/to/amendment.pdf", amendment_number=2)
+    print(processor.generate_change_report())
 """
 
 from .models import (
@@ -42,6 +51,15 @@ from .parser import MultiFormatParser
 from .extractor import RequirementExtractor
 from .resolver import CrossReferenceResolver
 from .agent import EnhancedComplianceAgent, create_enhanced_compliance_agent
+from .amendment_processor import (
+    AmendmentProcessor, 
+    AmendmentResult, 
+    AmendmentType,
+    ChangeType,
+    QAPair,
+    Modification,
+    RequirementChange
+)
 
 try:
     from .excel_export import ExcelExporter, export_to_excel
@@ -78,6 +96,15 @@ __all__ = [
     "ExcelExporter",
     "export_to_excel",
     "EXCEL_AVAILABLE",
+    
+    # Amendment Processing
+    "AmendmentProcessor",
+    "AmendmentResult",
+    "AmendmentType",
+    "ChangeType",
+    "QAPair",
+    "Modification",
+    "RequirementChange",
 ]
 
-__version__ = "2.1.0"  # Cycle 5 + quality tuning + Excel export
+__version__ = "2.2.0"  # Cycle 5 + quality tuning + Excel export + Amendment processor
