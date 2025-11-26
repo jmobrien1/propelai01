@@ -288,7 +288,7 @@ class AmendmentProcessor:
             AmendmentResult with extracted changes
         """
         # Parse document
-        parsed = self.parser.parse_document(file_path)
+        parsed = self.parser.parse_file(file_path, DocumentType.AMENDMENT)
         
         # Detect amendment type and number
         amend_type = self._detect_amendment_type(parsed)
@@ -735,9 +735,17 @@ class AmendmentProcessor:
     def _find_page(self, text: str, doc: ParsedDocument) -> int:
         """Find which page contains the text"""
         text_snippet = text[:100]
-        for page_num, page_text in doc.pages.items():
-            if text_snippet in page_text:
-                return page_num
+        
+        # Handle both dict and list pages
+        if isinstance(doc.pages, dict):
+            for page_num, page_text in doc.pages.items():
+                if text_snippet in page_text:
+                    return page_num
+        elif isinstance(doc.pages, list):
+            for page_num, page_text in enumerate(doc.pages, 1):
+                if text_snippet in str(page_text):
+                    return page_num
+        
         return 1
     
     def get_updated_requirements(self) -> Dict[str, RequirementNode]:

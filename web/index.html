@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PropelAI - RFP Intelligence Platform</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- React -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --bg-card: #16161f;
+            --border-color: #2a2a3a;
+            --border-accent: #3a3a4a;
+            --text-primary: #f0f0f5;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent-blue: #4f8cff;
+            --accent-blue-dim: #3a6acc;
+            --accent-green: #34d399;
+            --accent-amber: #fbbf24;
+            --accent-red: #f87171;
+            --accent-purple: #a78bfa;
+            --gradient-blue: linear-gradient(135deg, #4f8cff 0%, #7c3aed 100%);
+            --gradient-card: linear-gradient(180deg, rgba(79, 140, 255, 0.05) 0%, transparent 100%);
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--border-accent); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+        
+        .app-container { display: flex; min-height: 100vh; }
+        
+        .sidebar {
+            width: 260px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+        }
+        
+        .logo { padding: 24px; border-bottom: 1px solid var(--border-color); }
+        
+        .logo h1 {
+            font-size: 22px;
+            font-weight: 700;
+            background: var(--gradient-blue);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+        
+        .logo span {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            display: block;
+            margin-top: 4px;
+        }
+        
+        .nav-section { padding: 16px 12px; flex: 1; }
+        
+        .nav-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            padding: 8px 12px;
+            margin-bottom: 4px;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            margin-bottom: 2px;
+        }
+        
+        .nav-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .nav-item.active { background: rgba(79, 140, 255, 0.15); color: var(--accent-blue); }
+        .nav-item.disabled { opacity: 0.5; cursor: not-allowed; }
+        .nav-item svg { width: 18px; height: 18px; opacity: 0.8; }
+        
+        .main-content { flex: 1; margin-left: 260px; padding: 32px 40px; background: var(--bg-primary); }
+        
+        .page-header { margin-bottom: 32px; }
+        .page-header h2 { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; margin-bottom: 8px; }
+        .page-header p { color: var(--text-secondary); font-size: 15px; }
+        
+        .upload-zone {
+            border: 2px dashed var(--border-accent);
+            border-radius: 16px;
+            padding: 60px 40px;
+            text-align: center;
+            background: var(--gradient-card);
+            transition: all 0.3s;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .upload-zone:hover { border-color: var(--accent-blue); background: rgba(79, 140, 255, 0.05); }
+        .upload-zone.dragging { border-color: var(--accent-blue); background: rgba(79, 140, 255, 0.1); transform: scale(1.01); }
+        
+        .upload-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            background: var(--bg-tertiary);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .upload-icon svg { width: 28px; height: 28px; color: var(--accent-blue); }
+        .upload-zone h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+        .upload-zone p { color: var(--text-secondary); font-size: 14px; margin-bottom: 16px; }
+        
+        .file-types { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+        
+        .file-type {
+            background: var(--bg-tertiary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            font-family: inherit;
+        }
+        
+        .btn-primary { background: var(--gradient-blue); color: white; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(79, 140, 255, 0.3); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: var(--border-color); }
+        .btn-ghost { background: transparent; color: var(--text-secondary); padding: 8px; }
+        .btn-ghost:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .btn svg { width: 18px; height: 18px; }
+        
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .card-title { font-size: 16px; font-weight: 600; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
+        .stat-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .stat-card .value { font-size: 32px; font-weight: 700; letter-spacing: -1px; }
+        .stat-card.blue .value { color: var(--accent-blue); }
+        .stat-card.green .value { color: var(--accent-green); }
+        .stat-card.amber .value { color: var(--accent-amber); }
+        .stat-card.red .value { color: var(--accent-red); }
+        
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--border-color); }
+        th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; background: var(--bg-tertiary); position: sticky; top: 0; }
+        th:first-child { border-radius: 8px 0 0 0; }
+        th:last-child { border-radius: 0 8px 0 0; }
+        tr:hover td { background: rgba(79, 140, 255, 0.03); }
+        td { font-size: 14px; }
+        
+        .req-id { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent-blue); }
+        .req-text { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        
+        .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .badge-blue { background: rgba(79, 140, 255, 0.15); color: var(--accent-blue); }
+        .badge-green { background: rgba(52, 211, 153, 0.15); color: var(--accent-green); }
+        .badge-amber { background: rgba(251, 191, 36, 0.15); color: var(--accent-amber); }
+        .badge-red { background: rgba(248, 113, 113, 0.15); color: var(--accent-red); }
+        .badge-purple { background: rgba(167, 139, 250, 0.15); color: var(--accent-purple); }
+        .badge-gray { background: var(--bg-tertiary); color: var(--text-secondary); }
+        
+        .priority-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .priority-high { background: var(--accent-red); }
+        .priority-medium { background: var(--accent-amber); }
+        .priority-low { background: var(--accent-green); }
+        
+        .progress-bar { height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--gradient-blue); border-radius: 3px; transition: width 0.5s ease; }
+        
+        .file-list { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
+        .file-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color); }
+        .file-icon { width: 40px; height: 40px; background: var(--bg-secondary); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .file-icon svg { width: 20px; height: 20px; color: var(--accent-blue); }
+        .file-info { flex: 1; }
+        .file-name { font-weight: 500; font-size: 14px; }
+        .file-meta { font-size: 12px; color: var(--text-muted); }
+        .file-status { display: flex; align-items: center; gap: 8px; }
+        
+        .tabs { display: flex; gap: 4px; background: var(--bg-tertiary); padding: 4px; border-radius: 10px; margin-bottom: 24px; }
+        .tab { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all 0.2s; border: none; background: transparent; font-family: inherit; }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+        
+        .processing-overlay { position: fixed; inset: 0; background: rgba(10, 10, 15, 0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(8px); }
+        .processing-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 48px 64px; text-align: center; max-width: 480px; }
+        .spinner { width: 48px; height: 48px; border: 3px solid var(--border-color); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 24px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .processing-card h3 { font-size: 20px; margin-bottom: 8px; }
+        .processing-card p { color: var(--text-secondary); margin-bottom: 24px; }
+        
+        .actions-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .search-box { display: flex; align-items: center; gap: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 16px; width: 300px; }
+        .search-box input { flex: 1; background: transparent; border: none; color: var(--text-primary); font-size: 14px; outline: none; font-family: inherit; }
+        .search-box input::placeholder { color: var(--text-muted); }
+        .search-box svg { width: 18px; height: 18px; color: var(--text-muted); }
+        .filter-group { display: flex; gap: 8px; }
+        
+        select { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 16px; color: var(--text-primary); font-size: 14px; font-family: inherit; cursor: pointer; outline: none; }
+        select:focus { border-color: var(--accent-blue); }
+        
+        .sidebar-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); }
+        .sidebar-footer p { font-size: 12px; color: var(--text-muted); }
+        
+        .api-status { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; margin-bottom: 8px; }
+        .api-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .api-dot.connected { background: var(--accent-green); }
+        .api-dot.disconnected { background: var(--accent-red); }
+        
+        .error-banner { background: rgba(248, 113, 113, 0.1); border: 1px solid var(--accent-red); border-radius: 8px; padding: 16px; margin-bottom: 24px; color: var(--accent-red); }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+        
+        // API Configuration
+        const API_BASE = window.location.origin + '/api';
+        
+        // API Client
+        const api = {
+            async health() {
+                const res = await fetch(`${API_BASE}/health`);
+                return res.json();
+            },
+            
+            async createRFP(data) {
+                const res = await fetch(`${API_BASE}/rfp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            },
+            
+            async uploadFiles(rfpId, files) {
+                const formData = new FormData();
+                files.forEach(f => formData.append('files', f));
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                return res.json();
+            },
+            
+            async processRFP(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/process`, { method: 'POST' });
+                return res.json();
+            },
+            
+            async getStatus(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/status`);
+                return res.json();
+            },
+            
+            async getRFP(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}`);
+                return res.json();
+            },
+            
+            async getRequirements(rfpId, params = {}) {
+                const query = new URLSearchParams(params).toString();
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/requirements?${query}`);
+                return res.json();
+            },
+            
+            async exportExcel(rfpId) {
+                window.open(`${API_BASE}/rfp/${rfpId}/export?format=xlsx`, '_blank');
+            },
+            
+            async getAmendments(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/amendments`);
+                return res.json();
+            }
+        };
+        
+        // Icon component
+        function Icon({ name, size = 20 }) {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current && lucide.icons[name]) {
+                    ref.current.innerHTML = '';
+                    const icon = lucide.createElement(lucide.icons[name]);
+                    ref.current.appendChild(icon);
+                }
+            }, [name]);
+            return <span ref={ref} style={{ display: 'inline-flex', width: size, height: size }} />;
+        }
+        
+        // Main App
+        function App() {
+            const [currentView, setCurrentView] = useState('upload');
+            const [apiConnected, setApiConnected] = useState(false);
+            const [error, setError] = useState(null);
+            
+            // RFP State
+            const [currentRfpId, setCurrentRfpId] = useState(null);
+            const [files, setFiles] = useState([]);
+            const [rawFiles, setRawFiles] = useState([]);
+            const [processing, setProcessing] = useState(false);
+            const [processingStatus, setProcessingStatus] = useState({ status: '', progress: 0, message: '' });
+            
+            // Requirements State
+            const [requirements, setRequirements] = useState([]);
+            const [stats, setStats] = useState(null);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [filterType, setFilterType] = useState('all');
+            const [filterPriority, setFilterPriority] = useState('all');
+            
+            // Check API health on mount
+            useEffect(() => {
+                const checkHealth = async () => {
+                    try {
+                        await api.health();
+                        setApiConnected(true);
+                    } catch (e) {
+                        setApiConnected(false);
+                    }
+                };
+                checkHealth();
+                const interval = setInterval(checkHealth, 30000);
+                return () => clearInterval(interval);
+            }, []);
+            
+            // Poll for status while processing
+            useEffect(() => {
+                if (!processing || !currentRfpId) return;
+                
+                const pollStatus = async () => {
+                    try {
+                        const status = await api.getStatus(currentRfpId);
+                        setProcessingStatus(status);
+                        
+                        if (status.status === 'completed') {
+                            setProcessing(false);
+                            await loadRequirements();
+                            setCurrentView('matrix');
+                        } else if (status.status === 'error') {
+                            setProcessing(false);
+                            setError(status.message);
+                        }
+                    } catch (e) {
+                        console.error('Status poll error:', e);
+                    }
+                };
+                
+                const interval = setInterval(pollStatus, 1000);
+                return () => clearInterval(interval);
+            }, [processing, currentRfpId]);
+            
+            // Load requirements
+            const loadRequirements = async () => {
+                if (!currentRfpId) return;
+                
+                try {
+                    const [rfpData, reqData] = await Promise.all([
+                        api.getRFP(currentRfpId),
+                        api.getRequirements(currentRfpId)
+                    ]);
+                    
+                    setRequirements(reqData.requirements || []);
+                    setStats(rfpData.stats);
+                } catch (e) {
+                    setError('Failed to load requirements: ' + e.message);
+                }
+            };
+            
+            // Process files
+            const processFiles = async () => {
+                if (rawFiles.length === 0) {
+                    setError('Please upload files first');
+                    return;
+                }
+                
+                setError(null);
+                setProcessing(true);
+                setProcessingStatus({ status: 'starting', progress: 0, message: 'Creating RFP project...' });
+                
+                try {
+                    // Create RFP
+                    const rfp = await api.createRFP({
+                        name: rawFiles[0]?.name?.replace(/\.[^/.]+$/, '') || 'New RFP',
+                        solicitation_number: null,
+                        agency: null
+                    });
+                    
+                    setCurrentRfpId(rfp.id);
+                    setProcessingStatus({ status: 'uploading', progress: 20, message: 'Uploading files...' });
+                    
+                    // Upload files
+                    await api.uploadFiles(rfp.id, rawFiles);
+                    setProcessingStatus({ status: 'processing', progress: 40, message: 'Starting processing...' });
+                    
+                    // Start processing
+                    await api.processRFP(rfp.id);
+                    
+                    // Status polling will take over from here
+                    
+                } catch (e) {
+                    setProcessing(false);
+                    setError('Processing failed: ' + e.message);
+                }
+            };
+            
+            // Export to Excel
+            const exportToExcel = () => {
+                if (currentRfpId) {
+                    api.exportExcel(currentRfpId);
+                }
+            };
+            
+            // Filter requirements
+            const filteredRequirements = requirements.filter(req => {
+                const matchesSearch = searchQuery === '' || 
+                    req.text?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    req.id?.toLowerCase().includes(searchQuery.toLowerCase());
+                const matchesType = filterType === 'all' || req.type === filterType;
+                const matchesPriority = filterPriority === 'all' || req.priority === filterPriority;
+                return matchesSearch && matchesType && matchesPriority;
+            });
+            
+            return (
+                <div className="app-container">
+                    {/* Sidebar */}
+                    <aside className="sidebar">
+                        <div className="logo">
+                            <h1>PropelAI</h1>
+                            <span>RFP Intelligence</span>
+                        </div>
+                        
+                        <nav className="nav-section">
+                            <div className="api-status">
+                                <span className={`api-dot ${apiConnected ? 'connected' : 'disconnected'}`}></span>
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                    {apiConnected ? 'API Connected' : 'API Offline'}
+                                </span>
+                            </div>
+                            
+                            <div className="nav-label">Workspace</div>
+                            <div 
+                                className={`nav-item ${currentView === 'upload' ? 'active' : ''}`}
+                                onClick={() => setCurrentView('upload')}
+                            >
+                                <Icon name="Upload" />
+                                <span>Upload RFP</span>
+                            </div>
+                            <div 
+                                className={`nav-item ${currentView === 'matrix' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
+                                onClick={() => stats && setCurrentView('matrix')}
+                            >
+                                <Icon name="Table" />
+                                <span>Compliance Matrix</span>
+                            </div>
+                            <div 
+                                className={`nav-item ${currentView === 'amendments' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
+                                onClick={() => stats && setCurrentView('amendments')}
+                            >
+                                <Icon name="GitBranch" />
+                                <span>Amendments</span>
+                            </div>
+                            
+                            <div className="nav-label" style={{ marginTop: 24 }}>Coming Soon</div>
+                            <div className="nav-item disabled">
+                                <Icon name="FileText" />
+                                <span>Section L Parser</span>
+                            </div>
+                            <div className="nav-item disabled">
+                                <Icon name="Target" />
+                                <span>Win Themes</span>
+                            </div>
+                        </nav>
+                        
+                        <div className="sidebar-footer">
+                            <p>PropelAI v2.3</p>
+                            {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
+                        </div>
+                    </aside>
+                    
+                    {/* Main Content */}
+                    <main className="main-content">
+                        {error && (
+                            <div className="error-banner">
+                                <strong>Error:</strong> {error}
+                                <button 
+                                    onClick={() => setError(null)} 
+                                    style={{ float: 'right', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        )}
+                        
+                        {currentView === 'upload' && (
+                            <UploadView 
+                                files={files}
+                                setFiles={setFiles}
+                                rawFiles={rawFiles}
+                                setRawFiles={setRawFiles}
+                                onProcess={processFiles}
+                                apiConnected={apiConnected}
+                            />
+                        )}
+                        
+                        {currentView === 'matrix' && stats && (
+                            <MatrixView 
+                                requirements={filteredRequirements}
+                                allRequirements={requirements}
+                                stats={stats}
+                                searchQuery={searchQuery}
+                                setSearchQuery={setSearchQuery}
+                                filterType={filterType}
+                                setFilterType={setFilterType}
+                                filterPriority={filterPriority}
+                                setFilterPriority={setFilterPriority}
+                                onExport={exportToExcel}
+                            />
+                        )}
+                        
+                        {currentView === 'amendments' && stats && (
+                            <AmendmentsView rfpId={currentRfpId} />
+                        )}
+                    </main>
+                    
+                    {/* Processing Overlay */}
+                    {processing && (
+                        <div className="processing-overlay">
+                            <div className="processing-card animate-in">
+                                <div className="spinner"></div>
+                                <h3>Processing RFP</h3>
+                                <p>{processingStatus.message}</p>
+                                <div className="progress-bar">
+                                    <div className="progress-fill" style={{ width: `${processingStatus.progress}%` }}></div>
+                                </div>
+                                <p style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+                                    {processingStatus.requirements_count ? `${processingStatus.requirements_count} requirements found` : ''}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        
+        // Upload View
+        function UploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected }) {
+            const [dragging, setDragging] = useState(false);
+            const fileInputRef = useRef(null);
+            
+            const handleDrop = (e) => {
+                e.preventDefault();
+                setDragging(false);
+                const droppedFiles = Array.from(e.dataTransfer.files);
+                addFiles(droppedFiles);
+            };
+            
+            const handleFileSelect = (e) => {
+                const selectedFiles = Array.from(e.target.files);
+                addFiles(selectedFiles);
+            };
+            
+            const addFiles = (newFiles) => {
+                const validFiles = newFiles.filter(f => {
+                    const ext = f.name.split('.').pop().toLowerCase();
+                    return ['pdf', 'docx', 'xlsx', 'doc', 'xls'].includes(ext);
+                });
+                
+                const fileData = validFiles.map(f => ({
+                    name: f.name,
+                    size: formatFileSize(f.size),
+                    type: f.name.split('.').pop().toUpperCase(),
+                    status: 'ready'
+                }));
+                
+                setFiles([...files, ...fileData]);
+                setRawFiles([...rawFiles, ...validFiles]);
+            };
+            
+            const removeFile = (index) => {
+                setFiles(files.filter((_, i) => i !== index));
+                setRawFiles(rawFiles.filter((_, i) => i !== index));
+            };
+            
+            const clearAll = () => {
+                setFiles([]);
+                setRawFiles([]);
+            };
+            
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>Upload RFP Documents</h2>
+                        <p>Upload your RFP package to extract requirements and build a compliance matrix</p>
+                    </div>
+                    
+                    <div 
+                        className={`upload-zone ${dragging ? 'dragging' : ''}`}
+                        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                        onDragLeave={() => setDragging(false)}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                    >
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            accept=".pdf,.docx,.xlsx,.doc,.xls"
+                            onChange={handleFileSelect}
+                            style={{ display: 'none' }}
+                        />
+                        <div className="upload-icon">
+                            <Icon name="Upload" size={28} />
+                        </div>
+                        <h3>Drop files here or click to browse</h3>
+                        <p>Upload RFP documents, amendments, attachments, and Q&A files</p>
+                        <div className="file-types">
+                            <span className="file-type">.pdf</span>
+                            <span className="file-type">.docx</span>
+                            <span className="file-type">.xlsx</span>
+                        </div>
+                    </div>
+                    
+                    {files.length > 0 && (
+                        <div className="file-list">
+                            {files.map((file, index) => (
+                                <div key={index} className="file-item">
+                                    <div className="file-icon">
+                                        <Icon name="FileText" />
+                                    </div>
+                                    <div className="file-info">
+                                        <div className="file-name">{file.name}</div>
+                                        <div className="file-meta">{file.type} · {file.size}</div>
+                                    </div>
+                                    <div className="file-status">
+                                        <span className="badge badge-green">Ready</span>
+                                        <button 
+                                            className="btn btn-ghost"
+                                            onClick={(e) => { e.stopPropagation(); removeFile(index); }}
+                                        >
+                                            <Icon name="X" size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            
+                            <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+                                <button 
+                                    className="btn btn-primary" 
+                                    onClick={onProcess}
+                                    disabled={!apiConnected}
+                                >
+                                    <Icon name="Zap" />
+                                    {apiConnected ? 'Process RFP' : 'API Offline'}
+                                </button>
+                                <button className="btn btn-secondary" onClick={clearAll}>
+                                    Clear All
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        
+        // Matrix View
+        function MatrixView({ 
+            requirements, allRequirements, stats, 
+            searchQuery, setSearchQuery, 
+            filterType, setFilterType,
+            filterPriority, setFilterPriority,
+            onExport
+        }) {
+            const uniqueTypes = [...new Set(allRequirements.map(r => r.type).filter(Boolean))];
+            
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>Compliance Matrix</h2>
+                        <p>Extracted {stats?.total || allRequirements.length} requirements from your RFP documents</p>
+                    </div>
+                    
+                    {/* Stats */}
+                    <div className="stats-grid">
+                        <div className="stat-card blue">
+                            <div className="label">Total Requirements</div>
+                            <div className="value">{stats?.total || allRequirements.length}</div>
+                        </div>
+                        <div className="stat-card red">
+                            <div className="label">High Priority</div>
+                            <div className="value">{stats?.by_priority?.high || 0}</div>
+                        </div>
+                        <div className="stat-card amber">
+                            <div className="label">Medium Priority</div>
+                            <div className="value">{stats?.by_priority?.medium || 0}</div>
+                        </div>
+                        <div className="stat-card green">
+                            <div className="label">Low Priority</div>
+                            <div className="value">{stats?.by_priority?.low || 0}</div>
+                        </div>
+                    </div>
+                    
+                    {/* Actions */}
+                    <div className="actions-bar">
+                        <div className="search-box">
+                            <Icon name="Search" />
+                            <input 
+                                type="text"
+                                placeholder="Search requirements..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="filter-group">
+                            <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                                <option value="all">All Types</option>
+                                {uniqueTypes.map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                ))}
+                            </select>
+                            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}>
+                                <option value="all">All Priorities</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                            <button className="btn btn-primary" onClick={onExport}>
+                                <Icon name="Download" />
+                                Export Excel
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Table */}
+                    <div className="card">
+                        <div className="table-container" style={{ maxHeight: '500px', overflow: 'auto' }}>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style={{ width: 100 }}>ID</th>
+                                        <th>Requirement</th>
+                                        <th style={{ width: 100 }}>Section</th>
+                                        <th style={{ width: 120 }}>Type</th>
+                                        <th style={{ width: 100 }}>Priority</th>
+                                        <th style={{ width: 80 }}>Confidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {requirements.map((req, idx) => (
+                                        <tr key={req.id || idx}>
+                                            <td><span className="req-id">{req.id}</span></td>
+                                            <td className="req-text" title={req.text}>{req.text}</td>
+                                            <td>{req.section}</td>
+                                            <td><span className={`badge badge-${getTypeBadgeColor(req.type)}`}>{req.type}</span></td>
+                                            <td>
+                                                <span className={`priority-dot priority-${req.priority}`}></span>
+                                                {req.priority}
+                                            </td>
+                                            <td>{Math.round((req.confidence || 0) * 100)}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div style={{ marginTop: 16, color: 'var(--text-muted)', fontSize: 14 }}>
+                        Showing {requirements.length} of {allRequirements.length} requirements
+                        {stats?.processing_time && ` · Processed in ${stats.processing_time.toFixed(2)}s`}
+                    </div>
+                </div>
+            );
+        }
+        
+        // Amendments View
+        function AmendmentsView({ rfpId }) {
+            const [amendments, setAmendments] = useState([]);
+            const [loading, setLoading] = useState(true);
+            
+            useEffect(() => {
+                if (rfpId) {
+                    api.getAmendments(rfpId).then(data => {
+                        setAmendments(data.amendments || []);
+                        setLoading(false);
+                    }).catch(() => setLoading(false));
+                }
+            }, [rfpId]);
+            
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>Amendment Tracking</h2>
+                        <p>Track changes across RFP versions and amendments</p>
+                    </div>
+                    
+                    {loading ? (
+                        <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
+                            Loading amendments...
+                        </div>
+                    ) : amendments.length === 0 ? (
+                        <div className="card" style={{ textAlign: 'center', padding: 60 }}>
+                            <Icon name="GitBranch" size={48} />
+                            <h3 style={{ marginTop: 16, marginBottom: 8 }}>No Amendments Yet</h3>
+                            <p style={{ color: 'var(--text-muted)' }}>
+                                Upload amendment documents to track changes
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Amendment History</h3>
+                            </div>
+                            {amendments.map((a, idx) => (
+                                <div key={idx} style={{ 
+                                    padding: 16, 
+                                    borderBottom: '1px solid var(--border-color)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 16
+                                }}>
+                                    <div style={{ 
+                                        width: 40, height: 40, 
+                                        background: 'var(--bg-tertiary)', 
+                                        borderRadius: 8,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontWeight: 600
+                                    }}>
+                                        {a.number}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 500 }}>Amendment {a.number}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{a.date} · {a.file}</div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <span className="badge badge-green">+{a.changes?.added || 0}</span>
+                                        <span className="badge badge-amber">{a.changes?.modified || 0}</span>
+                                        <span className="badge badge-red">-{a.changes?.deleted || 0}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        
+        // Helpers
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+        
+        function getTypeBadgeColor(type) {
+            const colors = {
+                performance: 'blue',
+                compliance: 'purple',
+                technical: 'green',
+                deliverable: 'amber',
+                prohibition: 'red',
+                evaluation: 'purple',
+                proposal_instruction: 'gray',
+                labor_requirement: 'amber'
+            };
+            return colors[type] || 'gray';
+        }
+        
+        // Render
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

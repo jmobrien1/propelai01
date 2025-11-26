@@ -63,11 +63,16 @@ from .amendment_processor import (
 
 try:
     from .excel_export import ExcelExporter, export_to_excel
+    from .excel_parser import ExcelMatrixParser, parse_excel_matrix, MatrixParseResult, ColumnType
     EXCEL_AVAILABLE = True
 except ImportError:
     EXCEL_AVAILABLE = False
     ExcelExporter = None
     export_to_excel = None
+    ExcelMatrixParser = None
+    parse_excel_matrix = None
+    MatrixParseResult = None
+    ColumnType = None
 
 __all__ = [
     # Models
@@ -97,6 +102,12 @@ __all__ = [
     "export_to_excel",
     "EXCEL_AVAILABLE",
     
+    # Excel Parser
+    "ExcelMatrixParser",
+    "parse_excel_matrix",
+    "MatrixParseResult",
+    "ColumnType",
+    
     # Amendment Processing
     "AmendmentProcessor",
     "AmendmentResult",
@@ -107,4 +118,4 @@ __all__ = [
     "RequirementChange",
 ]
 
-__version__ = "2.2.0"  # Cycle 5 + quality tuning + Excel export + Amendment processor
+__version__ = "2.3.0"  # Cycle 5 + quality tuning + Excel export + Amendment + Excel parser
