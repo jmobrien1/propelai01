@@ -24,7 +24,64 @@ class RequirementExtractor:
     2. Semantic patterns (by requirement type)
     3. Context analysis (section location)
     4. Entity extraction (CLINs, deliverables, dates)
+    
+    v2.1: Added quality filters to reduce noise
+    - Minimum sentence length
+    - Noise pattern filtering (TOC, headers, references)
+    - Stronger semantic signals required
+    - Duplicate/near-duplicate detection
     """
+    
+    # === QUALITY TUNING PARAMETERS ===
+    MIN_SENTENCE_LENGTH = 100         # Minimum chars for a valid requirement (increased)
+    MAX_SENTENCE_LENGTH = 1000        # Maximum chars (avoid capturing paragraphs)
+    MIN_WORDS = 15                    # Minimum words in a requirement (increased)
+    REQUIRE_ACTOR = True              # Require "contractor/offeror/government" for high confidence
+    
+    # Noise patterns to filter out (TOC, headers, boilerplate)
+    NOISE_PATTERNS = [
+        r"^SECTION\s+[A-Z]\s*[-–]\s*",                    # Section headers
+        r"^ARTICLE\s+[A-Z]\.\d+",                         # Article headers  
+        r"^TABLE\s+OF\s+CONTENTS",                        # TOC
+        r"^\d+\s*$",                                      # Page numbers
+        r"^[A-Z\s]+\.\.\.\.\.*\s*\d+$",                   # TOC entries with dots
+        r"^(?:Page|Pg\.?)\s*\d+",                         # Page references
+        r"^RFP\s+\d+",                                    # RFP number headers
+        r"^REQUEST\s+FOR\s+PROPOSAL",                    # Document title
+        r"^\s*\d+\s*\n",                                  # Standalone numbers
+        r"^[A-Z][a-z]+\s+\d{1,2},\s+\d{4}",              # Dates as headers
+        r"^ATTACHMENT\s+\d+.*RFP",                        # Attachment headers
+        r"^\(continued\)",                                # Continuation markers
+        r"^_{5,}",                                        # Underline separators
+        r"^FAR\s+\d+\.\d+[-\d]*\s*$",                    # Bare FAR references
+        r"^HHSAR\s+\d+\.\d+",                            # Bare HHSAR references
+        r"^https?://",                                    # URLs alone
+        r"^52\.\d{3}-\d+",                               # FAR clause numbers alone
+        r"^\d{1,3}\s*$",                                  # Just numbers
+        r"^[A-Z]\.\d+\s*$",                               # Just section refs (C.3.1)
+        r"^PART\s+[IVX]+",                                # Part headers
+        r"^SUPPLIES\s+OR\s+SERVICES",                     # Section B header
+        r"^EVALUATION\s+FACTORS",                         # Section M header
+        r"^INSTRUCTIONS.*OFFERORS",                       # Section L header
+        r"^\(\s*[a-z]\s*\)\s*$",                          # Subparagraph markers
+        r"^\s*[ivx]+\.\s*$",                              # Roman numeral lists
+    ]
+    
+    # Boilerplate phrases that indicate non-requirement text
+    BOILERPLATE_PATTERNS = [
+        r"this\s+page\s+intentionally\s+left\s+blank",
+        r"end\s+of\s+(?:section|document|attachment)",
+        r"see\s+continuation\s+sheet",
+        r"reserved\s*$",
+        r"not\s+applicable\s*$",
+        r"to\s+be\s+determined",
+        r"^\s*n/a\s*$",
+        r"^\s*tbd\s*$",
+        r"incorporated\s+by\s+reference",
+        r"as\s+prescribed\s+in",
+        r"clause\s+is\s+incorporated",
+        r"the\s+following\s+(?:clauses?|provisions?)\s+(?:are|is)\s+incorporated",
+    ]
     
     # Mandatory requirement patterns
     MANDATORY_PATTERNS = [
@@ -140,11 +197,22 @@ class RequirementExtractor:
         r"Research\s+Outline\s+([IVX]+)",
     ]
     
-    def __init__(self, include_context: bool = True, context_chars: int = 200):
+    def __init__(self, include_context: bool = True, context_chars: int = 200, 
+                 strict_mode: bool = True):
+        """
+        Initialize extractor
+        
+        Args:
+            include_context: Whether to capture surrounding text
+            context_chars: How much context to capture
+            strict_mode: If True, apply stricter quality filters (recommended)
+        """
         self.include_context = include_context
         self.context_chars = context_chars
+        self.strict_mode = strict_mode
         self._compile_patterns()
         self._req_counter = 0
+        self._seen_hashes = set()  # For duplicate detection
     
     def _compile_patterns(self):
         """Pre-compile regex patterns"""
@@ -161,7 +229,88 @@ class RequirementExtractor:
         }
         
         self.compiled_crossref = [re.compile(p, re.IGNORECASE) for p in self.CROSS_REF_PATTERNS]
+        
+        # Compile noise and boilerplate patterns
+        self.compiled_noise = [re.compile(p, re.IGNORECASE | re.MULTILINE) 
+                               for p in self.NOISE_PATTERNS]
+        self.compiled_boilerplate = [re.compile(p, re.IGNORECASE) 
+                                     for p in self.BOILERPLATE_PATTERNS]
     
+    def _is_noise(self, sentence: str) -> bool:
+        """Check if sentence is noise (TOC, header, boilerplate)"""
+        sentence_stripped = sentence.strip()
+        
+        # Check length constraints
+        if len(sentence_stripped) < self.MIN_SENTENCE_LENGTH:
+            return True
+        if len(sentence_stripped) > self.MAX_SENTENCE_LENGTH:
+            return True
+        
+        # Check word count
+        words = sentence_stripped.split()
+        if len(words) < self.MIN_WORDS:
+            return True
+        
+        # Check noise patterns
+        for pattern in self.compiled_noise:
+            if pattern.search(sentence_stripped):
+                return True
+        
+        # Check boilerplate patterns
+        for pattern in self.compiled_boilerplate:
+            if pattern.search(sentence_stripped):
+                return True
+        
+        # Check for excessive special characters (likely garbled text)
+        special_char_ratio = sum(1 for c in sentence_stripped if not c.isalnum() and c != ' ') / max(len(sentence_stripped), 1)
+        if special_char_ratio > 0.3:
+            return True
+        
+        # Check for TOC-like patterns (multiple dots followed by number)
+        if re.search(r'\.{3,}\s*\d+\s*$', sentence_stripped):
+            return True
+        
+        # Filter out mostly uppercase text (headers, titles)
+        uppercase_ratio = sum(1 for c in sentence_stripped if c.isupper()) / max(len(sentence_stripped.replace(' ', '')), 1)
+        if uppercase_ratio > 0.6:
+            return True
+        
+        # Filter out lines that are mostly numbers/punctuation
+        alpha_ratio = sum(1 for c in sentence_stripped if c.isalpha()) / max(len(sentence_stripped), 1)
+        if alpha_ratio < 0.5:
+            return True
+        
+        # Filter out clause listing text (e.g., "52.xxx-x Title")
+        if re.match(r'^52\.\d{3}[-\d]*\s+', sentence_stripped):
+            return True
+        
+        # Filter out pure reference sentences
+        if re.match(r'^(?:See|Refer to|Per|As stated in|In accordance with)\s+(?:Section|Article|Attachment|FAR|DFARS)', 
+                    sentence_stripped, re.IGNORECASE):
+            if len(sentence_stripped) < 200:  # Short references
+                return True
+        
+        return False
+    
+    def _has_actor(self, sentence: str) -> bool:
+        """Check if sentence has a clear actor (contractor, offeror, government)"""
+        actors = [
+            r'\b(?:contractor|vendor|offeror|proposer)\b',
+            r'\b(?:government|agency|contracting\s+officer|cor)\b',
+            r'\bthe\s+(?:contractor|vendor|offeror|government)\b',
+        ]
+        sentence_lower = sentence.lower()
+        return any(re.search(actor, sentence_lower) for actor in actors)
+    
+    def _is_duplicate(self, text: str) -> bool:
+        """Check if we've already seen this requirement"""
+        import hashlib
+        text_hash = hashlib.md5(text.lower().strip().encode()).hexdigest()[:16]
+        if text_hash in self._seen_hashes:
+            return True
+        self._seen_hashes.add(text_hash)
+        return False
+
     def extract_from_document(self, doc: ParsedDocument) -> List[RequirementNode]:
         """
         Extract all requirements from a parsed document
@@ -170,19 +319,38 @@ class RequirementExtractor:
             List of RequirementNode objects
         """
         requirements = []
+        self._seen_hashes.clear()  # Reset duplicate detection per document
         
         # Split into sentences for processing
         sentences = self._split_into_sentences(doc.full_text)
         
         for i, sentence in enumerate(sentences):
-            # Skip very short sentences
-            if len(sentence.strip()) < 20:
-                continue
+            # Apply quality filters in strict mode
+            if self.strict_mode:
+                # Skip noise (TOC, headers, boilerplate)
+                if self._is_noise(sentence):
+                    continue
+                
+                # Skip duplicates
+                if self._is_duplicate(sentence):
+                    continue
+            else:
+                # Basic filter for non-strict mode
+                if len(sentence.strip()) < 20:
+                    continue
             
             # Check for requirement indicators
             req_type, keyword_match = self._classify_sentence(sentence)
             
             if req_type:
+                # In strict mode, require actor for high confidence
+                has_actor = self._has_actor(sentence)
+                
+                # Skip conditional requirements without actors in strict mode
+                if self.strict_mode and keyword_match in ["should", "may", "can"]:
+                    if not has_actor:
+                        continue
+                
                 # Create requirement node
                 req = self._create_requirement_node(
                     sentence=sentence,
@@ -192,15 +360,24 @@ class RequirementExtractor:
                     req_type=req_type,
                     keyword_match=keyword_match,
                 )
+                
+                # Adjust confidence based on actor presence
+                if has_actor and keyword_match in ["shall", "must", "required"]:
+                    req.confidence = ConfidenceLevel.HIGH
+                elif has_actor:
+                    req.confidence = ConfidenceLevel.MEDIUM
+                else:
+                    req.confidence = ConfidenceLevel.MEDIUM if keyword_match in ["shall", "must"] else ConfidenceLevel.LOW
+                
                 requirements.append(req)
         
-        # Also extract from sections specifically
+        # Also extract from sections specifically (but avoid duplicates)
         for section_id, section_text in doc.sections.items():
             section_reqs = self._extract_from_section(section_id, section_text, doc)
             
             # Merge, avoiding duplicates
             for new_req in section_reqs:
-                if not self._is_duplicate(new_req, requirements):
+                if not self._is_duplicate(new_req.text):
                     requirements.append(new_req)
         
         return requirements
@@ -330,8 +507,13 @@ class RequirementExtractor:
         sentences = self._split_into_sentences(section_text)
         
         for i, sentence in enumerate(sentences):
-            if len(sentence.strip()) < 20:
-                continue
+            # Apply quality filters
+            if self.strict_mode:
+                if self._is_noise(sentence):
+                    continue
+            else:
+                if len(sentence.strip()) < 20:
+                    continue
             
             req_type, keyword = self._classify_sentence(sentence)
             
@@ -339,6 +521,11 @@ class RequirementExtractor:
                 # Use section-specific default if generic
                 if req_type == RequirementType.PERFORMANCE:
                     req_type = default_type
+                
+                # In strict mode, skip conditionals without actors
+                if self.strict_mode and keyword in ["should", "may", "can"]:
+                    if not self._has_actor(sentence):
+                        continue
                 
                 req = self._create_requirement_node(
                     sentence=sentence,
@@ -477,8 +664,8 @@ class RequirementExtractor:
         
         return ConfidenceLevel.MEDIUM
     
-    def _is_duplicate(self, new_req: RequirementNode, existing: List[RequirementNode]) -> bool:
-        """Check if requirement is a duplicate"""
+    def _is_duplicate_node(self, new_req: RequirementNode, existing: List[RequirementNode]) -> bool:
+        """Check if requirement node is a duplicate of existing nodes"""
         for req in existing:
             if req.text_hash == new_req.text_hash:
                 return True
@@ -501,5 +688,6 @@ class RequirementExtractor:
         return len(intersection) / len(union)
     
     def reset_counter(self):
-        """Reset requirement ID counter"""
+        """Reset requirement ID counter and duplicate tracking"""
         self._req_counter = 0
+        self._seen_hashes.clear()
