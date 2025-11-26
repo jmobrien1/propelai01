@@ -1,0 +1,76 @@
+# PropelAI APOS - Docker Compose Configuration
+# Full stack deployment with PostgreSQL and Chroma
+
+version: '3.8'
+
+services:
+  # PropelAI API Server
+  api:
+    build: .
+    container_name: propelai-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PROPELAI_ENV=production
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=propelai
+      - POSTGRES_USER=propelai
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-propelai_secret}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./data/outputs:/app/data/outputs
+      - ./data/chroma:/app/data/chroma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL for LangGraph checkpointing
+  postgres:
+    image: postgres:15-alpine
+    container_name: propelai-postgres
+    environment:
+      - POSTGRES_DB=propelai
+      - POSTGRES_USER=propelai
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-propelai_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U propelai -d propelai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Chroma Vector Database (optional - can use embedded)
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: propelai-chroma
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=False
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  chroma_data:
+
+networks:
+  default:
+    name: propelai-network
