@@ -591,9 +591,9 @@ def process_rfp_semantic_background(rfp_id: str):
                 parsed = parser.parse_file(file_path, doc_type)
                 if parsed:
                     documents.append({
-                        'text': parsed.text,
+                        'text': parsed.full_text,
                         'filename': parsed.filename,
-                        'pages': parsed.pages if parsed.pages else [parsed.text],
+                        'pages': parsed.pages if parsed.pages else [parsed.full_text],
                     })
             except Exception as e:
                 print(f"Warning: Could not parse {file_path}: {e}")
