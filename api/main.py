@@ -394,16 +394,50 @@ def process_rfp_background(rfp_id: str):
         # Convert requirements graph to list
         requirements = []
         for req_id, req in result.requirements_graph.items():
+            # Safely extract attributes from RequirementNode
+            section = ""
+            source_page = None
+            source_doc = ""
+            
+            if hasattr(req, 'source') and req.source:
+                section = getattr(req.source, 'section_id', '') or ''
+                source_page = getattr(req.source, 'page_number', None)
+                source_doc = getattr(req.source, 'document_name', '') or ''
+            
+            # Get type - could be requirement_type or req_type
+            req_type = "performance"
+            if hasattr(req, 'requirement_type'):
+                req_type = req.requirement_type.value if hasattr(req.requirement_type, 'value') else str(req.requirement_type)
+            elif hasattr(req, 'req_type'):
+                req_type = req.req_type
+            
+            # Get confidence
+            confidence = 0.7
+            if hasattr(req, 'confidence'):
+                if hasattr(req.confidence, 'value'):
+                    # It's an enum - map to float
+                    conf_map = {'high': 0.9, 'medium': 0.7, 'low': 0.5}
+                    confidence = conf_map.get(str(req.confidence.value).lower(), 0.7)
+                else:
+                    confidence = float(req.confidence) if req.confidence else 0.7
+            
+            # Get priority (may not exist)
+            priority = "medium"
+            if hasattr(req, 'priority'):
+                priority = req.priority
+            elif req_type in ['compliance', 'prohibition']:
+                priority = "high"
+            
             requirements.append({
                 "id": req.id,
                 "text": req.text,
-                "section": req.section,
-                "type": req.req_type,
-                "priority": req.priority,
-                "confidence": req.confidence,
-                "source_page": req.source_page,
-                "source_doc": req.source_doc,
-                "keywords": req.keywords
+                "section": section,
+                "type": req_type,
+                "priority": priority,
+                "confidence": confidence,
+                "source_page": source_page,
+                "source_doc": source_doc,
+                "keywords": getattr(req, 'keywords', []) or []
             })
         
         # Build stats
@@ -649,16 +683,46 @@ async def upload_amendment(
         # Get updated requirements
         updated_reqs = []
         for req_id, req in processor.get_updated_requirements().items():
+            # Safely extract attributes from RequirementNode
+            section = ""
+            source_page = None
+            source_doc = ""
+            
+            if hasattr(req, 'source') and req.source:
+                section = getattr(req.source, 'section_id', '') or ''
+                source_page = getattr(req.source, 'page_number', None)
+                source_doc = getattr(req.source, 'document_name', '') or ''
+            
+            req_type = "performance"
+            if hasattr(req, 'requirement_type'):
+                req_type = req.requirement_type.value if hasattr(req.requirement_type, 'value') else str(req.requirement_type)
+            elif hasattr(req, 'req_type'):
+                req_type = req.req_type
+            
+            confidence = 0.7
+            if hasattr(req, 'confidence'):
+                if hasattr(req.confidence, 'value'):
+                    conf_map = {'high': 0.9, 'medium': 0.7, 'low': 0.5}
+                    confidence = conf_map.get(str(req.confidence.value).lower(), 0.7)
+                else:
+                    confidence = float(req.confidence) if req.confidence else 0.7
+            
+            priority = "medium"
+            if hasattr(req, 'priority'):
+                priority = req.priority
+            elif req_type in ['compliance', 'prohibition']:
+                priority = "high"
+            
             updated_reqs.append({
                 "id": req.id,
                 "text": req.text,
-                "section": req.section,
-                "type": req.req_type,
-                "priority": req.priority,
-                "confidence": req.confidence,
-                "source_page": req.source_page,
-                "source_doc": req.source_doc,
-                "keywords": req.keywords
+                "section": section,
+                "type": req_type,
+                "priority": priority,
+                "confidence": confidence,
+                "source_page": source_page,
+                "source_doc": source_doc,
+                "keywords": getattr(req, 'keywords', []) or []
             })
         
         store.update(rfp_id, {
