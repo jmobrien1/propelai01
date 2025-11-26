@@ -37,6 +37,20 @@ from agents.enhanced_compliance import (
     export_to_excel
 )
 
+# v2.8: Import semantic extractor
+try:
+    from agents.enhanced_compliance import (
+        SEMANTIC_AVAILABLE,
+        SemanticRequirementExtractor,
+        SemanticCTMExporter,
+        SemanticExtractionResult,
+    )
+except ImportError:
+    SEMANTIC_AVAILABLE = False
+    SemanticRequirementExtractor = None
+    SemanticCTMExporter = None
+    SemanticExtractionResult = None
+
 
 # ============== Configuration ==============
 
@@ -168,13 +182,23 @@ class RFPStore:
 store = RFPStore()
 agent = EnhancedComplianceAgent()
 
+# v2.8: Initialize semantic extractor if available
+semantic_extractor = None
+semantic_ctm_exporter = None
+if SEMANTIC_AVAILABLE:
+    try:
+        semantic_extractor = SemanticRequirementExtractor(use_llm=False)  # Start without LLM
+        semantic_ctm_exporter = SemanticCTMExporter()
+    except Exception as e:
+        print(f"Warning: Could not initialize semantic extractor: {e}")
+
 
 # ============== FastAPI App ==============
 
 app = FastAPI(
     title="PropelAI API",
     description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices",
-    version="2.3.0"
+    version="2.8.0"
 )
 
 # CORS - allow all origins for development
@@ -220,11 +244,13 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.3.0",
+        "version": "2.8.0",
         "components": {
             "enhanced_compliance_agent": "ready",
             "amendment_processor": "ready",
-            "excel_export": "ready"
+            "excel_export": "ready",
+            "semantic_extractor": "ready" if semantic_extractor else "not available",
+            "semantic_ctm_export": "ready" if semantic_ctm_exporter else "not available",
         }
     }
 
@@ -502,6 +528,161 @@ async def process_rfp(rfp_id: str, background_tasks: BackgroundTasks):
     }
 
 
+# ============== v2.8: Semantic Processing ==============
+
+def process_rfp_semantic_background(rfp_id: str):
+    """Background task to process RFP with semantic extraction (v2.8)"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        return
+    
+    if not semantic_extractor:
+        store.set_status(rfp_id, "error", 0, "Semantic extractor not available")
+        store.update(rfp_id, {"status": "error"})
+        return
+    
+    try:
+        import time
+        start_time = time.time()
+        
+        # Update status
+        store.set_status(rfp_id, "processing", 10, "Reading documents...")
+        store.update(rfp_id, {"status": "processing"})
+        
+        # Get file paths
+        file_paths = rfp["file_paths"]
+        if not file_paths:
+            store.set_status(rfp_id, "error", 0, "No files to process")
+            store.update(rfp_id, {"status": "error"})
+            return
+        
+        # Parse documents into text
+        store.set_status(rfp_id, "processing", 20, "Parsing documents...")
+        
+        from agents.enhanced_compliance import MultiFormatParser
+        parser = MultiFormatParser()
+        
+        documents = []
+        for file_path in file_paths:
+            try:
+                parsed = parser.parse_file(file_path)
+                documents.append({
+                    'text': parsed.text,
+                    'filename': parsed.filename,
+                    'pages': parsed.pages if parsed.pages else [parsed.text],
+                })
+            except Exception as e:
+                print(f"Warning: Could not parse {file_path}: {e}")
+        
+        if not documents:
+            store.set_status(rfp_id, "error", 0, "No documents could be parsed")
+            store.update(rfp_id, {"status": "error"})
+            return
+        
+        # Run semantic extraction
+        store.set_status(rfp_id, "processing", 40, "Extracting requirements semantically...")
+        
+        result = semantic_extractor.extract(documents, strict_mode=True)
+        
+        store.set_status(rfp_id, "processing", 70, "Classifying and scoring...")
+        
+        # Convert to API format
+        requirements = []
+        for req in result.requirements:
+            requirements.append({
+                "id": req.id,
+                "text": req.text,
+                "raw_text": req.raw_text,
+                "section": req.rfp_section.value,
+                "section_ref": req.section_reference,
+                "type": req.requirement_type.value,
+                "priority": req.priority,
+                "confidence": req.confidence_score,
+                "source_page": req.page_number,
+                "source_doc": req.source_document,
+                "is_mandatory": req.is_mandatory,
+                "binding_keyword": req.binding_keyword,
+                "action_verb": req.action_verb,
+                "actor": req.actor,
+                "subject": req.subject,
+                "constraints": req.constraints,
+                "references_sections": req.references_sections,
+                "references_attachments": req.references_attachments,
+                "evaluation_factor": req.related_evaluation_factor,
+            })
+        
+        # Build stats
+        duration = time.time() - start_time
+        stats = {
+            "total": result.stats.get('total', len(requirements)),
+            "by_type": result.stats.get('by_type', {}),
+            "by_priority": result.stats.get('by_priority', {}),
+            "by_section": result.stats.get('by_section', {}),
+            "mandatory": result.stats.get('mandatory', 0),
+            "desirable": result.stats.get('desirable', 0),
+            "processing_time": duration,
+            "extractor_version": "semantic_v2.8"
+        }
+        
+        store.set_status(rfp_id, "processing", 90, "Finalizing...")
+        
+        # Store semantic results
+        store.update(rfp_id, {
+            "status": "completed",
+            "requirements": requirements,
+            "semantic_result": result,  # Keep full semantic result for export
+            "stats": stats,
+            "evaluation_factors": result.evaluation_factors,
+            "warnings": result.warnings,
+            "extraction_mode": "semantic"
+        })
+        
+        store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
+        store.update(rfp_id, {"status": "error"})
+
+
+@app.post("/api/rfp/{rfp_id}/process-semantic")
+async def process_rfp_semantic(rfp_id: str, background_tasks: BackgroundTasks):
+    """
+    Start semantic processing of RFP documents (v2.8)
+    
+    Uses the new SemanticRequirementExtractor for:
+    - Better requirement classification (PERFORMANCE vs PROPOSAL INSTRUCTION)
+    - Aggressive garbage filtering
+    - Proper RFP section mapping (L, M, C, PWS, SOW)
+    - Action verb and actor extraction
+    - Cross-reference detection
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+    
+    if not rfp["file_paths"]:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    
+    if not semantic_extractor:
+        raise HTTPException(
+            status_code=501, 
+            detail="Semantic extraction not available. Use /process endpoint instead."
+        )
+    
+    # Start background processing
+    store.set_status(rfp_id, "starting", 0, "Starting semantic processing...")
+    background_tasks.add_task(process_rfp_semantic_background, rfp_id)
+    
+    return {
+        "status": "processing_started",
+        "rfp_id": rfp_id,
+        "files_count": len(rfp["file_paths"]),
+        "mode": "semantic"
+    }
+
+
 @app.get("/api/rfp/{rfp_id}/status")
 async def get_processing_status(rfp_id: str):
     """Get processing status"""
@@ -598,49 +779,59 @@ async def export_rfp(rfp_id: str, format: str = "xlsx"):
     if format != "xlsx":
         raise HTTPException(status_code=400, detail="Only xlsx format supported")
     
-    # Create a result-like object for export with all required attributes
-    class ExportResult:
-        def __init__(self, reqs, reqs_graph, stats):
-            self.requirements_graph = reqs_graph or {}
-            self.compliance_matrix = []  # Will build from requirements
-            self.stats = stats or {}
-            self.duration_seconds = stats.get("processing_time", 0) if stats else 0
-            self.cross_reference_count = 0
-            self.extraction_coverage = stats.get("coverage", 0.7) if stats else 0.7
-            
-            # Build compliance matrix rows from requirements
-            # Using correct attribute names to match ComplianceMatrixRow
-            for req in (reqs or []):
-                class MatrixRow:
-                    pass
-                row = MatrixRow()
-                row.requirement_id = req.get("id", "")
-                row.requirement_text = req.get("text", "")
-                row.section_reference = req.get("section", "")
-                row.section_type = "C"  # Default to section C
-                row.requirement_type = req.get("type", "performance")
-                row.priority = req.get("priority", "Medium").capitalize()
-                row.compliance_status = "Not Started"
-                row.response_text = ""
-                row.proposal_section = ""
-                row.assigned_owner = ""
-                row.evidence_required = []
-                row.related_requirements = []
-                row.evaluation_factor = None
-                row.risk_if_non_compliant = ""
-                row.notes = ""
-                self.compliance_matrix.append(row)
-    
-    result = ExportResult(rfp["requirements"], rfp.get("requirements_graph", {}), rfp["stats"])
-    
-    # Export
     output_path = OUTPUT_DIR / f"{rfp_id}_ComplianceMatrix.xlsx"
-    export_to_excel(
-        result,
-        str(output_path),
-        solicitation_number=rfp.get("solicitation_number", rfp_id),
-        title=rfp.get("name", "RFP Analysis")
-    )
+    
+    # Check if this was semantic extraction
+    if rfp.get("extraction_mode") == "semantic" and rfp.get("semantic_result") and semantic_ctm_exporter:
+        # Use new semantic CTM exporter
+        semantic_ctm_exporter.export(
+            rfp["semantic_result"],
+            str(output_path),
+            solicitation_number=rfp.get("solicitation_number", rfp_id),
+            title=rfp.get("name", "RFP Analysis")
+        )
+    else:
+        # Legacy export path
+        # Create a result-like object for export with all required attributes
+        class ExportResult:
+            def __init__(self, reqs, reqs_graph, stats):
+                self.requirements_graph = reqs_graph or {}
+                self.compliance_matrix = []  # Will build from requirements
+                self.stats = stats or {}
+                self.duration_seconds = stats.get("processing_time", 0) if stats else 0
+                self.cross_reference_count = 0
+                self.extraction_coverage = stats.get("coverage", 0.7) if stats else 0.7
+                
+                # Build compliance matrix rows from requirements
+                for req in (reqs or []):
+                    class MatrixRow:
+                        pass
+                    row = MatrixRow()
+                    row.requirement_id = req.get("id", "")
+                    row.requirement_text = req.get("text", "")
+                    row.section_reference = req.get("section", "")
+                    row.section_type = "C"  # Default to section C
+                    row.requirement_type = req.get("type", "performance")
+                    row.priority = req.get("priority", "Medium").capitalize()
+                    row.compliance_status = "Not Started"
+                    row.response_text = ""
+                    row.proposal_section = ""
+                    row.assigned_owner = ""
+                    row.evidence_required = []
+                    row.related_requirements = []
+                    row.evaluation_factor = None
+                    row.risk_if_non_compliant = ""
+                    row.notes = ""
+                    self.compliance_matrix.append(row)
+        
+        result = ExportResult(rfp["requirements"], rfp.get("requirements_graph", {}), rfp["stats"])
+        
+        export_to_excel(
+            result,
+            str(output_path),
+            solicitation_number=rfp.get("solicitation_number", rfp_id),
+            title=rfp.get("name", "RFP Analysis")
+        )
     
     return FileResponse(
         str(output_path),

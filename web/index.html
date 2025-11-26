@@ -312,6 +312,11 @@
                 return res.json();
             },
             
+            async processRFPSemantic(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/process-semantic`, { method: 'POST' });
+                return res.json();
+            },
+            
             async getStatus(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/status`);
                 return res.json();
@@ -373,6 +378,7 @@
             const [rawFiles, setRawFiles] = useState([]);
             const [processing, setProcessing] = useState(false);
             const [processingStatus, setProcessingStatus] = useState({ status: '', progress: 0, message: '' });
+            const [useSemanticMode, setUseSemanticMode] = useState(true); // v2.8: Default to semantic
             
             // Requirements State
             const [requirements, setRequirements] = useState([]);
@@ -466,7 +472,11 @@
                     setProcessingStatus({ status: 'processing', progress: 40, message: 'Starting processing...' });
                     
                     // Start processing
-                    await api.processRFP(rfp.id);
+                    if (useSemanticMode) {
+                        await api.processRFPSemantic(rfp.id);
+                    } else {
+                        await api.processRFP(rfp.id);
+                    }
                     
                     // Status polling will take over from here
                     
@@ -575,6 +585,8 @@
                                 setRawFiles={setRawFiles}
                                 onProcess={processFiles}
                                 apiConnected={apiConnected}
+                                useSemanticMode={useSemanticMode}
+                                setUseSemanticMode={setUseSemanticMode}
                             />
                         )}
                         
@@ -623,7 +635,7 @@
         }
         
         // Upload View
-        function UploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected }) {
+        function UploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected, useSemanticMode, setUseSemanticMode }) {
             const [dragging, setDragging] = useState(false);
             const fileInputRef = useRef(null);
             
@@ -723,7 +735,7 @@
                                 </div>
                             ))}
                             
-                            <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+                            <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <button 
                                     className="btn btn-primary" 
                                     onClick={onProcess}
@@ -735,6 +747,29 @@
                                 <button className="btn btn-secondary" onClick={clearAll}>
                                     Clear All
                                 </button>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 16, cursor: 'pointer' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={useSemanticMode}
+                                        onChange={(e) => setUseSemanticMode(e.target.checked)}
+                                        style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)' }}
+                                    />
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                                        v2.8 Semantic Extraction
+                                    </span>
+                                    <span 
+                                        style={{ 
+                                            fontSize: 10, 
+                                            background: 'var(--accent-green)', 
+                                            color: 'black', 
+                                            padding: '2px 6px', 
+                                            borderRadius: 4,
+                                            fontWeight: 600
+                                        }}
+                                    >
+                                        NEW
+                                    </span>
+                                </label>
                             </div>
                         </div>
                     )}

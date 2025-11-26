@@ -87,6 +87,29 @@ except ImportError:
     MatrixParseResult = None
     ColumnType = None
 
+# v2.8: Semantic Extraction
+try:
+    from .semantic_extractor import (
+        SemanticRequirementExtractor,
+        LLMEnhancedExtractor,
+        ExtractedRequirement,
+        ExtractionResult as SemanticExtractionResult,
+        SemanticRequirementType,
+        RFPSection,
+    )
+    from .semantic_ctm_export import SemanticCTMExporter
+    SEMANTIC_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Semantic extractor not available: {e}")
+    SEMANTIC_AVAILABLE = False
+    SemanticRequirementExtractor = None
+    LLMEnhancedExtractor = None
+    ExtractedRequirement = None
+    SemanticExtractionResult = None
+    SemanticRequirementType = None
+    RFPSection = None
+    SemanticCTMExporter = None
+
 __all__ = [
     # Models
     "DocumentType",
@@ -141,6 +164,16 @@ __all__ = [
     "VolumeType",
     "parse_rfp_outline",
     "parse_rfp_outline_from_text",
+    
+    # v2.8: Semantic Extraction
+    "SEMANTIC_AVAILABLE",
+    "SemanticRequirementExtractor",
+    "LLMEnhancedExtractor",
+    "ExtractedRequirement",
+    "SemanticExtractionResult",
+    "SemanticRequirementType",
+    "RFPSection",
+    "SemanticCTMExporter",
 ]
 
-__version__ = "2.4.0"  # Cycle 5 + quality tuning + Excel + Amendment + Outline Generator
+__version__ = "2.8.0"  # Semantic extraction with LLM classification
