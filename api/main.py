@@ -24,7 +24,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -787,10 +787,20 @@ async def get_outline(rfp_id: str, format: str = "json"):
 
 # ============== Serve Static Files ==============
 
-# Check if web directory exists
+# Serve web UI
 WEB_DIR = Path(__file__).parent.parent / "web"
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_root():
+    """Serve the main web UI"""
+    index_path = WEB_DIR / "index.html"
+    if index_path.exists():
+        return index_path.read_text()
+    return HTMLResponse("<h1>PropelAI API</h1><p>Web UI not found. API available at /api/</p>")
+
+# Mount static files for any additional assets
 if WEB_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="static")
+    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
 # ============== Main Entry ==============
