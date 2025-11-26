@@ -598,14 +598,40 @@ async def export_rfp(rfp_id: str, format: str = "xlsx"):
     if format != "xlsx":
         raise HTTPException(status_code=400, detail="Only xlsx format supported")
     
-    # Create a result-like object for export
+    # Create a result-like object for export with all required attributes
     class ExportResult:
-        def __init__(self, reqs, stats):
-            self.requirements_graph = reqs
-            self.stats = stats
-            self.duration_seconds = stats.get("processing_time", 0)
+        def __init__(self, reqs, reqs_graph, stats):
+            self.requirements_graph = reqs_graph or {}
+            self.compliance_matrix = []  # Will build from requirements
+            self.stats = stats or {}
+            self.duration_seconds = stats.get("processing_time", 0) if stats else 0
+            self.cross_reference_count = 0
+            self.extraction_coverage = stats.get("coverage", 0.7) if stats else 0.7
+            
+            # Build compliance matrix rows from requirements
+            # Using correct attribute names to match ComplianceMatrixRow
+            for req in (reqs or []):
+                class MatrixRow:
+                    pass
+                row = MatrixRow()
+                row.requirement_id = req.get("id", "")
+                row.requirement_text = req.get("text", "")
+                row.section_reference = req.get("section", "")
+                row.section_type = "C"  # Default to section C
+                row.requirement_type = req.get("type", "performance")
+                row.priority = req.get("priority", "Medium").capitalize()
+                row.compliance_status = "Not Started"
+                row.response_text = ""
+                row.proposal_section = ""
+                row.assigned_owner = ""
+                row.evidence_required = []
+                row.related_requirements = []
+                row.evaluation_factor = None
+                row.risk_if_non_compliant = ""
+                row.notes = ""
+                self.compliance_matrix.append(row)
     
-    result = ExportResult(rfp["requirements_graph"], rfp["stats"])
+    result = ExportResult(rfp["requirements"], rfp.get("requirements_graph", {}), rfp["stats"])
     
     # Export
     output_path = OUTPUT_DIR / f"{rfp_id}_ComplianceMatrix.xlsx"
