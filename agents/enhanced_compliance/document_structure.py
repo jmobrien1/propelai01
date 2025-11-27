@@ -294,23 +294,112 @@ class RFPStructureParser:
         """
         Find start/end positions of each UCF section.
         
+        CRITICAL: Must distinguish between TOC entries and actual section headers.
+        TOC entries look like: "SECTION L - INSTRUCTIONS ... 69"
+        Real sections look like: "SECTION L - INSTRUCTIONS, CONDITIONS, AND NOTICES TO OFFERORS\nARTICLE L.1..."
+        
         Returns:
             Dict mapping section to (start_offset, end_offset, title)
         """
         section_starts = []
         
         for section, patterns in self.SECTION_PATTERNS.items():
+            best_match = None
+            best_score = -1
+            
             for pattern in patterns:
                 for match in re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE):
-                    # Get the full line for the title
+                    # Get context around the match
                     line_start = text.rfind('\n', 0, match.start()) + 1
                     line_end = text.find('\n', match.end())
                     if line_end == -1:
                         line_end = len(text)
                     title = text[line_start:line_end].strip()
                     
-                    section_starts.append((match.start(), section, title))
-                    break  # Only take first match per section
+                    # Get text following this match (next 800 chars)
+                    following_text = text[match.end():match.end() + 800]
+                    
+                    # Get preceding text to check for context
+                    preceding_text = text[max(0, match.start()-200):match.start()]
+                    
+                    # Score this match - higher score = more likely real section
+                    score = 0
+                    
+                    # TOC entries have "...." or end with page numbers
+                    if '....' in title or re.search(r'\.\s*\d+\s*$', title):
+                        score -= 100  # Strongly penalize TOC entries
+                        continue  # Skip TOC entries entirely
+                    
+                    # Check if this looks like a reference within text (not a header)
+                    # e.g., "set forth in SECTION A - SOLICITATION"
+                    if re.search(r'(?:in|from|see|per|under)\s+SECTION\s+' + section.value, 
+                                preceding_text, re.IGNORECASE):
+                        score -= 80  # This is likely a cross-reference, not a header
+                    
+                    # Real section headers are typically at the start of a line
+                    # and followed by content
+                    if match.start() == line_start or text[match.start()-1] in '\n\r':
+                        score += 30
+                    
+                    # Real sections have ARTICLE after them (for L, M especially)
+                    if re.search(r'ARTICLE\s+' + section.value + r'\.\d+', following_text, re.IGNORECASE):
+                        score += 60
+                    
+                    # Real sections have substantial content with requirements
+                    if len(following_text.strip()) > 200:
+                        req_words = len(re.findall(r'\b(shall|must|offeror|contractor|proposal|submit)\b', 
+                                                   following_text, re.IGNORECASE))
+                        score += min(req_words * 10, 40)
+                    
+                    # Section-specific validation
+                    if section == UCFSection.SECTION_L:
+                        # Section L should have L.1, L.2, L.4 references
+                        if re.search(r'L\.\d+|Factor\s+\d|Technical\s+Proposal|Business\s+Proposal', 
+                                    following_text, re.IGNORECASE):
+                            score += 50
+                    
+                    elif section == UCFSection.SECTION_M:
+                        # Section M should have evaluation language
+                        if re.search(r'evaluat|rating|factor|criteria|basis\s+for\s+award', 
+                                    following_text, re.IGNORECASE):
+                            score += 50
+                    
+                    elif section == UCFSection.SECTION_A:
+                        # Section A (SF 33) is usually early in doc
+                        doc_position = match.start() / len(text)
+                        if doc_position < 0.05:  # First 5% of document
+                            score += 40
+                        elif doc_position > 0.3:  # Past 30% - probably a reference
+                            score -= 50
+                    
+                    elif section == UCFSection.SECTION_B:
+                        # Section B should have pricing/cost content
+                        if re.search(r'price|cost|clin|line\s+item|estimated', 
+                                    following_text, re.IGNORECASE):
+                            score += 40
+                    
+                    elif section == UCFSection.SECTION_C:
+                        # Section C should have SOW/PWS or description content
+                        if re.search(r'statement\s+of\s+work|performance\s+work|scope|task', 
+                                    following_text, re.IGNORECASE):
+                            score += 40
+                    
+                    # Prefer matches further into the document (past TOC) for most sections
+                    # But A, B, C are expected earlier
+                    doc_position = match.start() / len(text)
+                    if section.value in ['L', 'M']:
+                        if doc_position > 0.4:  # L and M are typically in Part IV
+                            score += 30
+                    elif section.value in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']:
+                        if 0.02 < doc_position < 0.6:  # Parts I-III
+                            score += 20
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match = (match.start(), section, title)
+            
+            if best_match and best_score > -50:  # Only include if reasonably confident
+                section_starts.append(best_match)
         
         # Sort by position
         section_starts.sort(key=lambda x: x[0])
@@ -323,9 +412,7 @@ class RFPStructureParser:
             else:
                 end = len(text)
             
-            # Don't override if we already found this section
-            if section not in results:
-                results[section] = (start, end, title)
+            results[section] = (start, end, title)
         
         return results
     

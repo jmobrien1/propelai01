@@ -64,6 +64,17 @@ class BestPracticesCTMExporter:
         'att_section': 'F2F2F2',     # Light gray (attachments)
         'response_col': 'FFFFFF',    # White (for team input)
         'alternate_row': 'F9F9F9',   # Very light gray
+        'high_priority': 'F8CBAD',   # Orange for HIGH
+        'medium_priority': 'FFE699', # Yellow for MEDIUM
+        'low_priority': 'C6EFCE',    # Green for LOW
+    }
+    
+    # Priority mapping from binding level
+    PRIORITY_MAP = {
+        BindingLevel.MANDATORY: "High",
+        BindingLevel.HIGHLY_DESIRABLE: "Medium",
+        BindingLevel.DESIRABLE: "Low",
+        BindingLevel.INFORMATIONAL: "Low",
     }
     
     def __init__(self, include_response_columns: bool = True):
@@ -75,6 +86,19 @@ class BestPracticesCTMExporter:
         
         if not OPENPYXL_AVAILABLE:
             raise ImportError("openpyxl is required for CTM export")
+    
+    def _get_priority(self, binding_level: BindingLevel) -> str:
+        """Map binding level to priority string"""
+        return self.PRIORITY_MAP.get(binding_level, "Medium")
+    
+    def _get_priority_color(self, priority: str) -> str:
+        """Get color for priority level"""
+        color_map = {
+            "High": self.COLORS['high_priority'],
+            "Medium": self.COLORS['medium_priority'],
+            "Low": self.COLORS['low_priority'],
+        }
+        return color_map.get(priority, self.COLORS['medium_priority'])
     
     def export(self, result: ExtractionResult, output_path: str, 
                solicitation_number: str = "", title: str = "") -> str:
@@ -207,6 +231,7 @@ class BestPracticesCTMExporter:
             "RFP Reference",           # L.4.B.2, etc.
             "Requirement Text",         # VERBATIM - never summarized
             "Source Page",
+            "Priority",                 # High/Medium/Low
             "Binding Level",
             "Volume/Section",           # Where to address in proposal
             "Compliance Status",        # Team fills in
@@ -215,7 +240,7 @@ class BestPracticesCTMExporter:
         ]
         
         if not self.include_response_columns:
-            headers = headers[:4]  # Only source columns
+            headers = headers[:5]  # Only source columns
         
         # Write headers
         for col, header in enumerate(headers, 1):
@@ -238,34 +263,34 @@ class BestPracticesCTMExporter:
             # Page
             ws.cell(row=row_num, column=3, value=req.page_number)
             
+            # Priority
+            priority = self._get_priority(req.binding_level)
+            priority_cell = ws.cell(row=row_num, column=4, value=priority)
+            priority_cell.fill = PatternFill(
+                start_color=self._get_priority_color(priority),
+                end_color=self._get_priority_color(priority),
+                fill_type='solid'
+            )
+            
             # Binding level
-            ws.cell(row=row_num, column=4, value=req.binding_level.value)
+            ws.cell(row=row_num, column=5, value=req.binding_level.value)
             
             if self.include_response_columns:
                 # Volume/Section (team fills in)
-                ws.cell(row=row_num, column=5, value="")
+                ws.cell(row=row_num, column=6, value="")
                 
                 # Compliance Status
-                ws.cell(row=row_num, column=6, value="Not Started")
+                ws.cell(row=row_num, column=7, value="Not Started")
                 
                 # Response
-                ws.cell(row=row_num, column=7, value="")
+                ws.cell(row=row_num, column=8, value="")
                 
                 # Notes
                 refs = ", ".join(req.references_to) if req.references_to else ""
-                ws.cell(row=row_num, column=8, value=refs)
-            
-            # Color by binding level
-            if req.binding_level == BindingLevel.MANDATORY:
-                for col in range(1, len(headers) + 1):
-                    ws.cell(row=row_num, column=col).fill = PatternFill(
-                        start_color=self.COLORS['mandatory'],
-                        end_color=self.COLORS['mandatory'],
-                        fill_type='solid'
-                    )
+                ws.cell(row=row_num, column=9, value=refs)
         
         # Set column widths
-        widths = [15, 70, 10, 15, 20, 15, 40, 30]
+        widths = [15, 70, 10, 10, 15, 20, 15, 40, 30]
         for col, width in enumerate(widths[:len(headers)], 1):
             ws.column_dimensions[chr(64 + col)].width = width
         
@@ -279,7 +304,7 @@ class BestPracticesCTMExporter:
                 formula1='"Not Started,In Progress,Compliant,Partial,Non-Compliant,N/A"',
                 allow_blank=True
             )
-            status_dv.add(f"F2:F{len(requirements) + 1}")
+            status_dv.add(f"G2:G{len(requirements) + 1}")
             ws.add_data_validation(status_dv)
     
     def _create_technical_matrix(self, wb: Workbook, requirements: List[StructuredRequirement]):
@@ -296,16 +321,23 @@ class BestPracticesCTMExporter:
             "Requirement Text",         # VERBATIM
             "Source (PWS/SOW/C)",
             "Page",
+            "Priority",                 # High/Medium/Low
             "Binding",
             "Proposal Section",         # Where addressed
             "Compliance Status",
-            "How We Meet This",         # Evaluator-centric language
+            "Response Strategy",
+            "Win Theme",                # How this differentiates us
+            "Discriminator/Strength",
+            "Proof Point",              # Evidence to cite
             "Evidence Required",
             "Assigned Owner",
+            "Interdependencies",        # Related requirements
+            "Risk if Non-Compliant",
+            "Notes",
         ]
         
         if not self.include_response_columns:
-            headers = headers[:5]
+            headers = headers[:6]  # Only source/identification columns
         
         # Write headers
         for col, header in enumerate(headers, 1):
@@ -323,35 +355,38 @@ class BestPracticesCTMExporter:
             text_cell = ws.cell(row=row_num, column=2, value=req.full_text)
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
             
-            # Source - be specific about where it came from
-            source = req.source_subsection or req.source_section.value
-            if req.source_document:
-                source = f"{source} ({req.source_document})"
-            ws.cell(row=row_num, column=3, value=source)
-            
+            ws.cell(row=row_num, column=3, value=req.source_subsection or req.source_section.value)
             ws.cell(row=row_num, column=4, value=req.page_number)
-            ws.cell(row=row_num, column=5, value=req.binding_level.value)
+            
+            # Priority
+            priority = self._get_priority(req.binding_level)
+            priority_cell = ws.cell(row=row_num, column=5, value=priority)
+            priority_cell.fill = PatternFill(
+                start_color=self._get_priority_color(priority),
+                end_color=self._get_priority_color(priority),
+                fill_type='solid'
+            )
+            
+            ws.cell(row=row_num, column=6, value=req.binding_level.value)
             
             if self.include_response_columns:
-                ws.cell(row=row_num, column=6, value="")  # Proposal Section
-                ws.cell(row=row_num, column=7, value="Not Started")
-                ws.cell(row=row_num, column=8, value="")  # Compliance response
-                ws.cell(row=row_num, column=9, value="")  # Evidence
-                ws.cell(row=row_num, column=10, value="") # Owner
-            
-            # Color mandatory
-            if req.binding_level == BindingLevel.MANDATORY:
-                for col in range(1, len(headers) + 1):
-                    ws.cell(row=row_num, column=col).fill = PatternFill(
-                        start_color=self.COLORS['mandatory'],
-                        end_color=self.COLORS['mandatory'],
-                        fill_type='solid'
-                    )
+                ws.cell(row=row_num, column=7, value="")   # Proposal Section
+                ws.cell(row=row_num, column=8, value="Not Started")  # Status
+                ws.cell(row=row_num, column=9, value="")   # Response Strategy
+                ws.cell(row=row_num, column=10, value="")  # Win Theme
+                ws.cell(row=row_num, column=11, value="")  # Discriminator
+                ws.cell(row=row_num, column=12, value="")  # Proof Point
+                ws.cell(row=row_num, column=13, value="")  # Evidence
+                ws.cell(row=row_num, column=14, value="")  # Owner
+                ws.cell(row=row_num, column=15, value=", ".join(req.references_to))  # Dependencies
+                ws.cell(row=row_num, column=16, value="")  # Risk
+                ws.cell(row=row_num, column=17, value="")  # Notes
         
-        # Column widths
-        widths = [18, 70, 20, 8, 12, 20, 15, 50, 25, 15]
+        # Column widths - expand beyond 26 columns using openpyxl's get_column_letter
+        from openpyxl.utils import get_column_letter
+        widths = [15, 70, 15, 8, 10, 12, 20, 15, 35, 35, 35, 35, 25, 15, 25, 30, 30]
         for col, width in enumerate(widths[:len(headers)], 1):
-            ws.column_dimensions[chr(64 + col)].width = width
+            ws.column_dimensions[get_column_letter(col)].width = width
         
         ws.freeze_panes = 'A2'
         
@@ -361,7 +396,7 @@ class BestPracticesCTMExporter:
                 formula1='"Not Started,In Progress,Fully Compliant,Partial,Non-Compliant,Exceeds,N/A"',
                 allow_blank=True
             )
-            status_dv.add(f"G2:G{len(requirements) + 1}")
+            status_dv.add(f"H2:H{len(requirements) + 1}")
             ws.add_data_validation(status_dv)
     
     def _create_section_m_matrix(self, wb: Workbook, requirements: List[StructuredRequirement]):

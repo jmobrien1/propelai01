@@ -124,17 +124,34 @@ class SectionAwareExtractor:
     
     # Binding keywords by level
     MANDATORY_KEYWORDS = [
-        r'\bshall\b', r'\bmust\b', r'\bwill\b(?!\s+be\s+(?:able|permitted|allowed))',
+        r'\bshall\b', r'\bmust\b', 
         r'\brequired\s+to\b', r'\bis\s+required\b', r'\bare\s+required\b',
-        r'\bshall\s+not\b', r'\bmust\s+not\b', r'\bwill\s+not\b',  # Prohibitions
+        r'\bshall\s+not\b', r'\bmust\s+not\b',  # Prohibitions
+        r'\bwill\s+(?:provide|submit|include|demonstrate|ensure|address|describe)\b',  # More specific will
     ]
     
     SHOULD_KEYWORDS = [
         r'\bshould\b', r'\bshould\s+not\b',
+        r'\bis\s+(?:expected|recommended)\b',
     ]
     
     MAY_KEYWORDS = [
         r'\bmay\b', r'\bcan\b', r'\bis\s+encouraged\b', r'\bis\s+permitted\b',
+        r'\bis\s+optional\b',
+    ]
+    
+    # Special keywords for evaluation factors (Section M)
+    EVALUATION_KEYWORDS = [
+        r'\bwill\s+be\s+evaluat',    # "will be evaluated"
+        r'\bwill\s+be\s+assessed',
+        r'\bwill\s+be\s+rated',
+        r'\bwill\s+be\s+scored',
+        r'\bwill\s+be\s+considered',
+        r'\bevaluation\s+(?:factor|criteria)',
+        r'\brating\s+(?:factor|criteria)',
+        r'\bbasis\s+for\s+(?:award|evaluation)',
+        r'\badjectival\s+rating',
+        r'\bstrength|weakness|deficien',
     ]
     
     # Pattern to find section/attachment references in text
@@ -300,6 +317,13 @@ class SectionAwareExtractor:
         """
         requirements = []
         
+        # Determine if this is an evaluation section
+        is_evaluation_section = (category == RequirementCategory.EVALUATION_FACTOR or 
+                                 parent_section == UCFSection.SECTION_M)
+        
+        # For Section L and M, we want to be more inclusive of informational items
+        include_informational = parent_section in [UCFSection.SECTION_L, UCFSection.SECTION_M]
+        
         # Split into paragraphs (preserve structure)
         paragraphs = self._split_into_paragraphs(text)
         
@@ -311,11 +335,17 @@ class SectionAwareExtractor:
                 continue
             
             # Check for binding language
-            binding_level, binding_keyword = self._detect_binding_level(para)
+            binding_level, binding_keyword = self._detect_binding_level(para, is_evaluation_section)
             
-            # Skip informational paragraphs
+            # Skip purely informational paragraphs UNLESS we're in L or M sections
+            # and the paragraph contains important structural info
             if binding_level == BindingLevel.INFORMATIONAL:
-                continue
+                if not include_informational:
+                    continue
+                # Even for L/M, skip if it's generic text without submission/evaluation language
+                if not re.search(r'(submit|proposal|factor|evaluat|volume|page|format|attachment)', 
+                                para.lower()):
+                    continue
             
             # Skip if it looks like a header or table of contents
             if self._is_header_or_toc(para):
@@ -385,8 +415,13 @@ class SectionAwareExtractor:
         
         return result
     
-    def _detect_binding_level(self, text: str) -> Tuple[BindingLevel, str]:
-        """Detect how binding this requirement is"""
+    def _detect_binding_level(self, text: str, is_evaluation_section: bool = False) -> Tuple[BindingLevel, str]:
+        """
+        Detect how binding this requirement is.
+        
+        For Section M (evaluation), we use different patterns since evaluation
+        criteria rarely use "shall" but are still critical requirements.
+        """
         text_lower = text.lower()
         
         # Check mandatory
@@ -394,6 +429,13 @@ class SectionAwareExtractor:
             match = re.search(pattern, text_lower)
             if match:
                 return BindingLevel.MANDATORY, match.group(0)
+        
+        # For evaluation sections, check evaluation-specific keywords
+        if is_evaluation_section:
+            for pattern in self.EVALUATION_KEYWORDS:
+                match = re.search(pattern, text_lower)
+                if match:
+                    return BindingLevel.MANDATORY, match.group(0)  # Evaluation criteria are mandatory to address
         
         # Check should
         for pattern in self.SHOULD_KEYWORDS:
