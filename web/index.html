@@ -317,6 +317,11 @@
                 return res.json();
             },
             
+            async processRFPBestPractices(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/process-best-practices`, { method: 'POST' });
+                return res.json();
+            },
+            
             async getStatus(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/status`);
                 return res.json();
@@ -378,7 +383,7 @@
             const [rawFiles, setRawFiles] = useState([]);
             const [processing, setProcessing] = useState(false);
             const [processingStatus, setProcessingStatus] = useState({ status: '', progress: 0, message: '' });
-            const [useSemanticMode, setUseSemanticMode] = useState(true); // v2.8: Default to semantic
+            const [extractionMode, setExtractionMode] = useState('best_practices'); // v2.9: Default to best practices
             
             // Requirements State
             const [requirements, setRequirements] = useState([]);
@@ -472,7 +477,9 @@
                     setProcessingStatus({ status: 'processing', progress: 40, message: 'Starting processing...' });
                     
                     // Start processing
-                    if (useSemanticMode) {
+                    if (extractionMode === 'best_practices') {
+                        await api.processRFPBestPractices(rfp.id);
+                    } else if (extractionMode === 'semantic') {
                         await api.processRFPSemantic(rfp.id);
                     } else {
                         await api.processRFP(rfp.id);
@@ -558,7 +565,7 @@
                         </nav>
                         
                         <div className="sidebar-footer">
-                            <p>PropelAI v2.4</p>
+                            <p>PropelAI v2.9</p>
                             {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
                         </div>
                     </aside>
@@ -585,8 +592,8 @@
                                 setRawFiles={setRawFiles}
                                 onProcess={processFiles}
                                 apiConnected={apiConnected}
-                                useSemanticMode={useSemanticMode}
-                                setUseSemanticMode={setUseSemanticMode}
+                                extractionMode={extractionMode}
+                                setExtractionMode={setExtractionMode}
                             />
                         )}
                         
@@ -635,7 +642,7 @@
         }
         
         // Upload View
-        function UploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected, useSemanticMode, setUseSemanticMode }) {
+        function UploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected, extractionMode, setExtractionMode }) {
             const [dragging, setDragging] = useState(false);
             const fileInputRef = useRef(null);
             
@@ -747,29 +754,42 @@
                                 <button className="btn btn-secondary" onClick={clearAll}>
                                     Clear All
                                 </button>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 16, cursor: 'pointer' }}>
-                                    <input 
-                                        type="checkbox" 
-                                        checked={useSemanticMode}
-                                        onChange={(e) => setUseSemanticMode(e.target.checked)}
-                                        style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)' }}
-                                    />
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 16 }}>
                                     <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                                        v2.8 Semantic Extraction
+                                        Extraction Mode:
                                     </span>
-                                    <span 
+                                    <select 
+                                        value={extractionMode}
+                                        onChange={(e) => setExtractionMode(e.target.value)}
                                         style={{ 
-                                            fontSize: 10, 
-                                            background: 'var(--accent-green)', 
-                                            color: 'black', 
-                                            padding: '2px 6px', 
-                                            borderRadius: 4,
-                                            fontWeight: 600
+                                            background: 'var(--bg-secondary)', 
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: 6,
+                                            padding: '6px 12px',
+                                            color: 'var(--text-primary)',
+                                            fontSize: 13,
+                                            cursor: 'pointer'
                                         }}
                                     >
-                                        NEW
-                                    </span>
-                                </label>
+                                        <option value="best_practices">v2.9 Best Practices CTM</option>
+                                        <option value="semantic">v2.8 Semantic</option>
+                                        <option value="legacy">Legacy</option>
+                                    </select>
+                                    {extractionMode === 'best_practices' && (
+                                        <span 
+                                            style={{ 
+                                                fontSize: 10, 
+                                                background: 'var(--accent-green)', 
+                                                color: 'black', 
+                                                padding: '2px 6px', 
+                                                borderRadius: 4,
+                                                fontWeight: 600
+                                            }}
+                                        >
+                                            NEW
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}

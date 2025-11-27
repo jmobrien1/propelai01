@@ -51,6 +51,22 @@ except ImportError:
     SemanticCTMExporter = None
     SemanticExtractionResult = None
 
+# v2.9: Import best practices CTM components
+try:
+    from agents.enhanced_compliance import (
+        BEST_PRACTICES_AVAILABLE,
+        SectionAwareExtractor,
+        BestPracticesCTMExporter,
+        analyze_rfp_structure,
+        extract_requirements_structured,
+    )
+except ImportError:
+    BEST_PRACTICES_AVAILABLE = False
+    SectionAwareExtractor = None
+    BestPracticesCTMExporter = None
+    analyze_rfp_structure = None
+    extract_requirements_structured = None
+
 
 # ============== Configuration ==============
 
@@ -192,13 +208,23 @@ if SEMANTIC_AVAILABLE:
     except Exception as e:
         print(f"Warning: Could not initialize semantic extractor: {e}")
 
+# v2.9: Initialize best practices extractor if available
+best_practices_extractor = None
+best_practices_exporter = None
+if BEST_PRACTICES_AVAILABLE:
+    try:
+        best_practices_extractor = SectionAwareExtractor()
+        best_practices_exporter = BestPracticesCTMExporter()
+    except Exception as e:
+        print(f"Warning: Could not initialize best practices extractor: {e}")
+
 
 # ============== FastAPI App ==============
 
 app = FastAPI(
     title="PropelAI API",
     description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices",
-    version="2.8.0"
+    version="2.9.0"
 )
 
 # CORS - allow all origins for development
@@ -244,13 +270,15 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.8.0",
+        "version": "2.9.0",
         "components": {
             "enhanced_compliance_agent": "ready",
             "amendment_processor": "ready",
             "excel_export": "ready",
             "semantic_extractor": "ready" if semantic_extractor else "not available",
             "semantic_ctm_export": "ready" if semantic_ctm_exporter else "not available",
+            "best_practices_extractor": "ready" if best_practices_extractor else "not available",
+            "best_practices_ctm_export": "ready" if best_practices_exporter else "not available",
         }
     }
 
@@ -707,6 +735,185 @@ async def process_rfp_semantic(rfp_id: str, background_tasks: BackgroundTasks):
     }
 
 
+# ============== v2.9: Best Practices CTM Processing ==============
+
+def process_rfp_best_practices_background(rfp_id: str):
+    """
+    Background task to process RFP with Best Practices CTM extraction (v2.9).
+    
+    Per best practices:
+    - Analyzes document structure BEFORE extraction
+    - Preserves RFP's own numbering (L.4.B.2, C.3.1)
+    - Creates separate L/M/C matrices
+    - Extracts complete paragraphs, not sentence fragments
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        return
+    
+    if not best_practices_extractor:
+        store.set_status(rfp_id, "error", 0, "Best practices extractor not available")
+        store.update(rfp_id, {"status": "error"})
+        return
+    
+    try:
+        import time
+        start_time = time.time()
+        
+        # Update status
+        store.set_status(rfp_id, "processing", 10, "Analyzing document structure...")
+        store.update(rfp_id, {"status": "processing"})
+        
+        # Get file paths
+        file_paths = rfp["file_paths"]
+        if not file_paths:
+            store.set_status(rfp_id, "error", 0, "No files to process")
+            store.update(rfp_id, {"status": "error"})
+            return
+        
+        # Parse documents into text
+        store.set_status(rfp_id, "processing", 20, "Parsing documents...")
+        
+        from agents.enhanced_compliance import MultiFormatParser, DocumentType
+        parser = MultiFormatParser()
+        
+        def infer_doc_type(filename: str) -> DocumentType:
+            """Infer document type from filename"""
+            fname_lower = filename.lower()
+            if 'amendment' in fname_lower:
+                return DocumentType.AMENDMENT
+            elif 'attachment' in fname_lower or 'exhibit' in fname_lower:
+                return DocumentType.ATTACHMENT
+            elif 'sow' in fname_lower or 'statement of work' in fname_lower:
+                return DocumentType.STATEMENT_OF_WORK
+            elif 'pws' in fname_lower or 'performance work statement' in fname_lower:
+                return DocumentType.STATEMENT_OF_WORK
+            elif 'rfp' in fname_lower or 'solicitation' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            else:
+                return DocumentType.ATTACHMENT
+        
+        documents = []
+        for file_path in file_paths:
+            try:
+                import os
+                filename = os.path.basename(file_path)
+                doc_type = infer_doc_type(filename)
+                parsed = parser.parse_file(file_path, doc_type)
+                if parsed:
+                    documents.append({
+                        'text': parsed.full_text,
+                        'filename': parsed.filename,
+                        'pages': parsed.pages if parsed.pages else [parsed.full_text],
+                    })
+            except Exception as e:
+                print(f"Warning: Could not parse {file_path}: {e}")
+        
+        if not documents:
+            store.set_status(rfp_id, "error", 0, "No documents could be parsed")
+            store.update(rfp_id, {"status": "error"})
+            return
+        
+        # Analyze document structure
+        store.set_status(rfp_id, "processing", 40, "Analyzing RFP structure (L/M/C sections)...")
+        structure = analyze_rfp_structure(documents)
+        
+        # Extract requirements with structure awareness
+        store.set_status(rfp_id, "processing", 60, "Extracting requirements by section...")
+        result = best_practices_extractor.extract(documents, structure)
+        
+        store.set_status(rfp_id, "processing", 80, "Building compliance matrices...")
+        
+        # Convert to API format
+        requirements = []
+        for req in result.all_requirements:
+            requirements.append({
+                "id": req.generated_id,
+                "rfp_reference": req.rfp_reference,
+                "text": req.full_text,
+                "category": req.category.value,
+                "section": req.source_section.value,
+                "subsection": req.source_subsection,
+                "binding_level": req.binding_level.value,
+                "binding_keyword": req.binding_keyword,
+                "page": req.page_number,
+                "source_doc": req.source_document,
+                "parent_title": req.parent_title,
+                "cross_references": req.references_to,
+            })
+        
+        # Build stats
+        duration = time.time() - start_time
+        stats = {
+            "total": len(result.all_requirements),
+            "section_l": len(result.section_l_requirements),
+            "technical": len(result.technical_requirements),
+            "evaluation": len(result.evaluation_requirements),
+            "attachment": len(result.attachment_requirements),
+            "by_binding_level": result.stats.get('by_binding_level', {}),
+            "sections_found": result.stats.get('sections_found', []),
+            "sow_location": result.stats.get('sow_location'),
+            "processing_time": duration,
+            "extractor_version": "best_practices_v2.9"
+        }
+        
+        store.set_status(rfp_id, "processing", 95, "Finalizing...")
+        
+        # Store results
+        store.update(rfp_id, {
+            "status": "completed",
+            "requirements": requirements,
+            "best_practices_result": result,  # Keep full result for export
+            "stats": stats,
+            "extraction_mode": "best_practices"
+        })
+        
+        store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
+        store.update(rfp_id, {"status": "error"})
+
+
+@app.post("/api/rfp/{rfp_id}/process-best-practices")
+async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTasks):
+    """
+    Start Best Practices CTM processing of RFP documents (v2.9)
+    
+    Per federal proposal best practices:
+    - Analyzes document structure FIRST (identifies Section L, M, C boundaries)
+    - Preserves RFP's own numbering scheme (L.4.B.2, C.3.1.a)
+    - Creates THREE distinct matrices: L Compliance, Technical (C/PWS), M Alignment
+    - Extracts complete requirement paragraphs (never fragments)
+    - Maintains evaluator-friendly formatting
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+    
+    if not rfp["file_paths"]:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    
+    if not best_practices_extractor:
+        raise HTTPException(
+            status_code=501, 
+            detail="Best practices extraction not available. Use /process-semantic or /process endpoint instead."
+        )
+    
+    # Start background processing
+    store.set_status(rfp_id, "starting", 0, "Starting best practices extraction...")
+    background_tasks.add_task(process_rfp_best_practices_background, rfp_id)
+    
+    return {
+        "status": "processing_started",
+        "rfp_id": rfp_id,
+        "files_count": len(rfp["file_paths"]),
+        "mode": "best_practices"
+    }
+
+
 @app.get("/api/rfp/{rfp_id}/status")
 async def get_processing_status(rfp_id: str):
     """Get processing status"""
@@ -805,9 +1012,19 @@ async def export_rfp(rfp_id: str, format: str = "xlsx"):
     
     output_path = OUTPUT_DIR / f"{rfp_id}_ComplianceMatrix.xlsx"
     
-    # Check if this was semantic extraction
-    if rfp.get("extraction_mode") == "semantic" and rfp.get("semantic_result") and semantic_ctm_exporter:
-        # Use new semantic CTM exporter
+    # Check extraction mode and use appropriate exporter
+    extraction_mode = rfp.get("extraction_mode", "legacy")
+    
+    if extraction_mode == "best_practices" and rfp.get("best_practices_result") and best_practices_exporter:
+        # v2.9: Use Best Practices CTM Exporter
+        best_practices_exporter.export(
+            rfp["best_practices_result"],
+            str(output_path),
+            solicitation_number=rfp.get("solicitation_number", rfp_id),
+            title=rfp.get("name", "RFP Analysis")
+        )
+    elif extraction_mode == "semantic" and rfp.get("semantic_result") and semantic_ctm_exporter:
+        # v2.8: Use semantic CTM exporter
         semantic_ctm_exporter.export(
             rfp["semantic_result"],
             str(output_path),

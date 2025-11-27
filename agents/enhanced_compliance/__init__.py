@@ -110,6 +110,49 @@ except ImportError as e:
     RFPSection = None
     SemanticCTMExporter = None
 
+# v2.9: Best Practices CTM (Document Structure-Aware)
+try:
+    from .document_structure import (
+        RFPStructureParser,
+        DocumentStructure,
+        UCFSection,
+        SectionBoundary,
+        SubsectionBoundary,
+        AttachmentInfo,
+        analyze_rfp_structure,
+    )
+    from .section_aware_extractor import (
+        SectionAwareExtractor,
+        StructuredRequirement,
+        ExtractionResult as StructuredExtractionResult,
+        RequirementCategory,
+        BindingLevel,
+        extract_requirements_structured,
+    )
+    from .best_practices_ctm import (
+        BestPracticesCTMExporter,
+        export_ctm_best_practices,
+    )
+    BEST_PRACTICES_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Best practices CTM not available: {e}")
+    BEST_PRACTICES_AVAILABLE = False
+    RFPStructureParser = None
+    DocumentStructure = None
+    UCFSection = None
+    SectionBoundary = None
+    SubsectionBoundary = None
+    AttachmentInfo = None
+    analyze_rfp_structure = None
+    SectionAwareExtractor = None
+    StructuredRequirement = None
+    StructuredExtractionResult = None
+    RequirementCategory = None
+    BindingLevel = None
+    extract_requirements_structured = None
+    BestPracticesCTMExporter = None
+    export_ctm_best_practices = None
+
 __all__ = [
     # Models
     "DocumentType",
@@ -174,6 +217,24 @@ __all__ = [
     "SemanticRequirementType",
     "RFPSection",
     "SemanticCTMExporter",
+    
+    # v2.9: Best Practices CTM
+    "BEST_PRACTICES_AVAILABLE",
+    "RFPStructureParser",
+    "DocumentStructure",
+    "UCFSection",
+    "SectionBoundary",
+    "SubsectionBoundary",
+    "AttachmentInfo",
+    "analyze_rfp_structure",
+    "SectionAwareExtractor",
+    "StructuredRequirement",
+    "StructuredExtractionResult",
+    "RequirementCategory",
+    "BindingLevel",
+    "extract_requirements_structured",
+    "BestPracticesCTMExporter",
+    "export_ctm_best_practices",
 ]
 
-__version__ = "2.8.0"  # Semantic extraction with LLM classification
+__version__ = "2.9.0"  # Best Practices CTM with document structure analysis
