@@ -84,7 +84,12 @@ class BestPracticesCTMExporter:
         """
         self.include_response_columns = include_response_columns
         
-        if not OPENPYXL_AVAILABLE:
+        # Check for openpyxl at runtime (more reliable than import-time check)
+        try:
+            from openpyxl import Workbook
+            self._openpyxl_available = True
+        except ImportError:
+            self._openpyxl_available = False
             raise ImportError("openpyxl is required for CTM export")
     
     def _get_priority(self, binding_level: BindingLevel) -> str:
