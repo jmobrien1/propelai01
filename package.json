@@ -1,0 +1,8 @@
+{
+  "name": "propelai",
+  "version": "2.11.0",
+  "description": "PropelAI RFP Intelligence",
+  "dependencies": {
+    "docx": "^8.5.0"
+  }
+}
