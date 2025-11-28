@@ -1300,38 +1300,72 @@ async def get_stats(rfp_id: str):
 
 @app.post("/api/rfp/{rfp_id}/outline")
 async def generate_outline(rfp_id: str):
-    """Generate proposal outline from RFP"""
-    from agents.enhanced_compliance import OutlineGenerator
+    """
+    Generate proposal outline from RFP.
+    
+    v2.10: Uses SmartOutlineGenerator which leverages already-extracted
+    compliance matrix data for better accuracy.
+    """
+    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
     
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
-    if not rfp["file_paths"]:
-        raise HTTPException(status_code=400, detail="No files uploaded")
+    # Check if we have compliance matrix data
+    requirements = rfp.get("requirements", [])
+    stats = rfp.get("stats", {})
+    
+    if not requirements:
+        raise HTTPException(
+            status_code=400, 
+            detail="No compliance matrix data. Process RFP first using /process-best-practices"
+        )
     
     try:
-        generator = OutlineGenerator()
+        generator = SmartOutlineGenerator()
         
-        # Process first file (main RFP document)
-        result = generator.process_rfp(rfp["file_paths"][0])
+        # Separate requirements by category
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE" 
+                     or r.get("section", "").upper() == "L"]
+        section_m = [r for r in requirements if r.get("category") == "EVALUATION"
+                     or r.get("section", "").upper() == "M"]
+        technical = [r for r in requirements if r.get("category") == "TECHNICAL"
+                     or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
+        
+        # If section_l is empty, treat section_m as containing submission instructions (GSA/BPA)
+        if not section_l and section_m:
+            section_l = section_m  # GSA/BPA format has instructions in eval section
+        
+        # Generate outline from compliance matrix data
+        outline = generator.generate_from_compliance_matrix(
+            section_l_requirements=section_l,
+            section_m_requirements=section_m,
+            technical_requirements=technical,
+            stats=stats
+        )
+        
+        # Convert to JSON
+        outline_data = generator.to_json(outline)
         
         # Store outline
-        outline_data = generator.generate_json_outline(result)
         store.update(rfp_id, {"outline": outline_data})
         
         return {
             "status": "generated",
             "outline": outline_data
         }
+        
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Outline generation failed: {str(e)}")
 
 
 @app.get("/api/rfp/{rfp_id}/outline")
 async def get_outline(rfp_id: str, format: str = "json"):
     """Get proposal outline"""
-    from agents.enhanced_compliance import OutlineGenerator
+    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
     
     rfp = store.get(rfp_id)
     if not rfp:
@@ -1340,21 +1374,37 @@ async def get_outline(rfp_id: str, format: str = "json"):
     outline = rfp.get("outline")
     
     if not outline:
-        # Generate if not exists
-        if not rfp["file_paths"]:
-            raise HTTPException(status_code=400, detail="No files uploaded")
+        # Generate if not exists - need compliance matrix data
+        requirements = rfp.get("requirements", [])
+        stats = rfp.get("stats", {})
         
-        generator = OutlineGenerator()
-        result = generator.process_rfp(rfp["file_paths"][0])
-        outline = generator.generate_json_outline(result)
+        if not requirements:
+            raise HTTPException(
+                status_code=400, 
+                detail="No compliance matrix data. Process RFP first using /process-best-practices"
+            )
+        
+        generator = SmartOutlineGenerator()
+        
+        # Separate requirements by category
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE" 
+                     or r.get("section", "").upper() == "L"]
+        section_m = [r for r in requirements if r.get("category") == "EVALUATION"
+                     or r.get("section", "").upper() == "M"]
+        technical = [r for r in requirements if r.get("category") == "TECHNICAL"
+                     or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
+        
+        if not section_l and section_m:
+            section_l = section_m
+        
+        outline_obj = generator.generate_from_compliance_matrix(
+            section_l_requirements=section_l,
+            section_m_requirements=section_m,
+            technical_requirements=technical,
+            stats=stats
+        )
+        outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
-    
-    if format == "markdown":
-        # Regenerate markdown from stored data
-        generator = OutlineGenerator()
-        result = generator.process_rfp(rfp["file_paths"][0])
-        markdown = generator.generate_markdown_outline(result)
-        return {"format": "markdown", "content": markdown}
     
     return {"format": "json", "outline": outline}
 
