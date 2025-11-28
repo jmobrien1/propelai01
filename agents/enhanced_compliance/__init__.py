@@ -39,6 +39,21 @@ try:
 except ImportError:
     MultiFormatParser = None
 
+# Core models (DocumentType for RFP processing)
+try:
+    from .models import DocumentType, RequirementType as ModelRequirementType, ParsedDocument as ModelParsedDocument
+    MODELS_AVAILABLE = True
+except ImportError:
+    MODELS_AVAILABLE = False
+    from enum import Enum
+    class DocumentType(Enum):
+        MAIN_SOLICITATION = "main_solicitation"
+        STATEMENT_OF_WORK = "statement_of_work"
+        AMENDMENT = "amendment"
+        ATTACHMENT = "attachment"
+        BUDGET_TEMPLATE = "budget_template"
+        QA_RESPONSE = "qa_response"
+
 # Semantic extractor
 try:
     from .semantic_extractor import SemanticRequirementExtractor
@@ -63,7 +78,7 @@ except ImportError:
 # Company Library
 try:
     from .company_library import (
-        CompanyLibrary, CompanyLibraryParser, DocumentType, ParsedDocument,
+        CompanyLibrary, CompanyLibraryParser, DocumentType as CompanyDocumentType, ParsedDocument as CompanyParsedDocument,
         CompanyProfile, Capability, PastPerformance, KeyPersonnel, Differentiator,
     )
     COMPANY_LIBRARY_AVAILABLE = True
