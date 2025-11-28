@@ -153,6 +153,33 @@ except ImportError as e:
     BestPracticesCTMExporter = None
     export_ctm_best_practices = None
 
+# v2.11: Company Library for proposal enhancement
+try:
+    from .company_library import (
+        CompanyLibrary,
+        CompanyLibraryParser,
+        DocumentType as LibraryDocumentType,
+        ParsedDocument as LibraryParsedDocument,
+        CompanyProfile,
+        Capability,
+        PastPerformance,
+        KeyPersonnel,
+        Differentiator,
+    )
+    COMPANY_LIBRARY_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Company library not available: {e}")
+    COMPANY_LIBRARY_AVAILABLE = False
+    CompanyLibrary = None
+    CompanyLibraryParser = None
+    LibraryDocumentType = None
+    LibraryParsedDocument = None
+    CompanyProfile = None
+    Capability = None
+    PastPerformance = None
+    KeyPersonnel = None
+    Differentiator = None
+
 __all__ = [
     # Models
     "DocumentType",
@@ -235,6 +262,18 @@ __all__ = [
     "extract_requirements_structured",
     "BestPracticesCTMExporter",
     "export_ctm_best_practices",
+    
+    # v2.11: Company Library
+    "COMPANY_LIBRARY_AVAILABLE",
+    "CompanyLibrary",
+    "CompanyLibraryParser",
+    "LibraryDocumentType",
+    "LibraryParsedDocument",
+    "CompanyProfile",
+    "Capability",
+    "PastPerformance",
+    "KeyPersonnel",
+    "Differentiator",
 ]
 
-__version__ = "2.9.0"  # Best Practices CTM with document structure analysis
+__version__ = "2.11.0"  # Company Library for proposal enhancement

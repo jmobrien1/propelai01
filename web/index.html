@@ -557,6 +557,15 @@
                                 <span>Proposal Outline</span>
                             </div>
                             
+                            <div className="nav-label" style={{ marginTop: 24 }}>Company Library</div>
+                            <div 
+                                className={`nav-item ${currentView === 'library' ? 'active' : ''}`}
+                                onClick={() => setCurrentView('library')}
+                            >
+                                <Icon name="Building" />
+                                <span>Library</span>
+                            </div>
+                            
                             <div className="nav-label" style={{ marginTop: 24 }}>Coming Soon</div>
                             <div className="nav-item disabled">
                                 <Icon name="Target" />
@@ -565,7 +574,7 @@
                         </nav>
                         
                         <div className="sidebar-footer">
-                            <p>PropelAI v2.10</p>
+                            <p>PropelAI v2.11</p>
                             {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
                         </div>
                     </aside>
@@ -618,6 +627,10 @@
                         
                         {currentView === 'outline' && stats && (
                             <OutlineView rfpId={currentRfpId} />
+                        )}
+                        
+                        {currentView === 'library' && (
+                            <LibraryView />
                         )}
                     </main>
                     
@@ -1287,6 +1300,274 @@
                             )}
                         </div>
                     </div>
+                </div>
+            );
+        }
+        
+        // Company Library View
+        function LibraryView() {
+            const [library, setLibrary] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [uploading, setUploading] = useState(false);
+            const [activeTab, setActiveTab] = useState('overview');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [searchResults, setSearchResults] = useState([]);
+            const fileInputRef = useRef(null);
+            
+            useEffect(() => {
+                loadLibrary();
+            }, []);
+            
+            const loadLibrary = async () => {
+                try {
+                    const response = await fetch('/api/library');
+                    const data = await response.json();
+                    setLibrary(data);
+                } catch (error) {
+                    console.error('Error loading library:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                setUploading(true);
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    const response = await fetch('/api/library/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        loadLibrary();
+                    }
+                } catch (error) {
+                    console.error('Error uploading:', error);
+                } finally {
+                    setUploading(false);
+                    fileInputRef.current.value = '';
+                }
+            };
+            
+            const handleSearch = async () => {
+                if (!searchQuery.trim()) return;
+                
+                try {
+                    const response = await fetch(`/api/library/search?query=${encodeURIComponent(searchQuery)}`);
+                    const data = await response.json();
+                    setSearchResults(data.results || []);
+                } catch (error) {
+                    console.error('Error searching:', error);
+                }
+            };
+            
+            const deleteDocument = async (docId) => {
+                if (!confirm('Remove this document from library?')) return;
+                
+                try {
+                    await fetch(`/api/library/documents/${docId}`, { method: 'DELETE' });
+                    loadLibrary();
+                } catch (error) {
+                    console.error('Error deleting:', error);
+                }
+            };
+            
+            if (loading) {
+                return (
+                    <div style={{ padding: 40, textAlign: 'center' }}>
+                        <div className="spinner"></div>
+                        <p style={{ marginTop: 16 }}>Loading library...</p>
+                    </div>
+                );
+            }
+            
+            return (
+                <div>
+                    <div className="view-header">
+                        <div>
+                            <h1>Company Library</h1>
+                            <p className="text-muted">Upload capabilities statements, past performance, and resumes for enhanced proposal generation</p>
+                        </div>
+                        <div>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleFileUpload}
+                                accept=".docx,.doc,.pdf,.txt,.md"
+                                style={{ display: 'none' }}
+                            />
+                            <button 
+                                className="btn btn-primary"
+                                onClick={() => fileInputRef.current.click()}
+                                disabled={uploading}
+                            >
+                                {uploading ? 'Uploading...' : '+ Upload Document'}
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Stats Cards */}
+                    <div className="stats-grid" style={{ marginBottom: 24 }}>
+                        <div className="stat-card">
+                            <div className="stat-label">Documents</div>
+                            <div className="stat-value">{library?.document_count || 0}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-label">Capabilities</div>
+                            <div className="stat-value">{library?.profile_summary?.capabilities_count || 0}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-label">Differentiators</div>
+                            <div className="stat-value">{library?.profile_summary?.differentiators_count || 0}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-label">Past Performance</div>
+                            <div className="stat-value">{library?.profile_summary?.past_performance_count || 0}</div>
+                        </div>
+                    </div>
+                    
+                    {/* Tabs */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 8 }}>
+                        {['overview', 'documents', 'search'].map(tab => (
+                            <button
+                                key={tab}
+                                className={`btn ${activeTab === tab ? 'btn-primary' : ''}`}
+                                onClick={() => setActiveTab(tab)}
+                                style={{ textTransform: 'capitalize' }}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    {activeTab === 'overview' && (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">
+                                    {library?.profile_summary?.company_name || 'Company Profile'}
+                                </h3>
+                            </div>
+                            
+                            {library?.document_count === 0 ? (
+                                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    <Icon name="Building" style={{ width: 48, height: 48, marginBottom: 16, opacity: 0.5 }} />
+                                    <p>No documents in library yet</p>
+                                    <p style={{ fontSize: 13, marginTop: 8 }}>Upload a capabilities statement to get started</p>
+                                </div>
+                            ) : (
+                                <div style={{ padding: 16 }}>
+                                    <p style={{ marginBottom: 16 }}>
+                                        Your library contains <strong>{library?.profile_summary?.capabilities_count || 0}</strong> capabilities, 
+                                        <strong> {library?.profile_summary?.differentiators_count || 0}</strong> differentiators, and 
+                                        <strong> {library?.profile_summary?.past_performance_count || 0}</strong> past performance records.
+                                    </p>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                                        This content will be used to enhance your proposal drafts with relevant company information.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    
+                    {activeTab === 'documents' && (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Uploaded Documents</h3>
+                            </div>
+                            
+                            {library?.documents?.length === 0 ? (
+                                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    No documents uploaded yet
+                                </div>
+                            ) : (
+                                library?.documents?.map(doc => (
+                                    <div key={doc.id} style={{ 
+                                        padding: 16, 
+                                        borderBottom: '1px solid var(--border-color)',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <div>
+                                            <div style={{ fontWeight: 500 }}>{doc.title}</div>
+                                            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                                                <span className={`badge badge-${doc.type === 'capabilities' ? 'blue' : doc.type === 'resume' ? 'green' : 'purple'}`}>
+                                                    {doc.type}
+                                                </span>
+                                                <span style={{ marginLeft: 8 }}>{doc.filename}</span>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            className="btn"
+                                            onClick={() => deleteDocument(doc.id)}
+                                            style={{ color: 'var(--accent-red)' }}
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+                    
+                    {activeTab === 'search' && (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Search Library</h3>
+                            </div>
+                            <div style={{ padding: 16 }}>
+                                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Search capabilities, differentiators, past performance..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                                        style={{ flex: 1 }}
+                                    />
+                                    <button className="btn btn-primary" onClick={handleSearch}>
+                                        Search
+                                    </button>
+                                </div>
+                                
+                                {searchResults.length > 0 && (
+                                    <div>
+                                        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                            Found {searchResults.length} results
+                                        </div>
+                                        {searchResults.map((result, idx) => (
+                                            <div key={idx} style={{ 
+                                                padding: 12, 
+                                                background: 'var(--bg-tertiary)', 
+                                                borderRadius: 8,
+                                                marginBottom: 8
+                                            }}>
+                                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                                                    <span className={`badge badge-${result.type === 'capability' ? 'blue' : result.type === 'differentiator' ? 'purple' : 'green'}`}>
+                                                        {result.type}
+                                                    </span>
+                                                    <span style={{ fontWeight: 500 }}>
+                                                        {result.content.name || result.content.title || result.content.project_name}
+                                                    </span>
+                                                </div>
+                                                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                                    {result.content.description?.slice(0, 200) || ''}
+                                                    {result.content.description?.length > 200 ? '...' : ''}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }

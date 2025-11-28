@@ -1409,6 +1409,200 @@ async def get_outline(rfp_id: str, format: str = "json"):
     return {"format": "json", "outline": outline}
 
 
+# ============== Company Library API ==============
+
+# Import company library components
+try:
+    from agents.enhanced_compliance.company_library import (
+        CompanyLibrary,
+        CompanyLibraryParser,
+        DocumentType,
+    )
+    COMPANY_LIBRARY_AVAILABLE = True
+except ImportError:
+    COMPANY_LIBRARY_AVAILABLE = False
+
+# Initialize company library
+if COMPANY_LIBRARY_AVAILABLE:
+    company_library = CompanyLibrary(str(OUTPUT_DIR / "company_library"))
+else:
+    company_library = None
+
+
+@app.get("/api/library")
+async def get_library_status():
+    """Get company library status and summary"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        return {"available": False, "error": "Company library not available"}
+    
+    documents = company_library.list_documents()
+    profile = company_library.get_profile()
+    
+    return {
+        "available": True,
+        "document_count": len(documents),
+        "documents": documents,
+        "profile_summary": {
+            "company_name": profile.get("company_name", ""),
+            "capabilities_count": len(profile.get("capabilities", [])),
+            "differentiators_count": len(profile.get("differentiators", [])),
+            "past_performance_count": len(profile.get("past_performance", [])),
+            "key_personnel_count": len(profile.get("key_personnel", [])),
+        }
+    }
+
+
+@app.get("/api/library/profile")
+async def get_company_profile():
+    """Get full company profile aggregated from all documents"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    return company_library.get_profile()
+
+
+@app.post("/api/library/upload")
+async def upload_library_document(
+    file: UploadFile = File(...),
+    document_type: Optional[str] = Form(None)
+):
+    """
+    Upload a document to the company library
+    
+    Supported types: capabilities, past_performance, resume, technical_approach, corporate_info
+    """
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    # Validate file type
+    allowed_extensions = [".docx", ".doc", ".pdf", ".txt", ".md", ".rtf"]
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
+        )
+    
+    # Save uploaded file temporarily
+    temp_path = UPLOAD_DIR / f"lib_{uuid.uuid4().hex[:8]}_{file.filename}"
+    try:
+        with open(temp_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        # Parse document type
+        doc_type = None
+        if document_type:
+            try:
+                doc_type = DocumentType(document_type)
+            except ValueError:
+                pass  # Let parser auto-detect
+        
+        # Add to library
+        parsed_doc = company_library.add_document(str(temp_path), doc_type)
+        
+        return {
+            "success": True,
+            "document": parsed_doc.to_dict(),
+            "message": f"Document '{file.filename}' added to library as {parsed_doc.document_type.value}"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
+    finally:
+        # Cleanup temp file
+        if temp_path.exists():
+            os.remove(temp_path)
+
+
+@app.get("/api/library/documents")
+async def list_library_documents():
+    """List all documents in the company library"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    return {"documents": company_library.list_documents()}
+
+
+@app.get("/api/library/documents/{doc_id}")
+async def get_library_document(doc_id: str):
+    """Get details of a specific document"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    doc = company_library.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    return doc.to_dict()
+
+
+@app.delete("/api/library/documents/{doc_id}")
+async def delete_library_document(doc_id: str):
+    """Remove a document from the library"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    if company_library.remove_document(doc_id):
+        return {"success": True, "message": f"Document {doc_id} removed"}
+    else:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+
+@app.get("/api/library/search")
+async def search_library(query: str):
+    """
+    Search the company library for relevant content
+    
+    Returns matching capabilities, past performance, key personnel, etc.
+    """
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    results = company_library.search(query)
+    return {"query": query, "results": results}
+
+
+@app.get("/api/library/capabilities")
+async def get_capabilities():
+    """Get all extracted capabilities"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    profile = company_library.get_profile()
+    return {"capabilities": profile.get("capabilities", [])}
+
+
+@app.get("/api/library/differentiators")
+async def get_differentiators():
+    """Get all extracted differentiators"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    profile = company_library.get_profile()
+    return {"differentiators": profile.get("differentiators", [])}
+
+
+@app.get("/api/library/past-performance")
+async def get_past_performance():
+    """Get all extracted past performance records"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    profile = company_library.get_profile()
+    return {"past_performance": profile.get("past_performance", [])}
+
+
+@app.get("/api/library/key-personnel")
+async def get_key_personnel():
+    """Get all extracted key personnel"""
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+    
+    profile = company_library.get_profile()
+    return {"key_personnel": profile.get("key_personnel", [])}
+
+
 # ============== Main Entry ==============
 
 if __name__ == "__main__":
