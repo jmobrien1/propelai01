@@ -23,14 +23,8 @@ import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-try:
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Fill, PatternFill, Alignment, Border, Side
-    from openpyxl.utils.dataframe import dataframe_to_rows
-    from openpyxl.worksheet.datavalidation import DataValidation
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
+# openpyxl imports moved to __init__ to handle installation timing issues
+OPENPYXL_AVAILABLE = False
 
 from .section_aware_extractor import (
     StructuredRequirement,
@@ -84,12 +78,14 @@ class BestPracticesCTMExporter:
         """
         self.include_response_columns = include_response_columns
         
-        # Check for openpyxl at runtime (more reliable than import-time check)
+        # Import openpyxl at runtime and make classes available globally in module
         try:
+            global Workbook, Font, Fill, PatternFill, Alignment, Border, Side, DataValidation, OPENPYXL_AVAILABLE
             from openpyxl import Workbook
-            self._openpyxl_available = True
+            from openpyxl.styles import Font, Fill, PatternFill, Alignment, Border, Side
+            from openpyxl.worksheet.datavalidation import DataValidation
+            OPENPYXL_AVAILABLE = True
         except ImportError:
-            self._openpyxl_available = False
             raise ImportError("openpyxl is required for CTM export")
     
     def _get_priority(self, binding_level: BindingLevel) -> str:
@@ -144,7 +140,7 @@ class BestPracticesCTMExporter:
         wb.save(output_path)
         return output_path
     
-    def _create_cover_sheet(self, wb: Workbook, result: ExtractionResult, 
+    def _create_cover_sheet(self, wb: "Workbook", result: ExtractionResult, 
                             solicitation_number: str, title: str):
         """Create summary cover sheet"""
         ws = wb.create_sheet("Cover Sheet", 0)
@@ -222,7 +218,7 @@ class BestPracticesCTMExporter:
         ws.column_dimensions['A'].width = 35
         ws.column_dimensions['B'].width = 50
     
-    def _create_section_l_matrix(self, wb: Workbook, requirements: List[StructuredRequirement]):
+    def _create_section_l_matrix(self, wb: "Workbook", requirements: List[StructuredRequirement]):
         """
         Create Section L Compliance Matrix.
         
@@ -312,7 +308,7 @@ class BestPracticesCTMExporter:
             status_dv.add(f"G2:G{len(requirements) + 1}")
             ws.add_data_validation(status_dv)
     
-    def _create_technical_matrix(self, wb: Workbook, requirements: List[StructuredRequirement]):
+    def _create_technical_matrix(self, wb: "Workbook", requirements: List[StructuredRequirement]):
         """
         Create Technical Requirements Compliance Matrix (C/PWS/SOW).
         
@@ -404,7 +400,7 @@ class BestPracticesCTMExporter:
             status_dv.add(f"H2:H{len(requirements) + 1}")
             ws.add_data_validation(status_dv)
     
-    def _create_section_m_matrix(self, wb: Workbook, requirements: List[StructuredRequirement]):
+    def _create_section_m_matrix(self, wb: "Workbook", requirements: List[StructuredRequirement]):
         """
         Create Section M Alignment Matrix.
         
@@ -469,7 +465,7 @@ class BestPracticesCTMExporter:
         
         ws.freeze_panes = 'A2'
     
-    def _create_all_requirements_sheet(self, wb: Workbook, requirements: List[StructuredRequirement]):
+    def _create_all_requirements_sheet(self, wb: "Workbook", requirements: List[StructuredRequirement]):
         """Create sheet with all requirements for reference"""
         ws = wb.create_sheet("All Requirements")
         
@@ -528,7 +524,7 @@ class BestPracticesCTMExporter:
         
         ws.freeze_panes = 'A2'
     
-    def _create_cross_reference_sheet(self, wb: Workbook, result: ExtractionResult):
+    def _create_cross_reference_sheet(self, wb: "Workbook", result: ExtractionResult):
         """Create cross-reference matrix showing L→M→C linkages"""
         ws = wb.create_sheet("Cross-References")
         
