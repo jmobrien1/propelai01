@@ -1,279 +1,138 @@
 """
-PropelAI Cycle 5: Enhanced Compliance Agent Module
+PropelAI Enhanced Compliance Module v3.0
 
-Multi-document, graph-based compliance extraction for federal RFPs.
+This module provides enhanced compliance matrix generation with support for:
+- Multi-format RFP detection (NIH Factor, GSA BPA, State RFP, DOD UCF)
+- Enhanced requirement metadata (scoring type, response format, points)
+- Smart proposal outline generation
+- Company library integration
 
-Components:
-- BundleDetector: Auto-classify RFP document bundles
-- MultiFormatParser: Parse PDF/DOCX/XLSX with section detection
-- RequirementExtractor: Multi-pattern extraction with semantic classification
-- CrossReferenceResolver: Build requirements graph with cross-document edges
-- EnhancedComplianceAgent: Main agent orchestrating all components
-- ExcelExporter: Export compliance matrix to Excel
-- AmendmentProcessor: Track requirement changes across amendments
-
-Usage:
-    from agents.enhanced_compliance import EnhancedComplianceAgent, export_to_excel
-    
-    agent = EnhancedComplianceAgent()
-    result = agent.process_files(["/path/to/rfp.pdf", "/path/to/attachments.pdf"])
-    
-    print(f"Extracted {len(result.requirements_graph)} requirements")
-    print(f"Coverage estimate: {result.extraction_coverage * 100:.1f}%")
-    
-    # Export to Excel
-    export_to_excel(result, "compliance_matrix.xlsx", "75N96025R00004", "NIH NIEHS Contract")
-    
-    # Process amendments
-    from agents.enhanced_compliance import AmendmentProcessor
-    
-    processor = AmendmentProcessor()
-    processor.load_base_requirements(result.requirements_graph)
-    amendment_result = processor.process_amendment("/path/to/amendment.pdf", amendment_number=2)
-    print(processor.generate_change_report())
+Version: 3.0.0
+Date: November 28, 2025
 """
 
-from .models import (
-    DocumentType,
+__version__ = "3.0.0"
+__author__ = "PropelAI Team"
+
+# =============================================================================
+# Core Data Models (v3.0)
+# =============================================================================
+from .ctm_data_models import (
+    ScoringType,
+    ResponseFormat,
     RequirementType,
-    RequirementStatus,
-    ConfidenceLevel,
-    SourceLocation,
-    RequirementNode,
-    RFPBundle,
-    ParsedDocument,
-    ComplianceMatrixRow,
-    ExtractionResult,
+    RFPSection,
+    ComplianceStatus,
+    PageLimit,
+    FormattingRequirement,
+    EvidenceRequirement,
+    KeyPersonnelRequirement,
+    EnhancedRequirement,
+    ComplianceMatrix,
+    create_pass_fail_requirement,
+    create_weighted_requirement,
+    create_future_diligence_requirement,
 )
 
-from .bundle_detector import BundleDetector
-from .parser import MultiFormatParser
-from .extractor import RequirementExtractor
-from .resolver import CrossReferenceResolver
-from .agent import EnhancedComplianceAgent, create_enhanced_compliance_agent
-from .amendment_processor import (
-    AmendmentProcessor, 
-    AmendmentResult, 
-    AmendmentType,
-    ChangeType,
-    QAPair,
-    Modification,
-    RequirementChange
+# =============================================================================
+# Enhanced Extractor (v3.0)
+# =============================================================================
+from .ctm_extractor import (
+    EnhancedCTMExtractor,
+    ScoringPatterns,
+    ResponseFormatPatterns,
+    PageLimitPatterns,
+    FormattingPatterns,
+    FutureDiligencePatterns,
+    KeyPersonnelPatterns,
+    ConstraintPatterns,
+    process_requirements_batch,
 )
 
-from .outline_generator import (
-    OutlineGenerator,
-    OutlineResult,
-    ProposalVolume,
-    ProposalSection,
-    EvaluationFactor,
-    FormatRequirement,
-    SubmissionRequirement,
-    VolumeType,
-    parse_rfp_outline,
-    parse_rfp_outline_from_text
+# =============================================================================
+# Integration Module (v3.0)
+# =============================================================================
+from .ctm_integration import (
+    LegacyRequirementAdapter,
+    CTMEnricher,
+    format_ctm_for_api,
+    format_requirement_for_outline,
+    get_content_allocation_guidance,
 )
+
+# =============================================================================
+# Optional: Existing modules (with graceful fallback)
+# =============================================================================
 
 try:
-    from .excel_export import ExcelExporter, export_to_excel
-    from .excel_parser import ExcelMatrixParser, parse_excel_matrix, MatrixParseResult, ColumnType
-    EXCEL_AVAILABLE = True
+    from .smart_outline_generator import (
+        SmartOutlineGenerator, ProposalOutline, ProposalVolume, ProposalSection,
+    )
+    OUTLINE_GENERATOR_AVAILABLE = True
 except ImportError:
-    EXCEL_AVAILABLE = False
-    ExcelExporter = None
-    export_to_excel = None
-    ExcelMatrixParser = None
-    parse_excel_matrix = None
-    MatrixParseResult = None
-    ColumnType = None
+    OUTLINE_GENERATOR_AVAILABLE = False
+    SmartOutlineGenerator = ProposalOutline = ProposalVolume = ProposalSection = None
 
-# v2.8: Semantic Extraction
-try:
-    from .semantic_extractor import (
-        SemanticRequirementExtractor,
-        LLMEnhancedExtractor,
-        ExtractedRequirement,
-        ExtractionResult as SemanticExtractionResult,
-        SemanticRequirementType,
-        RFPSection,
-    )
-    from .semantic_ctm_export import SemanticCTMExporter
-    SEMANTIC_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Semantic extractor not available: {e}")
-    SEMANTIC_AVAILABLE = False
-    SemanticRequirementExtractor = None
-    LLMEnhancedExtractor = None
-    ExtractedRequirement = None
-    SemanticExtractionResult = None
-    SemanticRequirementType = None
-    RFPSection = None
-    SemanticCTMExporter = None
-
-# v2.9: Best Practices CTM (Document Structure-Aware)
-try:
-    from .document_structure import (
-        RFPStructureParser,
-        DocumentStructure,
-        UCFSection,
-        SectionBoundary,
-        SubsectionBoundary,
-        AttachmentInfo,
-        analyze_rfp_structure,
-    )
-    from .section_aware_extractor import (
-        SectionAwareExtractor,
-        StructuredRequirement,
-        ExtractionResult as StructuredExtractionResult,
-        RequirementCategory,
-        BindingLevel,
-        extract_requirements_structured,
-    )
-    from .best_practices_ctm import (
-        BestPracticesCTMExporter,
-        export_ctm_best_practices,
-    )
-    BEST_PRACTICES_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Best practices CTM not available: {e}")
-    BEST_PRACTICES_AVAILABLE = False
-    RFPStructureParser = None
-    DocumentStructure = None
-    UCFSection = None
-    SectionBoundary = None
-    SubsectionBoundary = None
-    AttachmentInfo = None
-    analyze_rfp_structure = None
-    SectionAwareExtractor = None
-    StructuredRequirement = None
-    StructuredExtractionResult = None
-    RequirementCategory = None
-    BindingLevel = None
-    extract_requirements_structured = None
-    BestPracticesCTMExporter = None
-    export_ctm_best_practices = None
-
-# v2.11: Company Library for proposal enhancement
 try:
     from .company_library import (
-        CompanyLibrary,
-        CompanyLibraryParser,
-        DocumentType as LibraryDocumentType,
-        ParsedDocument as LibraryParsedDocument,
-        CompanyProfile,
-        Capability,
-        PastPerformance,
-        KeyPersonnel,
-        Differentiator,
+        CompanyLibrary, CompanyLibraryParser, DocumentType, ParsedDocument,
+        CompanyProfile, Capability, PastPerformance, KeyPersonnel, Differentiator,
     )
     COMPANY_LIBRARY_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Company library not available: {e}")
+except ImportError:
     COMPANY_LIBRARY_AVAILABLE = False
-    CompanyLibrary = None
-    CompanyLibraryParser = None
-    LibraryDocumentType = None
-    LibraryParsedDocument = None
-    CompanyProfile = None
-    Capability = None
-    PastPerformance = None
-    KeyPersonnel = None
-    Differentiator = None
+    CompanyLibrary = CompanyLibraryParser = DocumentType = ParsedDocument = None
+    CompanyProfile = Capability = PastPerformance = KeyPersonnel = Differentiator = None
+
+try:
+    from .best_practices_ctm import (
+        BestPracticesCTMGenerator, BestPracticesCTMExporter, export_ctm_best_practices,
+    )
+    BEST_PRACTICES_AVAILABLE = True
+except ImportError:
+    BEST_PRACTICES_AVAILABLE = False
+    BestPracticesCTMGenerator = BestPracticesCTMExporter = export_ctm_best_practices = None
+
+try:
+    from .section_aware_extractor import (
+        SectionAwareExtractor, StructuredRequirement, StructuredExtractionResult,
+        RequirementCategory, BindingLevel, extract_requirements_structured,
+    )
+    SECTION_EXTRACTOR_AVAILABLE = True
+except ImportError:
+    SECTION_EXTRACTOR_AVAILABLE = False
+    SectionAwareExtractor = StructuredRequirement = StructuredExtractionResult = None
+    RequirementCategory = BindingLevel = extract_requirements_structured = None
+
+try:
+    from .document_structure import (
+        RFPStructureParser, DocumentStructure, UCFSection,
+        SectionBoundary, SubsectionBoundary, AttachmentInfo, analyze_rfp_structure,
+    )
+    DOCUMENT_STRUCTURE_AVAILABLE = True
+except ImportError:
+    DOCUMENT_STRUCTURE_AVAILABLE = False
+    RFPStructureParser = DocumentStructure = UCFSection = None
+    SectionBoundary = SubsectionBoundary = AttachmentInfo = analyze_rfp_structure = None
 
 __all__ = [
-    # Models
-    "DocumentType",
-    "RequirementType", 
-    "RequirementStatus",
-    "ConfidenceLevel",
-    "SourceLocation",
-    "RequirementNode",
-    "RFPBundle",
-    "ParsedDocument",
-    "ComplianceMatrixRow",
-    "ExtractionResult",
-    
-    # Components
-    "BundleDetector",
-    "MultiFormatParser",
-    "RequirementExtractor",
-    "CrossReferenceResolver",
-    
-    # Main Agent
-    "EnhancedComplianceAgent",
-    "create_enhanced_compliance_agent",
-    
-    # Excel Export
-    "ExcelExporter",
-    "export_to_excel",
-    "EXCEL_AVAILABLE",
-    
-    # Excel Parser
-    "ExcelMatrixParser",
-    "parse_excel_matrix",
-    "MatrixParseResult",
-    "ColumnType",
-    
-    # Amendment Processing
-    "AmendmentProcessor",
-    "AmendmentResult",
-    "AmendmentType",
-    "ChangeType",
-    "QAPair",
-    "Modification",
-    "RequirementChange",
-    
-    # Outline Generator
-    "OutlineGenerator",
-    "OutlineResult",
-    "ProposalVolume",
-    "ProposalSection",
-    "EvaluationFactor",
-    "FormatRequirement",
-    "SubmissionRequirement",
-    "VolumeType",
-    "parse_rfp_outline",
-    "parse_rfp_outline_from_text",
-    
-    # v2.8: Semantic Extraction
-    "SEMANTIC_AVAILABLE",
-    "SemanticRequirementExtractor",
-    "LLMEnhancedExtractor",
-    "ExtractedRequirement",
-    "SemanticExtractionResult",
-    "SemanticRequirementType",
-    "RFPSection",
-    "SemanticCTMExporter",
-    
-    # v2.9: Best Practices CTM
-    "BEST_PRACTICES_AVAILABLE",
-    "RFPStructureParser",
-    "DocumentStructure",
-    "UCFSection",
-    "SectionBoundary",
-    "SubsectionBoundary",
-    "AttachmentInfo",
-    "analyze_rfp_structure",
-    "SectionAwareExtractor",
-    "StructuredRequirement",
-    "StructuredExtractionResult",
-    "RequirementCategory",
-    "BindingLevel",
-    "extract_requirements_structured",
-    "BestPracticesCTMExporter",
-    "export_ctm_best_practices",
-    
-    # v2.11: Company Library
-    "COMPANY_LIBRARY_AVAILABLE",
-    "CompanyLibrary",
-    "CompanyLibraryParser",
-    "LibraryDocumentType",
-    "LibraryParsedDocument",
-    "CompanyProfile",
-    "Capability",
-    "PastPerformance",
-    "KeyPersonnel",
-    "Differentiator",
+    "__version__", "ScoringType", "ResponseFormat", "RequirementType", "RFPSection",
+    "ComplianceStatus", "PageLimit", "FormattingRequirement", "EvidenceRequirement",
+    "KeyPersonnelRequirement", "EnhancedRequirement", "ComplianceMatrix",
+    "create_pass_fail_requirement", "create_weighted_requirement", "create_future_diligence_requirement",
+    "EnhancedCTMExtractor", "process_requirements_batch",
+    "ScoringPatterns", "ResponseFormatPatterns", "PageLimitPatterns", "FormattingPatterns",
+    "FutureDiligencePatterns", "KeyPersonnelPatterns", "ConstraintPatterns",
+    "LegacyRequirementAdapter", "CTMEnricher", "format_ctm_for_api",
+    "format_requirement_for_outline", "get_content_allocation_guidance",
+    "SmartOutlineGenerator", "ProposalOutline", "ProposalVolume", "ProposalSection",
+    "CompanyLibrary", "CompanyLibraryParser", "DocumentType", "ParsedDocument",
+    "CompanyProfile", "Capability", "PastPerformance", "KeyPersonnel", "Differentiator",
+    "BestPracticesCTMGenerator", "BestPracticesCTMExporter", "export_ctm_best_practices",
+    "SectionAwareExtractor", "StructuredRequirement", "StructuredExtractionResult",
+    "RequirementCategory", "BindingLevel", "extract_requirements_structured",
+    "RFPStructureParser", "DocumentStructure", "UCFSection", "SectionBoundary",
+    "SubsectionBoundary", "AttachmentInfo", "analyze_rfp_structure",
+    "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE", "BEST_PRACTICES_AVAILABLE",
+    "SECTION_EXTRACTOR_AVAILABLE", "DOCUMENT_STRUCTURE_AVAILABLE",
 ]
-
-__version__ = "2.11.0"  # Company Library for proposal enhancement
