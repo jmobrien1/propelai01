@@ -101,13 +101,13 @@ except ImportError:
 # Best Practices CTM (depends on section_aware_extractor)
 try:
     from .best_practices_ctm import (
-        BestPracticesCTMGenerator, BestPracticesCTMExporter, export_ctm_best_practices,
+        BestPracticesCTMExporter, export_ctm_best_practices,
     )
     BEST_PRACTICES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Best Practices CTM not available: {e}")
     BEST_PRACTICES_AVAILABLE = False
-    BestPracticesCTMGenerator = BestPracticesCTMExporter = export_ctm_best_practices = None
+    BestPracticesCTMExporter = export_ctm_best_practices = None
 
 __all__ = [
     "__version__",
@@ -138,7 +138,7 @@ __all__ = [
     "RequirementCategory", "BindingLevel", "extract_requirements_structured",
     "ExtractionResult", "SECTION_EXTRACTOR_AVAILABLE",
     # Best Practices CTM
-    "BestPracticesCTMGenerator", "BestPracticesCTMExporter", "export_ctm_best_practices",
+    "BestPracticesCTMExporter", "export_ctm_best_practices",
     "BEST_PRACTICES_AVAILABLE",
     # Availability flags
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
