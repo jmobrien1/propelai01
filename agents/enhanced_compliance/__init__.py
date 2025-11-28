@@ -1,14 +1,5 @@
 """
 PropelAI Enhanced Compliance Module v3.0
-
-This module provides enhanced compliance matrix generation with support for:
-- Multi-format RFP detection (NIH Factor, GSA BPA, State RFP, DOD UCF)
-- Enhanced requirement metadata (scoring type, response format, points)
-- Smart proposal outline generation
-- Company library integration
-
-Version: 3.0.0
-Date: November 28, 2025
 """
 
 __version__ = "3.0.0"
@@ -18,52 +9,52 @@ __author__ = "PropelAI Team"
 # Core Data Models (v3.0)
 # =============================================================================
 from .ctm_data_models import (
-    ScoringType,
-    ResponseFormat,
-    RequirementType,
-    RFPSection,
-    ComplianceStatus,
-    PageLimit,
-    FormattingRequirement,
-    EvidenceRequirement,
-    KeyPersonnelRequirement,
-    EnhancedRequirement,
-    ComplianceMatrix,
-    create_pass_fail_requirement,
-    create_weighted_requirement,
-    create_future_diligence_requirement,
+    ScoringType, ResponseFormat, RequirementType, RFPSection, ComplianceStatus,
+    PageLimit, FormattingRequirement, EvidenceRequirement, KeyPersonnelRequirement,
+    EnhancedRequirement, ComplianceMatrix,
+    create_pass_fail_requirement, create_weighted_requirement, create_future_diligence_requirement,
 )
 
-# =============================================================================
-# Enhanced Extractor (v3.0)
-# =============================================================================
 from .ctm_extractor import (
-    EnhancedCTMExtractor,
-    ScoringPatterns,
-    ResponseFormatPatterns,
-    PageLimitPatterns,
-    FormattingPatterns,
-    FutureDiligencePatterns,
-    KeyPersonnelPatterns,
-    ConstraintPatterns,
+    EnhancedCTMExtractor, ScoringPatterns, ResponseFormatPatterns, PageLimitPatterns,
+    FormattingPatterns, FutureDiligencePatterns, KeyPersonnelPatterns, ConstraintPatterns,
     process_requirements_batch,
 )
 
-# =============================================================================
-# Integration Module (v3.0)
-# =============================================================================
 from .ctm_integration import (
-    LegacyRequirementAdapter,
-    CTMEnricher,
-    format_ctm_for_api,
-    format_requirement_for_outline,
-    get_content_allocation_guidance,
+    LegacyRequirementAdapter, CTMEnricher, format_ctm_for_api,
+    format_requirement_for_outline, get_content_allocation_guidance,
 )
 
 # =============================================================================
-# Optional: Existing modules (with graceful fallback)
+# Legacy imports required by api/main.py
 # =============================================================================
+try:
+    from .enhanced_compliance_agent import EnhancedComplianceAgent, AmendmentProcessor, export_to_excel
+except ImportError:
+    EnhancedComplianceAgent = None
+    AmendmentProcessor = None
+    export_to_excel = None
 
+try:
+    from .multi_format_parser import MultiFormatParser, DocumentType as ParserDocumentType
+except ImportError:
+    MultiFormatParser = None
+    ParserDocumentType = None
+
+# Semantic extractor
+try:
+    from .semantic_extractor import (
+        SemanticRequirementExtractor, SemanticCTMExporter, SemanticExtractionResult,
+    )
+    SEMANTIC_AVAILABLE = True
+except ImportError:
+    SEMANTIC_AVAILABLE = False
+    SemanticRequirementExtractor = None
+    SemanticCTMExporter = None
+    SemanticExtractionResult = None
+
+# Smart Outline Generator
 try:
     from .smart_outline_generator import (
         SmartOutlineGenerator, ProposalOutline, ProposalVolume, ProposalSection,
@@ -73,6 +64,7 @@ except ImportError:
     OUTLINE_GENERATOR_AVAILABLE = False
     SmartOutlineGenerator = ProposalOutline = ProposalVolume = ProposalSection = None
 
+# Company Library
 try:
     from .company_library import (
         CompanyLibrary, CompanyLibraryParser, DocumentType, ParsedDocument,
@@ -84,6 +76,7 @@ except ImportError:
     CompanyLibrary = CompanyLibraryParser = DocumentType = ParsedDocument = None
     CompanyProfile = Capability = PastPerformance = KeyPersonnel = Differentiator = None
 
+# Best Practices CTM
 try:
     from .best_practices_ctm import (
         BestPracticesCTMGenerator, BestPracticesCTMExporter, export_ctm_best_practices,
@@ -93,6 +86,7 @@ except ImportError:
     BEST_PRACTICES_AVAILABLE = False
     BestPracticesCTMGenerator = BestPracticesCTMExporter = export_ctm_best_practices = None
 
+# Section Aware Extractor
 try:
     from .section_aware_extractor import (
         SectionAwareExtractor, StructuredRequirement, StructuredExtractionResult,
@@ -104,6 +98,7 @@ except ImportError:
     SectionAwareExtractor = StructuredRequirement = StructuredExtractionResult = None
     RequirementCategory = BindingLevel = extract_requirements_structured = None
 
+# Document Structure Parser
 try:
     from .document_structure import (
         RFPStructureParser, DocumentStructure, UCFSection,
@@ -116,15 +111,22 @@ except ImportError:
     SectionBoundary = SubsectionBoundary = AttachmentInfo = analyze_rfp_structure = None
 
 __all__ = [
-    "__version__", "ScoringType", "ResponseFormat", "RequirementType", "RFPSection",
-    "ComplianceStatus", "PageLimit", "FormattingRequirement", "EvidenceRequirement",
-    "KeyPersonnelRequirement", "EnhancedRequirement", "ComplianceMatrix",
+    "__version__",
+    # v3.0 Data Models
+    "ScoringType", "ResponseFormat", "RequirementType", "RFPSection", "ComplianceStatus",
+    "PageLimit", "FormattingRequirement", "EvidenceRequirement", "KeyPersonnelRequirement",
+    "EnhancedRequirement", "ComplianceMatrix",
     "create_pass_fail_requirement", "create_weighted_requirement", "create_future_diligence_requirement",
     "EnhancedCTMExtractor", "process_requirements_batch",
     "ScoringPatterns", "ResponseFormatPatterns", "PageLimitPatterns", "FormattingPatterns",
     "FutureDiligencePatterns", "KeyPersonnelPatterns", "ConstraintPatterns",
     "LegacyRequirementAdapter", "CTMEnricher", "format_ctm_for_api",
     "format_requirement_for_outline", "get_content_allocation_guidance",
+    # Legacy required by main.py
+    "EnhancedComplianceAgent", "AmendmentProcessor", "export_to_excel",
+    "MultiFormatParser", "ParserDocumentType",
+    "SEMANTIC_AVAILABLE", "SemanticRequirementExtractor", "SemanticCTMExporter", "SemanticExtractionResult",
+    # Optional components
     "SmartOutlineGenerator", "ProposalOutline", "ProposalVolume", "ProposalSection",
     "CompanyLibrary", "CompanyLibraryParser", "DocumentType", "ParsedDocument",
     "CompanyProfile", "Capability", "PastPerformance", "KeyPersonnel", "Differentiator",
