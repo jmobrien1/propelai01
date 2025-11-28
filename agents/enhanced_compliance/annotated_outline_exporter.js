@@ -640,11 +640,57 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
     }
 
     // === SECTION C/PWS REQUIREMENTS (PURPLE) ===
-    // Find matching requirements from CTM
-    const pwsReqs = requirements.filter(r =>
-        r.category === "TECHNICAL" || r.category === "ATTACHMENT" ||
-        (r.section_ref && r.section_ref.toLowerCase().startsWith("c"))
-    ).slice(0, 5);  // Limit to first 5 relevant
+    // Smart matching: find requirements that mention this specific factor
+    const sectionId = section.id || '';
+    const sectionName = section.name || section.title || '';
+    
+    // Extract factor number from section (e.g., "SEC-F1" -> "1", "Factor 2: Name" -> "2")
+    let factorNum = null;
+    const idMatch = sectionId.match(/SEC-F(\d+)/i);
+    const nameMatch = sectionName.match(/Factor\s*(\d+)/i);
+    if (idMatch) factorNum = idMatch[1];
+    else if (nameMatch) factorNum = nameMatch[1];
+    
+    // Extract keywords from factor name for semantic matching
+    const extractFactorKeywords = (name) => {
+        const keywords = [];
+        const colonIdx = name.indexOf(':');
+        if (colonIdx > 0) {
+            const factorName = name.substring(colonIdx + 1).trim().toLowerCase();
+            keywords.push(factorName);
+            // Add individual words if multi-word (skip short words)
+            factorName.split(/\s+/).filter(w => w.length > 3).forEach(w => keywords.push(w));
+        }
+        return keywords;
+    };
+    
+    // Filter requirements based on factor
+    let pwsReqs = [];
+    if (factorNum) {
+        const factorKeywords = extractFactorKeywords(sectionName);
+        
+        pwsReqs = requirements.filter(r => {
+            const text = (r.text || r.full_text || '').toLowerCase();
+            const reqId = (r.req_id || '').toLowerCase();
+            
+            // Match by factor number pattern
+            const factorPattern = new RegExp(`factor\\s*${factorNum}\\b`, 'i');
+            if (factorPattern.test(text) || factorPattern.test(reqId)) {
+                return true;
+            }
+            
+            // Match by factor keywords (e.g., "experience", "key personnel")
+            if (factorKeywords.some(kw => text.includes(kw) && kw.length > 4)) {
+                return true;
+            }
+            
+            return false;
+        });
+    }
+    
+    // Fallback: if no factor-specific reqs found, show nothing (don't repeat generic reqs)
+    // This avoids the "same requirements in every section" problem
+    pwsReqs = pwsReqs.slice(0, 10);  // Limit to 10 most relevant
     
     if (pwsReqs.length > 0) {
         children.push(createAnnotationBlock(
