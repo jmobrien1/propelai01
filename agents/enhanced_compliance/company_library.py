@@ -754,7 +754,7 @@ class CompanyLibrary:
     
     def __init__(self, storage_dir: Optional[str] = None):
         self.storage_dir = Path(storage_dir or tempfile.gettempdir()) / "propelai_company_library"
-        self.storage_dir.mkdir(exist_ok=True)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.parser = CompanyLibraryParser()
         self.documents: Dict[str, ParsedDocument] = {}
         self.profile = CompanyProfile()
