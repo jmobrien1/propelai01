@@ -839,6 +839,7 @@ def process_rfp_best_practices_background(rfp_id: str):
                 "rfp_reference": req.rfp_reference,
                 "text": req.full_text,
                 "category": req.category.value,
+                "type": req.category.value,  # Alias for UI compatibility
                 "section": req.source_section.value,
                 "subsection": req.source_subsection,
                 "binding_level": req.binding_level.value,
