@@ -87,16 +87,15 @@ except ImportError:
 # Section Aware Extractor (must come before best_practices_ctm)
 try:
     from .section_aware_extractor import (
-        SectionAwareExtractor, StructuredRequirement, StructuredExtractionResult,
+        SectionAwareExtractor, StructuredRequirement, ExtractionResult,
         RequirementCategory, BindingLevel, extract_requirements_structured,
-        ExtractionResult,
     )
     SECTION_EXTRACTOR_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"Warning: Section Aware Extractor not available: {e}")
     SECTION_EXTRACTOR_AVAILABLE = False
-    SectionAwareExtractor = StructuredRequirement = StructuredExtractionResult = None
+    SectionAwareExtractor = StructuredRequirement = ExtractionResult = None
     RequirementCategory = BindingLevel = extract_requirements_structured = None
-    ExtractionResult = None
 
 # Best Practices CTM (depends on section_aware_extractor)
 try:
@@ -134,9 +133,9 @@ __all__ = [
     "SubsectionBoundary", "AttachmentInfo", "analyze_rfp_structure",
     "DOCUMENT_STRUCTURE_AVAILABLE",
     # Section Aware Extractor
-    "SectionAwareExtractor", "StructuredRequirement", "StructuredExtractionResult",
+    "SectionAwareExtractor", "StructuredRequirement", "ExtractionResult",
     "RequirementCategory", "BindingLevel", "extract_requirements_structured",
-    "ExtractionResult", "SECTION_EXTRACTOR_AVAILABLE",
+    "SECTION_EXTRACTOR_AVAILABLE",
     # Best Practices CTM
     "BestPracticesCTMExporter", "export_ctm_best_practices",
     "BEST_PRACTICES_AVAILABLE",
