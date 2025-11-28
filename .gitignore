@@ -57,3 +57,4 @@ data/*.json
 data/*.pdf
 outputs/
 *.zip
+node_modules/
