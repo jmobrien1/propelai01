@@ -565,7 +565,7 @@
                         </nav>
                         
                         <div className="sidebar-footer">
-                            <p>PropelAI v2.9</p>
+                            <p>PropelAI v2.10</p>
                             {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
                         </div>
                     </aside>
@@ -813,6 +813,32 @@
                         <h2>Compliance Matrix</h2>
                         <p>Extracted {stats?.total || allRequirements.length} requirements from your RFP documents</p>
                     </div>
+                    
+                    {/* RFP Format Note (for GSA/BPA) */}
+                    {stats?.is_non_ucf_format && (
+                        <div style={{
+                            background: 'rgba(251, 146, 60, 0.1)',
+                            border: '1px solid rgba(251, 146, 60, 0.3)',
+                            borderRadius: '8px',
+                            padding: '12px 16px',
+                            marginBottom: '20px',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px'
+                        }}>
+                            <span style={{ color: '#fb923c', fontSize: '18px' }}>ℹ️</span>
+                            <div>
+                                <div style={{ fontWeight: '600', color: '#fb923c', marginBottom: '4px' }}>
+                                    GSA Schedule / BPA Format Detected
+                                </div>
+                                <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>
+                                    This RFP does not follow the standard UCF format (Sections L/M/C). 
+                                    Submission instructions are in <strong>Section M Alignment</strong> ({stats?.evaluation || 0} items). 
+                                    Technical requirements are in the <strong>PWS/SOW</strong> ({stats?.technical || 0} items).
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     
                     {/* Stats */}
                     <div className="stats-grid">

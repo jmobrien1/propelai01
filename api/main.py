@@ -224,7 +224,7 @@ if BEST_PRACTICES_AVAILABLE:
 app = FastAPI(
     title="PropelAI API",
     description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices",
-    version="2.9.0"
+    version="2.10.0"
 )
 
 # CORS - allow all origins for development
@@ -827,6 +827,13 @@ def process_rfp_best_practices_background(rfp_id: str):
         # Convert to API format
         requirements = []
         for req in result.all_requirements:
+            # Derive priority from binding level (matches CTM export logic)
+            priority = "medium"
+            if req.binding_level.value in ["Mandatory", "Required"]:
+                priority = "high"
+            elif req.binding_level.value in ["Desirable", "Informational", "Reference"]:
+                priority = "low"
+            
             requirements.append({
                 "id": req.generated_id,
                 "rfp_reference": req.rfp_reference,
@@ -840,10 +847,22 @@ def process_rfp_best_practices_background(rfp_id: str):
                 "source_doc": req.source_document,
                 "parent_title": req.parent_title,
                 "cross_references": req.references_to,
+                "priority": priority,  # For UI compatibility
             })
         
         # Build stats
         duration = time.time() - start_time
+        
+        # Count priorities for UI compatibility
+        priority_counts = {"high": 0, "medium": 0, "low": 0}
+        for req in requirements:
+            priority_counts[req["priority"]] = priority_counts.get(req["priority"], 0) + 1
+        
+        # Detect if this is a non-UCF RFP (GSA/BPA)
+        is_non_ucf = len(result.section_l_requirements) == 0 and (
+            len(result.technical_requirements) > 0 or len(result.evaluation_requirements) > 0
+        )
+        
         stats = {
             "total": len(result.all_requirements),
             "section_l": len(result.section_l_requirements),
@@ -851,10 +870,17 @@ def process_rfp_best_practices_background(rfp_id: str):
             "evaluation": len(result.evaluation_requirements),
             "attachment": len(result.attachment_requirements),
             "by_binding_level": result.stats.get('by_binding_level', {}),
+            "by_priority": priority_counts,  # For UI compatibility
             "sections_found": result.stats.get('sections_found', []),
             "sow_location": result.stats.get('sow_location'),
             "processing_time": duration,
-            "extractor_version": "best_practices_v2.9"
+            "extractor_version": "best_practices_v2.10",
+            "is_non_ucf_format": is_non_ucf,  # Flag for UI to show guidance
+            "rfp_format_note": (
+                "This appears to be a GSA Schedule, BPA, or non-standard RFP. "
+                "Submission instructions are in Section M Alignment; "
+                "Technical requirements are from PWS/SOW."
+            ) if is_non_ucf else None
         }
         
         store.set_status(rfp_id, "processing", 95, "Finalizing...")
