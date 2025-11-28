@@ -72,29 +72,7 @@ except ImportError:
     CompanyLibrary = CompanyLibraryParser = DocumentType = ParsedDocument = None
     CompanyProfile = Capability = PastPerformance = KeyPersonnel = Differentiator = None
 
-# Best Practices CTM
-try:
-    from .best_practices_ctm import (
-        BestPracticesCTMGenerator, BestPracticesCTMExporter, export_ctm_best_practices,
-    )
-    BEST_PRACTICES_AVAILABLE = True
-except ImportError:
-    BEST_PRACTICES_AVAILABLE = False
-    BestPracticesCTMGenerator = BestPracticesCTMExporter = export_ctm_best_practices = None
-
-# Section Aware Extractor
-try:
-    from .section_aware_extractor import (
-        SectionAwareExtractor, StructuredRequirement, StructuredExtractionResult,
-        RequirementCategory, BindingLevel, extract_requirements_structured,
-    )
-    SECTION_EXTRACTOR_AVAILABLE = True
-except ImportError:
-    SECTION_EXTRACTOR_AVAILABLE = False
-    SectionAwareExtractor = StructuredRequirement = StructuredExtractionResult = None
-    RequirementCategory = BindingLevel = extract_requirements_structured = None
-
-# Document Structure Parser
+# Document Structure Parser (must come before section_aware_extractor)
 try:
     from .document_structure import (
         RFPStructureParser, DocumentStructure, UCFSection,
@@ -105,6 +83,31 @@ except ImportError:
     DOCUMENT_STRUCTURE_AVAILABLE = False
     RFPStructureParser = DocumentStructure = UCFSection = None
     SectionBoundary = SubsectionBoundary = AttachmentInfo = analyze_rfp_structure = None
+
+# Section Aware Extractor (must come before best_practices_ctm)
+try:
+    from .section_aware_extractor import (
+        SectionAwareExtractor, StructuredRequirement, StructuredExtractionResult,
+        RequirementCategory, BindingLevel, extract_requirements_structured,
+        ExtractionResult,
+    )
+    SECTION_EXTRACTOR_AVAILABLE = True
+except ImportError:
+    SECTION_EXTRACTOR_AVAILABLE = False
+    SectionAwareExtractor = StructuredRequirement = StructuredExtractionResult = None
+    RequirementCategory = BindingLevel = extract_requirements_structured = None
+    ExtractionResult = None
+
+# Best Practices CTM (depends on section_aware_extractor)
+try:
+    from .best_practices_ctm import (
+        BestPracticesCTMGenerator, BestPracticesCTMExporter, export_ctm_best_practices,
+    )
+    BEST_PRACTICES_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Best Practices CTM not available: {e}")
+    BEST_PRACTICES_AVAILABLE = False
+    BestPracticesCTMGenerator = BestPracticesCTMExporter = export_ctm_best_practices = None
 
 __all__ = [
     "__version__",
@@ -126,12 +129,17 @@ __all__ = [
     "SmartOutlineGenerator", "ProposalOutline", "ProposalVolume", "ProposalSection",
     "CompanyLibrary", "CompanyLibraryParser", "DocumentType", "ParsedDocument",
     "CompanyProfile", "Capability", "PastPerformance", "KeyPersonnel", "Differentiator",
-    "BestPracticesCTMGenerator", "BestPracticesCTMExporter", "export_ctm_best_practices",
-    "BEST_PRACTICES_AVAILABLE",
-    "SectionAwareExtractor", "StructuredRequirement", "StructuredExtractionResult",
-    "RequirementCategory", "BindingLevel", "extract_requirements_structured",
+    # Document Structure
     "RFPStructureParser", "DocumentStructure", "UCFSection", "SectionBoundary",
     "SubsectionBoundary", "AttachmentInfo", "analyze_rfp_structure",
+    "DOCUMENT_STRUCTURE_AVAILABLE",
+    # Section Aware Extractor
+    "SectionAwareExtractor", "StructuredRequirement", "StructuredExtractionResult",
+    "RequirementCategory", "BindingLevel", "extract_requirements_structured",
+    "ExtractionResult", "SECTION_EXTRACTOR_AVAILABLE",
+    # Best Practices CTM
+    "BestPracticesCTMGenerator", "BestPracticesCTMExporter", "export_ctm_best_practices",
+    "BEST_PRACTICES_AVAILABLE",
+    # Availability flags
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
-    "SECTION_EXTRACTOR_AVAILABLE", "DOCUMENT_STRUCTURE_AVAILABLE",
 ]
