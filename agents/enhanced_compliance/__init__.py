@@ -142,3 +142,20 @@ __all__ = [
     # Availability flags
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
 ]
+
+# =============================================================================
+# Annotated Outline Exporter (v1.0)
+# =============================================================================
+try:
+    from .annotated_outline_exporter import (
+        AnnotatedOutlineExporter,
+        AnnotatedOutlineConfig,
+        generate_annotated_outline
+    )
+    ANNOTATED_OUTLINE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Annotated outline exporter not available: {e}")
+    ANNOTATED_OUTLINE_AVAILABLE = False
+    AnnotatedOutlineExporter = None
+    AnnotatedOutlineConfig = None
+    generate_annotated_outline = None

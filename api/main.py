@@ -68,6 +68,18 @@ except ImportError:
     extract_requirements_structured = None
 
 
+# v2.11: Annotated Outline Exporter
+try:
+    from agents.enhanced_compliance.annotated_outline_exporter import (
+        AnnotatedOutlineExporter,
+        AnnotatedOutlineConfig
+    )
+    ANNOTATED_OUTLINE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Annotated outline exporter not available: {e}")
+    ANNOTATED_OUTLINE_AVAILABLE = False
+
+
 # ============== Configuration ==============
 
 UPLOAD_DIR = Path(tempfile.gettempdir()) / "propelai_uploads"
@@ -1407,6 +1419,58 @@ async def get_outline(rfp_id: str, format: str = "json"):
         store.update(rfp_id, {"outline": outline})
     
     return {"format": "json", "outline": outline}
+
+
+@app.get("/api/rfp/{rfp_id}/outline/export")
+async def export_annotated_outline(rfp_id: str):
+    """Export annotated proposal outline as Word document."""
+    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
+    
+    if not ANNOTATED_OUTLINE_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="Annotated outline export not available. Install Node.js and docx package."
+        )
+    
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+    
+    outline = rfp.get("outline")
+    if not outline:
+        generator = SmartOutlineGenerator()
+        section_l = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("L")]
+        section_m = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("M")]
+        outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, rfp.get("documents", []))
+        outline = generator.to_json(outline_obj)
+        store.update(rfp_id, {"outline": outline})
+    
+    requirements = rfp.get("requirements", [])
+    
+    config = AnnotatedOutlineConfig(
+        rfp_title=rfp.get("name", rfp.get("title", "RFP")),
+        solicitation_number=rfp.get("solicitation_number", rfp_id),
+        due_date=outline.get("submission", {}).get("due_date", "TBD"),
+        submission_method=outline.get("submission", {}).get("method", "Not Specified"),
+        total_pages=outline.get("total_pages"),
+        company_name="[Your Company Name]"
+    )
+    
+    try:
+        exporter = AnnotatedOutlineExporter()
+        doc_bytes = exporter.export(outline, requirements, outline.get("format_requirements", {}), config)
+        
+        safe_name = "".join(c for c in rfp.get("name", rfp_id) if c.isalnum() or c in " -_")[:50]
+        filename = f"{safe_name}_Annotated_Outline.docx"
+        
+        return Response(
+            content=doc_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate annotated outline: {str(e)}")
+
 
 
 # ============== Company Library API ==============
