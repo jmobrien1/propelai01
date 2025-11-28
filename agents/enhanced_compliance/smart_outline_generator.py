@@ -187,6 +187,24 @@ class SmartOutlineGenerator:
         # Extract evaluation factors
         eval_factors = self._extract_eval_factors(section_m_requirements)
         
+        # For NIH format, ensure all factors from sections are in eval_factors
+        if rfp_format == "NIH_FACTOR":
+            # The sections in the Technical volume ARE the evaluation factors
+            for vol in volumes:
+                if vol.volume_type == VolumeType.TECHNICAL and vol.sections:
+                    for sec in vol.sections:
+                        # Check if this factor is already in eval_factors
+                        factor_id = sec.id.replace("SEC-", "EVAL-")
+                        if not any(ef.id == factor_id for ef in eval_factors):
+                            ef = EvaluationFactor(
+                                id=factor_id,
+                                name=sec.name,
+                                weight=None
+                            )
+                            eval_factors.append(ef)
+            # Sort by ID
+            eval_factors.sort(key=lambda f: f.id)
+        
         # Map eval factors to volumes
         self._map_eval_factors_to_volumes(volumes, eval_factors)
         
@@ -494,32 +512,63 @@ class SmartOutlineGenerator:
             for r in section_m
         ])
         
-        # Look for Factor N patterns
-        factor_pattern = r"factor\s*(\d+)[:\s,\-–]*([a-z\s]+?)(?=factor\s*\d|$|[\.\n])"
-        
-        for match in re.finditer(factor_pattern, all_text.lower()):
-            factor_num = match.group(1)
-            factor_name = match.group(2).strip().title() if match.group(2) else ""
+        # Look for clean Factor N patterns at start of lines
+        for req in section_m:
+            req_text = req.get("text", "") or req.get("full_text", "") or ""
             
-            key = f"factor_{factor_num}"
-            if key not in seen and factor_name:
-                seen.add(key)
+            # Match: "Factor N, Full Name" at line start
+            match = re.search(
+                r"^Factor\s*(\d+)[,:\s]+([A-Z][A-Za-z\s,\-–&]+?)(?:\.\.\.|$)",
+                req_text,
+                re.IGNORECASE | re.MULTILINE
+            )
+            if match:
+                factor_num = match.group(1)
+                factor_name = match.group(2).strip()
+                factor_name = re.sub(r'[\s,\-–]+$', '', factor_name).title()
                 
-                # Try to find weight
-                weight = None
-                weight_context = all_text[max(0, match.start()-100):match.end()+100].lower()
-                weight_match = re.search(r"(\d+)\s*(?:points?|%|percent)", weight_context)
-                if weight_match:
-                    weight = weight_match.group(1) + "%"
+                # Skip garbage
+                garbage = ['condition', 'shall', 'must', 'will']
+                if any(g in factor_name.lower() for g in garbage):
+                    continue
                 
-                factor = EvaluationFactor(
-                    id=f"EVAL-F{factor_num}",
-                    name=f"Factor {factor_num}: {factor_name}",
-                    weight=weight
-                )
-                factors.append(factor)
+                key = f"factor_{factor_num}"
+                if key not in seen and len(factor_name) > 5:
+                    seen.add(key)
+                    
+                    factor = EvaluationFactor(
+                        id=f"EVAL-F{factor_num}",
+                        name=f"Factor {factor_num}: {factor_name}",
+                        weight=None
+                    )
+                    factors.append(factor)
         
-        # If no factors found, look for criteria-based structure
+        # If no factors found from clean patterns, use defaults for known factors
+        if not factors:
+            # Check which factor numbers are mentioned
+            all_text_lower = all_text.lower()
+            default_factors = {
+                "1": "Experience",
+                "2": "Program and Project Management",
+                "3": "Technical Approach", 
+                "4": "Key Personnel",
+                "5": "Facilities and Equipment",
+                "6": "Past Performance",
+            }
+            
+            for num, name in default_factors.items():
+                if f"factor {num}" in all_text_lower or f"factor{num}" in all_text_lower:
+                    key = f"factor_{num}"
+                    if key not in seen:
+                        seen.add(key)
+                        factor = EvaluationFactor(
+                            id=f"EVAL-F{num}",
+                            name=f"Factor {num}: {name}",
+                            weight=None
+                        )
+                        factors.append(factor)
+        
+        # Still no factors? Look for general criteria keywords
         if not factors:
             criteria_keywords = [
                 ("Technical", "EVAL-TECH"),
@@ -536,6 +585,9 @@ class SmartOutlineGenerator:
                         name=name
                     )
                     factors.append(factor)
+        
+        # Sort factors by ID
+        factors.sort(key=lambda f: f.id)
         
         return factors
     
@@ -679,11 +731,14 @@ class SmartOutlineGenerator:
                     "sections": [
                         {
                             "id": sec.id,
-                            "name": sec.name,
+                            "title": sec.name,  # UI expects 'title' not 'name'
+                            "name": sec.name,   # Keep both for compatibility
                             "page_limit": sec.page_limit,
+                            "content_requirements": sec.requirements,  # UI expects this name
                             "requirements": sec.requirements,
+                            "compliance_checkpoints": [],  # Can be populated later
                             "subsections": [
-                                {"id": sub.id, "name": sub.name}
+                                {"id": sub.id, "title": sub.name, "name": sub.name}
                                 for sub in sec.subsections
                             ]
                         }
@@ -692,7 +747,19 @@ class SmartOutlineGenerator:
                 }
                 for vol in sorted(outline.volumes, key=lambda v: v.order)
             ],
-            "eval_factors": [
+            # UI expects 'evaluation_factors' not 'eval_factors'
+            "evaluation_factors": [
+                {
+                    "id": ef.id,
+                    "name": ef.name,
+                    "weight": ef.weight,
+                    "importance": ef.importance,
+                    "criteria": ef.criteria,
+                    "subfactors": []  # Can be populated later
+                }
+                for ef in outline.eval_factors
+            ],
+            "eval_factors": [  # Keep for backward compatibility
                 {
                     "id": ef.id,
                     "name": ef.name,
