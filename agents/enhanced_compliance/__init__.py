@@ -29,24 +29,20 @@ from .ctm_integration import (
 # =============================================================================
 # Legacy imports required by api/main.py
 # =============================================================================
-try:
-    from .enhanced_compliance_agent import EnhancedComplianceAgent, AmendmentProcessor, export_to_excel
-except ImportError:
-    EnhancedComplianceAgent = None
-    AmendmentProcessor = None
-    export_to_excel = None
+from .agent import EnhancedComplianceAgent
+from .amendment_processor import AmendmentProcessor
+from .excel_export import export_to_excel
 
+# Multi-format parser
 try:
-    from .multi_format_parser import MultiFormatParser, DocumentType as ParserDocumentType
+    from .parser import MultiFormatParser
 except ImportError:
     MultiFormatParser = None
-    ParserDocumentType = None
 
 # Semantic extractor
 try:
-    from .semantic_extractor import (
-        SemanticRequirementExtractor, SemanticCTMExporter, SemanticExtractionResult,
-    )
+    from .semantic_extractor import SemanticRequirementExtractor
+    from .semantic_ctm_export import SemanticCTMExporter, SemanticExtractionResult
     SEMANTIC_AVAILABLE = True
 except ImportError:
     SEMANTIC_AVAILABLE = False
@@ -124,17 +120,18 @@ __all__ = [
     "format_requirement_for_outline", "get_content_allocation_guidance",
     # Legacy required by main.py
     "EnhancedComplianceAgent", "AmendmentProcessor", "export_to_excel",
-    "MultiFormatParser", "ParserDocumentType",
+    "MultiFormatParser",
     "SEMANTIC_AVAILABLE", "SemanticRequirementExtractor", "SemanticCTMExporter", "SemanticExtractionResult",
     # Optional components
     "SmartOutlineGenerator", "ProposalOutline", "ProposalVolume", "ProposalSection",
     "CompanyLibrary", "CompanyLibraryParser", "DocumentType", "ParsedDocument",
     "CompanyProfile", "Capability", "PastPerformance", "KeyPersonnel", "Differentiator",
     "BestPracticesCTMGenerator", "BestPracticesCTMExporter", "export_ctm_best_practices",
+    "BEST_PRACTICES_AVAILABLE",
     "SectionAwareExtractor", "StructuredRequirement", "StructuredExtractionResult",
     "RequirementCategory", "BindingLevel", "extract_requirements_structured",
     "RFPStructureParser", "DocumentStructure", "UCFSection", "SectionBoundary",
     "SubsectionBoundary", "AttachmentInfo", "analyze_rfp_structure",
-    "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE", "BEST_PRACTICES_AVAILABLE",
+    "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
     "SECTION_EXTRACTOR_AVAILABLE", "DOCUMENT_STRUCTURE_AVAILABLE",
 ]
