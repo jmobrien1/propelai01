@@ -545,6 +545,75 @@
                 return matchesSearch && matchesType && matchesPriority;
             });
             
+            // Chat Functions (v2.12)
+            const loadChatHistory = async () => {
+                if (!currentRfpId) return;
+                try {
+                    const data = await api.getChatHistory(currentRfpId);
+                    setChatMessages(data.history || []);
+                } catch (e) {
+                    console.error('Failed to load chat history:', e);
+                }
+            };
+            
+            const sendChatMessage = async () => {
+                if (!chatInput.trim() || !currentRfpId) return;
+                
+                const userMessage = chatInput.trim();
+                setChatInput('');
+                setChatLoading(true);
+                
+                // Add user message optimistically
+                const userMsg = {
+                    role: 'user',
+                    content: userMessage,
+                    timestamp: new Date().toISOString()
+                };
+                setChatMessages(prev => [...prev, userMsg]);
+                
+                try {
+                    const response = await api.sendChatMessage(currentRfpId, userMessage, true);
+                    
+                    // Add assistant response
+                    const assistantMsg = {
+                        role: 'assistant',
+                        content: response.answer,
+                        sources: response.sources || [],
+                        timestamp: response.timestamp
+                    };
+                    setChatMessages(prev => [...prev, assistantMsg]);
+                    
+                } catch (e) {
+                    setError('Chat failed: ' + e.message);
+                    // Add error message
+                    const errorMsg = {
+                        role: 'assistant',
+                        content: 'Sorry, I encountered an error. Please try again.',
+                        timestamp: new Date().toISOString()
+                    };
+                    setChatMessages(prev => [...prev, errorMsg]);
+                } finally {
+                    setChatLoading(false);
+                }
+            };
+            
+            const clearChat = async () => {
+                if (!currentRfpId) return;
+                try {
+                    await api.clearChatHistory(currentRfpId);
+                    setChatMessages([]);
+                } catch (e) {
+                    setError('Failed to clear chat: ' + e.message);
+                }
+            };
+            
+            // Load chat history when RFP changes
+            useEffect(() => {
+                if (currentRfpId && chatOpen) {
+                    loadChatHistory();
+                }
+            }, [currentRfpId, chatOpen]);
+            
             return (
                 <div className="app-container">
                     {/* Sidebar */}
