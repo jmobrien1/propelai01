@@ -186,6 +186,8 @@ class RFPStore:
             "stats": None,
             "amendments": [],
             "amendment_processor": None,
+            "document_chunks": [],  # v2.12: For chat functionality
+            "chat_history": [],     # v2.12: Chat message history
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
