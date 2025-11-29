@@ -58,3 +58,7 @@ data/*.pdf
 outputs/
 *.zip
 node_modules/
+-e 
+# Environment files
+*.env
+*.env.*
