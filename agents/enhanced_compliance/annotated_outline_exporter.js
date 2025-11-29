@@ -859,7 +859,13 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
             
             // Layer 4: Category-based filtering
             const isInformational = category === 'INFORMATIONAL' || category === 'ADMINISTRATIVE';
-            const isTechnicalWithoutLM = category === 'TECHNICAL' && !section.startsWith('L') && !section.startsWith('M');
+            
+            // For non-UCF RFPs (BPA, GSA), TECHNICAL requirements are valid
+            // Only exclude if it's truly generic (no section ref at all)
+            const isPWS = section.includes('PWS') || section.includes('SOW') || section.includes('C');
+            const isAttachment = section.includes('ATTACH') || section.includes('ATT');
+            const hasValidNonUCFSection = isPWS || isAttachment || section === 'TECHNICAL';
+            const isTechnicalWithoutLM = category === 'TECHNICAL' && !section.startsWith('L') && !section.startsWith('M') && !hasValidNonUCFSection;
             
             // Layer 5: Length-based heuristics
             const isVeryLong = text.length > 500;
