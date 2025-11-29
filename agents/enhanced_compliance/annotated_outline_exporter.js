@@ -843,7 +843,7 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
                     _reason: result.reason
                 };
             })
-            .filter(r => r._score > 5)  // Minimum relevance threshold
+            .filter(r => r._score >= 3)  // Minimum relevance threshold (lowered to capture more)
             .sort((a, b) => b._score - a._score);  // Sort by score descending
         
         // Take top 10 most relevant
