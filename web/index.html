@@ -352,6 +352,10 @@
                 return res.json();
             },
             
+            async exportOutline(rfpId) {
+                window.open(`${API_BASE}/rfp/${rfpId}/outline/export`, '_blank');
+            },
+            
             async generateOutline(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/outline`, { method: 'POST' });
                 return res.json();
@@ -1126,9 +1130,19 @@
             
             return (
                 <div className="animate-in">
-                    <div className="page-header">
-                        <h2>Proposal Outline</h2>
-                        <p>Structure your proposal based on RFP requirements</p>
+                    <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                            <h2>Proposal Outline</h2>
+                            <p>Structure your proposal based on RFP requirements</p>
+                        </div>
+                        <button 
+                            className="btn btn-primary"
+                            onClick={() => api.exportOutline(rfpId)}
+                            title="Download annotated outline as Word document"
+                        >
+                            <Icon name="Download" />
+                            Export Outline
+                        </button>
                     </div>
                     
                     {/* Submission & Format Info */}
