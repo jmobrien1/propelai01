@@ -599,6 +599,16 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
     console.log(`[OUTLINE] Building section: ${sectionDebugInfo}`);
     console.log(`[OUTLINE]   Requirements passed: ${requirements ? requirements.length : 'NONE'}`);
     
+    // Debug: Sample some requirement section_refs to understand the data
+    if (requirements && requirements.length > 0) {
+        const sampleRefs = requirements.slice(0, 3).map(r => ({
+            id: r.req_id || 'NO_ID',
+            section: r.section_ref || 'NO_SECTION',
+            category: r.category || 'NO_CATEGORY'
+        }));
+        console.log(`[OUTLINE]   Sample requirements:`, JSON.stringify(sampleRefs));
+    }
+    
     const sectionNum = `${section.id || (secIndex + 1)}`;
 
     // Section heading
