@@ -851,7 +851,27 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
             })
             .map(r => {
                 const text = r.text || r.full_text || '';
-                const result = scoreRequirement(text, factorType, factorNum);
+                let result = scoreRequirement(text, factorType, factorNum);
+                
+                // Boost score for proposal-relevant requirements (L instructions, M evaluation)
+                const section = (r.section_ref || '').toUpperCase();
+                const category = (r.category || '').toUpperCase();
+                
+                if (section.startsWith('L') || category === 'L_COMPLIANCE') {
+                    result.score += 10;  // Section L instructions are highly relevant to proposals
+                    result.reason = "Section L instruction; " + result.reason;
+                }
+                if (section.startsWith('M') || category === 'EVALUATION') {
+                    result.score += 15;  // Section M evaluation criteria are most important
+                    result.reason = "Evaluation criteria; " + result.reason;
+                }
+                
+                // Slight penalty for TECHNICAL category without specific factor keywords
+                // (these are often general SOW descriptions)
+                if (category === 'TECHNICAL' && result.score < 10) {
+                    result.score = Math.max(0, result.score - 2);
+                }
+                
                 return {
                     ...r,
                     _score: result.score,
