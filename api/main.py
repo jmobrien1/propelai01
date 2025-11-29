@@ -79,6 +79,17 @@ except ImportError as e:
     print(f"Warning: Annotated outline exporter not available: {e}")
     ANNOTATED_OUTLINE_AVAILABLE = False
 
+# v2.12: RFP Chat Agent
+try:
+    from agents.chat import RFPChatAgent, ChatMessage, DocumentChunk
+    RFP_CHAT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: RFP Chat agent not available: {e}")
+    RFP_CHAT_AVAILABLE = False
+    RFPChatAgent = None
+    ChatMessage = None
+    DocumentChunk = None
+
 
 # ============== Configuration ==============
 
