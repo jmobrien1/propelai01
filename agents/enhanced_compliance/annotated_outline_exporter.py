@@ -121,8 +121,17 @@ class AnnotatedOutlineExporter:
                 timeout=60
             )
             
+            # Log stdout from Node.js (includes our debug console.log statements)
+            if result.stdout:
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        print(f"[EXPORTER] {line}")
+            
             if result.returncode != 0:
-                raise RuntimeError(f"Document generation failed: {result.stderr}")
+                error_msg = f"Document generation failed: {result.stderr}"
+                if result.stdout:
+                    error_msg += f"\nStdout: {result.stdout}"
+                raise RuntimeError(error_msg)
             
             # Read the generated document
             with open(output_path, 'rb') as f:
