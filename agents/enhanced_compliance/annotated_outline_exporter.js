@@ -828,27 +828,79 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
     let pwsReqs = [];
     
     if (factorType && requirements.length > 0) {
-        // Score all requirements for this factor
-        const scoredReqs = requirements
-            .filter(r => {
-                const text = r.text || r.full_text || '';
-                if (text.trim().length === 0) return false;
-                
-                // Filter out SOW descriptive/background text (not actionable requirements)
-                // These are usually long paragraphs without directive language
-                const lowerText = text.toLowerCase();
-                const hasDirectiveLanguage = /\b(shall|must|will|should|may|required|provide|submit|demonstrate|include|ensure|propose)\b/.test(lowerText);
-                const isVeryLong = text.length > 500;  // Very long text is often background
-                const hasNoReference = !r.req_id && !r.section_ref;  // Missing references suggest it's not a formal requirement
-                
-                // Exclude if it's very long descriptive text without directive language
-                if (isVeryLong && !hasDirectiveLanguage) {
-                    console.log(`[OUTLINE] Filtering out descriptive text: ${text.substring(0, 80)}...`);
-                    return false;
-                }
-                
+        // =====================================================================
+        // ENHANCED MULTI-LAYER FILTER - Exclude background/context text
+        // =====================================================================
+        
+        const isBackgroundText = (r) => {
+            const text = r.text || r.full_text || '';
+            const lowerText = text.toLowerCase();
+            const category = (r.category || '').toUpperCase();
+            const section = (r.section_ref || '').toUpperCase();
+            
+            // Layer 1: Empty or very short text
+            if (text.trim().length < 10) return true;
+            
+            // Layer 2: Check for directive/actionable language
+            const hasStrongDirective = /\b(shall|must|will\s+be\s+required)\b/.test(lowerText);
+            const hasWeakDirective = /\b(should|may|required|provide|submit|demonstrate|include|ensure|propose|offeror)\b/.test(lowerText);
+            const hasDirectiveLanguage = hasStrongDirective || hasWeakDirective;
+            
+            // Layer 3: Background indicators (scientific/technical descriptions)
+            const backgroundIndicators = [
+                /\b(is|are|was|were)\s+(a|an|the)\s+\w+/i,  // Descriptive "is/are" statements
+                /\binclude(s)?\b.*\band\b/i,  // Long lists with "includes X and Y"
+                /\bsuch\s+as\b/i,  // "such as" indicates examples, not requirements
+                /\binvolved\s+in\b/i,  // "involved in" is explanatory
+                /\blikely\b/i,  // "likely" indicates speculation, not requirement
+                /\bfor\s+example\b/i,  // Explicit example marker
+            ];
+            const hasBackgroundIndicators = backgroundIndicators.some(pattern => pattern.test(lowerText));
+            
+            // Layer 4: Category-based filtering
+            const isInformational = category === 'INFORMATIONAL' || category === 'ADMINISTRATIVE';
+            const isTechnicalWithoutLM = category === 'TECHNICAL' && !section.startsWith('L') && !section.startsWith('M');
+            
+            // Layer 5: Length-based heuristics
+            const isVeryLong = text.length > 500;
+            const isMediumLong = text.length > 300;
+            
+            // Layer 6: Missing critical metadata
+            const hasNoReference = !r.req_id && !r.section_ref;
+            const hasVagueReference = section === 'UNK' || section === '' || section === 'UNKNOWN';
+            
+            // Decision Logic: Exclude if...
+            
+            // Strong exclusion: Long descriptive text without directives
+            if (isVeryLong && !hasDirectiveLanguage && hasBackgroundIndicators) {
+                console.log(`[OUTLINE] ❌ Excluded (background): ${text.substring(0, 60)}...`);
                 return true;
-            })
+            }
+            
+            // Medium exclusion: Informational category without L/M reference + no directive
+            if (isInformational && (hasVagueReference || !section.startsWith('L') && !section.startsWith('M')) && !hasStrongDirective) {
+                console.log(`[OUTLINE] ❌ Excluded (informational without L/M): ${text.substring(0, 60)}...`);
+                return true;
+            }
+            
+            // Technical without L/M + medium length + background indicators
+            if (isTechnicalWithoutLM && isMediumLong && hasBackgroundIndicators && !hasStrongDirective) {
+                console.log(`[OUTLINE] ❌ Excluded (technical background): ${text.substring(0, 60)}...`);
+                return true;
+            }
+            
+            // Missing references + medium/long + no strong directive
+            if (hasNoReference && isMediumLong && !hasStrongDirective) {
+                console.log(`[OUTLINE] ❌ Excluded (no reference + long): ${text.substring(0, 60)}...`);
+                return true;
+            }
+            
+            return false;  // Keep this requirement
+        };
+        
+        // Apply the enhanced filter
+        const scoredReqs = requirements
+            .filter(r => !isBackgroundText(r))
             .map(r => {
                 const text = r.text || r.full_text || '';
                 let result = scoreRequirement(text, factorType, factorNum);
