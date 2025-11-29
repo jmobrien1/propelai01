@@ -410,7 +410,7 @@ class SmartOutlineGenerator:
                         volume_type=mapping["type"]
                     )
                     volumes.append(vol)
-                    print(f"[OUTLINE] Created volume from L.4.{subsec_letter}: {mapping['name']}")
+                    logger.info(f"[OUTLINE] Created volume from L.4.{subsec_letter}: {mapping['name']}")
         
         return volumes
     
