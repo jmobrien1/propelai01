@@ -832,7 +832,22 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
         const scoredReqs = requirements
             .filter(r => {
                 const text = r.text || r.full_text || '';
-                return text.trim().length > 0;
+                if (text.trim().length === 0) return false;
+                
+                // Filter out SOW descriptive/background text (not actionable requirements)
+                // These are usually long paragraphs without directive language
+                const lowerText = text.toLowerCase();
+                const hasDirectiveLanguage = /\b(shall|must|will|should|may|required|provide|submit|demonstrate|include|ensure|propose)\b/.test(lowerText);
+                const isVeryLong = text.length > 500;  // Very long text is often background
+                const hasNoReference = !r.req_id && !r.section_ref;  // Missing references suggest it's not a formal requirement
+                
+                // Exclude if it's very long descriptive text without directive language
+                if (isVeryLong && !hasDirectiveLanguage) {
+                    console.log(`[OUTLINE] Filtering out descriptive text: ${text.substring(0, 80)}...`);
+                    return false;
+                }
+                
+                return true;
             })
             .map(r => {
                 const text = r.text || r.full_text || '';
