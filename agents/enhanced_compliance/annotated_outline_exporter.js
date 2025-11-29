@@ -933,8 +933,28 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
             .filter(r => r._score >= 3)  // Minimum relevance threshold (lowered to capture more)
             .sort((a, b) => b._score - a._score);  // Sort by score descending
         
-        // Take top 10 most relevant
-        pwsReqs = scoredReqs.slice(0, 10);
+        // Prioritize Section L/M requirements - ensure they appear first
+        const lmReqs = scoredReqs.filter(r => {
+            const section = (r.section_ref || '').toUpperCase();
+            const category = (r.category || '').toUpperCase();
+            return section.startsWith('L') || section.startsWith('M') || 
+                   category === 'L_COMPLIANCE' || category === 'EVALUATION';
+        });
+        
+        const otherReqs = scoredReqs.filter(r => {
+            const section = (r.section_ref || '').toUpperCase();
+            const category = (r.category || '').toUpperCase();
+            return !(section.startsWith('L') || section.startsWith('M') || 
+                     category === 'L_COMPLIANCE' || category === 'EVALUATION');
+        });
+        
+        // Take top 7 L/M requirements and top 3 others (if available)
+        pwsReqs = [
+            ...lmReqs.slice(0, 7),
+            ...otherReqs.slice(0, 3)
+        ];
+        
+        console.log(`[OUTLINE] Factor "${sectionName}": ${lmReqs.length} L/M reqs, ${otherReqs.length} other reqs, selected ${pwsReqs.length} total`);
     }
     
     // If we still have no requirements, try a simple keyword fallback
