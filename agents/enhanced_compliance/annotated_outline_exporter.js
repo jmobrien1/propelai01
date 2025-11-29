@@ -926,7 +926,10 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
                 
                 // Slight penalty for TECHNICAL category without specific factor keywords
                 // (these are often general SOW descriptions)
-                if (category === 'TECHNICAL' && result.score < 10) {
+                // BUT: For non-UCF RFPs (BPA, GSA), TECHNICAL is the main category - don't penalize
+                const isPWS = section.includes('PWS') || section.includes('SOW') || section.includes('C');
+                const isUCF = section.startsWith('L') || section.startsWith('M') || section.startsWith('C');
+                if (category === 'TECHNICAL' && result.score < 10 && isUCF) {
                     result.score = Math.max(0, result.score - 2);
                 }
                 
