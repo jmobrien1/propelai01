@@ -359,6 +359,31 @@
             async generateOutline(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/outline`, { method: 'POST' });
                 return res.json();
+            },
+            
+            // Chat API (v2.12)
+            async sendChatMessage(rfpId, message, includeSources = true) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, include_sources: includeSources })
+                });
+                if (!res.ok) {
+                    throw new Error(`Chat failed: ${res.statusText}`);
+                }
+                return res.json();
+            },
+            
+            async getChatHistory(rfpId, limit = 50) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/chat/history?limit=${limit}`);
+                return res.json();
+            },
+            
+            async clearChatHistory(rfpId) {
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/chat/history`, {
+                    method: 'DELETE'
+                });
+                return res.json();
             }
         };
         
