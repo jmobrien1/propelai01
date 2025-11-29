@@ -148,6 +148,19 @@ class AmendmentUpload(BaseModel):
     amendment_date: Optional[str] = None
 
 
+class ChatRequest(BaseModel):
+    """Request to chat with RFP"""
+    message: str
+    include_sources: bool = True
+
+
+class ChatResponse(BaseModel):
+    """Response from RFP chat"""
+    answer: str
+    sources: List[Dict[str, Any]] = []
+    timestamp: str
+
+
 # ============== In-Memory Store ==============
 
 class RFPStore:
