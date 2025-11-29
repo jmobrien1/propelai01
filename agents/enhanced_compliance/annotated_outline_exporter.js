@@ -864,12 +864,46 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
         }
     }
     
+    // Always output requirements - semantic matches or fallback
     if (pwsReqs.length > 0) {
+        console.log(`[OUTLINE] Factor "${sectionDebugInfo}": Found ${pwsReqs.length} semantic matches`);
         children.push(createAnnotationBlock(
             "SECTION C/PWS - TECHNICAL REQUIREMENTS",
-            pwsReqs.map(r => `[${r.req_id || 'REQ'}] ${r.text || r.full_text || ''}`),
+            pwsReqs.map(r => {
+                const reqId = r.req_id || r.id || 'REQ';
+                const text = r.text || r.full_text || '[Requirement text]';
+                return `[${reqId}] ${text.substring(0, 300)}${text.length > 300 ? '...' : ''}`;
+            }),
             COLORS.SECTION_C,
             ANNOTATION_SHADING.C
+        ));
+    } else if (requirements && requirements.length > 0) {
+        // Fallback: Show first 5-8 requirements if semantic matching found nothing
+        console.log(`[OUTLINE] Factor "${sectionDebugInfo}": No semantic matches - using fallback (${requirements.length} total requirements)`);
+        const fallbackReqs = requirements.slice(0, 8);
+        children.push(createAnnotationBlock(
+            "SECTION C/PWS - TECHNICAL REQUIREMENTS (Review for relevance)",
+            fallbackReqs.map(r => {
+                const reqId = r.req_id || r.id || 'REQ';
+                const text = r.text || r.full_text || '[Requirement text]';
+                return `[${reqId}] ${text.substring(0, 250)}${text.length > 250 ? '...' : ''}`;
+            }),
+            COLORS.SECTION_C,
+            ANNOTATION_SHADING.C
+        ));
+    } else {
+        // No requirements available at all - show placeholder
+        console.log(`[OUTLINE] Factor "${sectionDebugInfo}": WARNING - No requirements to display`);
+        children.push(createAnnotationBlock(
+            "SECTION C/PWS - TECHNICAL REQUIREMENTS",
+            [
+                "[No requirements extracted from RFP - manually review Section C/PWS]",
+                "[Map specific technical requirements relevant to this evaluation factor]",
+                "[Ensure all SHALL/MUST requirements are addressed]"
+            ],
+            COLORS.SECTION_C,
+            ANNOTATION_SHADING.C,
+            true  // isPlaceholder
         ));
     }
 
