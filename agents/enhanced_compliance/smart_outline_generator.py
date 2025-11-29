@@ -325,6 +325,91 @@ class SmartOutlineGenerator:
         
         return unique_volumes
     
+    def _extract_l4_subsections(self, section_l: List[Dict]) -> Dict[str, List[str]]:
+        """
+        Extract Section L.4 subsections which typically define proposal volumes.
+        
+        Common patterns:
+        - L.4.A: General Instructions
+        - L.4.B: Technical Proposal
+        - L.4.C: Business/Cost Proposal
+        - L.4.D: Past Performance
+        
+        Returns dict mapping subsection letter to requirement texts.
+        """
+        l4_subsections = {}
+        
+        for req in section_l:
+            section_ref = req.get("section_ref", "") or ""
+            req_id = req.get("req_id", "") or ""
+            text = req.get("text", "") or req.get("full_text", "")
+            
+            # Look for L.4.X patterns in section_ref or req_id
+            match = re.search(r"L\.4\.([A-Z])", section_ref + " " + req_id, re.IGNORECASE)
+            if match:
+                subsection = match.group(1).upper()
+                if subsection not in l4_subsections:
+                    l4_subsections[subsection] = []
+                l4_subsections[subsection].append(text)
+        
+        return l4_subsections
+    
+    def _create_volumes_from_l4_subsections(self, l4_subsections: Dict[str, List[str]]) -> List[ProposalVolume]:
+        """
+        Create volumes from detected L.4 subsections.
+        
+        Maps common Section L.4 subsection patterns to proposal volumes.
+        """
+        volumes = []
+        
+        # Common mappings (based on federal RFP patterns)
+        subsection_mapping = {
+            "B": {
+                "name": "Technical Proposal",
+                "type": VolumeType.TECHNICAL,
+                "keywords": ["technical", "approach", "solution", "methodology"]
+            },
+            "C": {
+                "name": "Business Proposal", 
+                "type": VolumeType.COST_PRICE,
+                "keywords": ["business", "cost", "price", "pricing", "budget"]
+            },
+            "D": {
+                "name": "Past Performance",
+                "type": VolumeType.PAST_PERFORMANCE,
+                "keywords": ["past performance", "experience", "reference", "similar"]
+            },
+            "E": {
+                "name": "Management Proposal",
+                "type": VolumeType.MANAGEMENT,
+                "keywords": ["management", "project", "program", "plan"]
+            },
+        }
+        
+        for subsec_letter, mapping in subsection_mapping.items():
+            if subsec_letter in l4_subsections:
+                texts = l4_subsections[subsec_letter]
+                combined_text = " ".join(texts).lower()
+                
+                # Verify this subsection actually describes the expected volume
+                # by checking for relevant keywords
+                is_match = any(kw in combined_text for kw in mapping["keywords"])
+                
+                # Also check for explicit mentions of the volume name
+                if mapping["name"].lower() in combined_text:
+                    is_match = True
+                
+                if is_match or len(texts) > 3:  # If lots of text, probably a real volume section
+                    vol = ProposalVolume(
+                        id=f"VOL-L4{subsec_letter}",
+                        name=mapping["name"],
+                        volume_type=mapping["type"]
+                    )
+                    volumes.append(vol)
+                    print(f"[OUTLINE] Created volume from L.4.{subsec_letter}: {mapping['name']}")
+        
+        return volumes
+    
     def _extract_nih_volumes(self, text: str, section_m: List[Dict]) -> List[ProposalVolume]:
         """Extract volumes from NIH Factor-based RFP"""
         volumes = []
