@@ -873,9 +873,16 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
             pwsReqs = requirements
                 .filter(r => {
                     const text = (r.text || r.full_text || '').toLowerCase();
-                    return topKeywords.some(kw => text.includes(kw.toLowerCase()));
+                    
+                    // Prefer requirements with proper categorization
+                    const hasCategory = r.category && r.category !== 'UNKNOWN';
+                    const hasSection = r.section_ref && r.section_ref !== 'UNK';
+                    const keywordMatch = topKeywords.some(kw => text.includes(kw.toLowerCase()));
+                    
+                    // Priority: categorized requirements with keyword matches
+                    return keywordMatch || (hasCategory && hasSection);
                 })
-                .slice(0, 5);
+                .slice(0, 8);  // Slightly more for fallback to ensure coverage
         }
     }
     
