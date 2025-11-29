@@ -13,3 +13,6 @@ openpyxl>=3.0.10
 
 # Utils
 httpx>=0.24.0
+
+# AI/LLM Integration (v2.12 - Chat feature)
+anthropic>=0.21.0
