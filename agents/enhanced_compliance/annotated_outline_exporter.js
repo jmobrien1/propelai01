@@ -593,6 +593,12 @@ function buildVolumeOutlines(data) {
  */
 function buildSectionOutline(section, secIndex, volume, requirements, data) {
     const children = [];
+    
+    // Debug logging
+    const sectionDebugInfo = section.name || section.title || section.id || 'Unknown';
+    console.log(`[OUTLINE] Building section: ${sectionDebugInfo}`);
+    console.log(`[OUTLINE]   Requirements passed: ${requirements ? requirements.length : 'NONE'}`);
+    
     const sectionNum = `${section.id || (secIndex + 1)}`;
 
     // Section heading
