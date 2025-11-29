@@ -1708,6 +1708,126 @@ async def get_key_personnel():
     return {"key_personnel": profile.get("key_personnel", [])}
 
 
+# ============== RFP Chat Endpoints (v2.12) ==============
+
+@app.post("/api/rfp/{rfp_id}/chat")
+async def chat_with_rfp(rfp_id: str, request: ChatRequest):
+    """
+    Chat with RFP documents - ask questions and get answers based on uploaded content.
+    
+    Similar to NotebookLM - uses RAG (Retrieval Augmented Generation) to answer
+    questions based solely on the uploaded RFP documents.
+    """
+    if not RFP_CHAT_AVAILABLE or not rfp_chat_agent:
+        raise HTTPException(
+            status_code=503, 
+            detail="Chat functionality not available. Please ensure anthropic package is installed."
+        )
+    
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail=f"RFP {rfp_id} not found")
+    
+    # Ensure document chunks exist
+    if not rfp.get("document_chunks"):
+        # Create chunks on first chat
+        try:
+            chunks = rfp_chat_agent.chunk_rfp_documents(rfp)
+            rfp["document_chunks"] = [chunk.to_dict() for chunk in chunks]
+            print(f"[CHAT] Created {len(chunks)} document chunks for RFP {rfp_id}")
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error creating document chunks: {str(e)}"
+            )
+    
+    # Convert stored chunks back to DocumentChunk objects
+    document_chunks = [
+        DocumentChunk(**chunk_dict) 
+        for chunk_dict in rfp.get("document_chunks", [])
+    ]
+    
+    # Get chat history
+    chat_history = [
+        ChatMessage(**msg_dict)
+        for msg_dict in rfp.get("chat_history", [])
+    ]
+    
+    # Generate response
+    try:
+        # Add user message to history
+        user_message = ChatMessage(
+            role="user",
+            content=request.message,
+            timestamp=datetime.utcnow().isoformat() + "Z"
+        )
+        chat_history.append(user_message)
+        
+        # Get AI response
+        assistant_message = rfp_chat_agent.chat(
+            question=request.message,
+            document_chunks=document_chunks,
+            chat_history=chat_history[:-1]  # Don't include the current user message
+        )
+        
+        # Add to history
+        chat_history.append(assistant_message)
+        
+        # Save history (keep last 50 messages)
+        rfp["chat_history"] = [msg.to_dict() for msg in chat_history[-50:]]
+        rfp["updated_at"] = datetime.now().isoformat()
+        
+        # Return response
+        return ChatResponse(
+            answer=assistant_message.content,
+            sources=assistant_message.sources if request.include_sources else [],
+            timestamp=assistant_message.timestamp
+        )
+        
+    except Exception as e:
+        print(f"[CHAT] Error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating response: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/chat/history")
+async def get_chat_history(rfp_id: str, limit: int = 50):
+    """Get chat history for an RFP"""
+    if not RFP_CHAT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Chat functionality not available")
+    
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail=f"RFP {rfp_id} not found")
+    
+    history = rfp.get("chat_history", [])
+    
+    # Return last N messages
+    return {
+        "rfp_id": rfp_id,
+        "history": history[-limit:],
+        "total_messages": len(history)
+    }
+
+
+@app.delete("/api/rfp/{rfp_id}/chat/history")
+async def clear_chat_history(rfp_id: str):
+    """Clear chat history for an RFP"""
+    if not RFP_CHAT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Chat functionality not available")
+    
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail=f"RFP {rfp_id} not found")
+    
+    rfp["chat_history"] = []
+    rfp["updated_at"] = datetime.now().isoformat()
+    
+    return {"message": "Chat history cleared", "rfp_id": rfp_id}
+
+
 # ============== Main Entry ==============
 
 if __name__ == "__main__":
