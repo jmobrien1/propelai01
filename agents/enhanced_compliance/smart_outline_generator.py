@@ -13,9 +13,13 @@ Key improvements:
 """
 
 import re
+import logging
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 # ============== Data Models ==============
