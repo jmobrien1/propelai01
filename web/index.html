@@ -396,6 +396,12 @@
             const [filterType, setFilterType] = useState('all');
             const [filterPriority, setFilterPriority] = useState('all');
             
+            // Chat State (v2.12)
+            const [chatOpen, setChatOpen] = useState(false);
+            const [chatMessages, setChatMessages] = useState([]);
+            const [chatInput, setChatInput] = useState('');
+            const [chatLoading, setChatLoading] = useState(false);
+            
             // Check API health on mount
             useEffect(() => {
                 const checkHealth = async () => {
