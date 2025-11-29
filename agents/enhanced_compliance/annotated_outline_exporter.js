@@ -640,57 +640,223 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
     }
 
     // === SECTION C/PWS REQUIREMENTS (PURPLE) ===
-    // Smart matching: find requirements that mention this specific factor
+    // Smart semantic matching: find requirements relevant to this factor's topic
     const sectionId = section.id || '';
     const sectionName = section.name || section.title || '';
     
-    // Extract factor number from section (e.g., "SEC-F1" -> "1", "Factor 2: Name" -> "2")
+    // Extract factor number from section
     let factorNum = null;
     const idMatch = sectionId.match(/SEC-F(\d+)/i);
     const nameMatch = sectionName.match(/Factor\s*(\d+)/i);
     if (idMatch) factorNum = idMatch[1];
     else if (nameMatch) factorNum = nameMatch[1];
     
-    // Extract keywords from factor name for semantic matching
-    const extractFactorKeywords = (name) => {
-        const keywords = [];
-        const colonIdx = name.indexOf(':');
-        if (colonIdx > 0) {
-            const factorName = name.substring(colonIdx + 1).trim().toLowerCase();
-            keywords.push(factorName);
-            // Add individual words if multi-word (skip short words)
-            factorName.split(/\s+/).filter(w => w.length > 3).forEach(w => keywords.push(w));
+    // =========================================================================
+    // FACTOR SEMANTIC PROFILES - What keywords indicate relevance to each factor
+    // =========================================================================
+    const factorProfiles = {
+        // Factor 1: Experience / Corporate Experience
+        "experience": {
+            keywords: ["experience", "years", "demonstrated", "prior", "previous", 
+                      "track record", "history", "performed", "completed", "successfully",
+                      "relevant", "comparable", "similar", "contracts", "projects"],
+            phrases: ["demonstrate experience", "relevant experience", "prior experience",
+                     "similar in size", "similar in scope", "years of experience",
+                     "have performed", "successfully completed"],
+            weight: 1.0
+        },
+        // Factor 2: Program/Project Management  
+        "management": {
+            keywords: ["management", "project", "program", "plan", "planning",
+                      "schedule", "milestone", "deliverable", "coordination",
+                      "oversight", "control", "monitor", "track", "report",
+                      "status", "progress", "timeline", "risk", "issue",
+                      "mitigation", "communication", "stakeholder", "quality"],
+            phrases: ["project management", "program management", "management approach",
+                     "management plan", "project schedule", "work breakdown",
+                     "risk management", "quality management", "status report",
+                     "progress report", "milestone schedule"],
+            weight: 1.0
+        },
+        // Factor 3: Technical Approach
+        "technical": {
+            keywords: ["technical", "approach", "methodology", "solution",
+                      "design", "develop", "implement", "deploy", "architecture",
+                      "system", "software", "hardware", "technology", "tool",
+                      "platform", "framework", "process", "procedure", "method",
+                      "technique", "innovation", "innovative", "integration",
+                      "interface", "api", "data", "analysis", "research"],
+            phrases: ["technical approach", "proposed approach", "methodology",
+                     "solution design", "system architecture", "technical solution",
+                     "implementation approach", "development methodology",
+                     "best practices", "innovative approach"],
+            weight: 1.0
+        },
+        // Factor 4: Key Personnel / Staffing
+        "personnel": {
+            keywords: ["personnel", "staff", "staffing", "team", "workforce",
+                      "key", "principal", "lead", "manager", "director",
+                      "resume", "cv", "biography", "qualifications", "credentials",
+                      "education", "degree", "certification", "certified",
+                      "pmp", "cissp", "skills", "expertise", "availability",
+                      "commitment", "dedicated", "investigator", "specialist"],
+            phrases: ["key personnel", "proposed personnel", "project manager",
+                     "program manager", "technical lead", "subject matter expert",
+                     "resumes", "qualifications", "years of experience",
+                     "personnel commitment"],
+            weight: 1.2
+        },
+        // Factor 5: Facilities / Equipment
+        "facilities": {
+            keywords: ["facility", "facilities", "equipment", "resource",
+                      "infrastructure", "environment", "laboratory", "lab",
+                      "office", "space", "building", "location", "hardware",
+                      "server", "network", "computer", "tool", "software",
+                      "license", "capability", "security", "clearance"],
+            phrases: ["facilities and equipment", "laboratory facilities",
+                     "office space", "computing resources", "infrastructure",
+                     "security clearance", "security requirements",
+                     "equipment availability"],
+            weight: 1.0
+        },
+        // Factor 6: Past Performance
+        "past_performance": {
+            keywords: ["past performance", "performance", "reference",
+                      "prior", "previous", "similar", "cpars", "ppirs",
+                      "rating", "evaluation", "quality", "schedule", "cost",
+                      "customer", "satisfaction", "successful", "on-time",
+                      "relevance", "recency", "magnitude", "complexity"],
+            phrases: ["past performance", "prior contracts", "previous contracts",
+                     "contract references", "performance references",
+                     "cpars ratings", "similar contracts", "performance record"],
+            weight: 1.0
         }
-        return keywords;
     };
     
-    // Filter requirements based on factor
-    let pwsReqs = [];
-    if (factorNum) {
-        const factorKeywords = extractFactorKeywords(sectionName);
+    // =========================================================================
+    // FACTOR TYPE DETECTION - Determine what type this factor is
+    // =========================================================================
+    const detectFactorType = (name) => {
+        const nameLower = name.toLowerCase();
         
-        pwsReqs = requirements.filter(r => {
-            const text = (r.text || r.full_text || '').toLowerCase();
-            const reqId = (r.req_id || '').toLowerCase();
-            
-            // Match by factor number pattern
+        if (/experience|corporate\s+experience|relevant\s+experience/i.test(nameLower)) {
+            return "experience";
+        }
+        if (/management|program|project|coordination/i.test(nameLower)) {
+            return "management";
+        }
+        if (/technical|approach|methodology|solution|research/i.test(nameLower)) {
+            return "technical";
+        }
+        if (/personnel|staff|team|key\s+personnel/i.test(nameLower)) {
+            return "personnel";
+        }
+        if (/facilit|equipment|environment|infrastructure|security/i.test(nameLower)) {
+            return "facilities";
+        }
+        if (/past\s+performance|performance\s+record|reference/i.test(nameLower)) {
+            return "past_performance";
+        }
+        
+        return null;
+    };
+    
+    // =========================================================================
+    // REQUIREMENT SCORING - Score how relevant a requirement is to this factor
+    // =========================================================================
+    const scoreRequirement = (reqText, factorType, factorNum) => {
+        const textLower = (reqText || '').toLowerCase();
+        let score = 0;
+        let reasons = [];
+        
+        // Check for explicit factor mention (highest value)
+        if (factorNum) {
             const factorPattern = new RegExp(`factor\\s*${factorNum}\\b`, 'i');
-            if (factorPattern.test(text) || factorPattern.test(reqId)) {
-                return true;
+            if (factorPattern.test(textLower)) {
+                score += 50;
+                reasons.push(`Mentions Factor ${factorNum}`);
             }
-            
-            // Match by factor keywords (e.g., "experience", "key personnel")
-            if (factorKeywords.some(kw => text.includes(kw) && kw.length > 4)) {
-                return true;
+        }
+        
+        // Get profile for this factor type
+        const profile = factorProfiles[factorType];
+        if (!profile) {
+            return { score: 0, reason: "Unknown factor type" };
+        }
+        
+        // Check phrase matches (high value)
+        for (const phrase of profile.phrases) {
+            if (textLower.includes(phrase.toLowerCase())) {
+                score += 15 * profile.weight;
+                reasons.push(`Phrase: "${phrase}"`);
             }
-            
-            return false;
-        });
+        }
+        
+        // Check keyword matches
+        let keywordMatches = [];
+        for (const keyword of profile.keywords) {
+            if (textLower.includes(keyword.toLowerCase())) {
+                score += 2 * profile.weight;
+                keywordMatches.push(keyword);
+            }
+        }
+        
+        // Bonus for multiple keyword matches
+        if (keywordMatches.length >= 3) {
+            score += 10 * profile.weight;
+            reasons.push(`Keywords: ${keywordMatches.slice(0, 3).join(", ")}`);
+        } else if (keywordMatches.length > 0) {
+            reasons.push(`Keywords: ${keywordMatches.slice(0, 2).join(", ")}`);
+        }
+        
+        return {
+            score: score,
+            reason: reasons.length > 0 ? reasons.slice(0, 2).join("; ") : "Low relevance"
+        };
+    };
+    
+    // =========================================================================
+    // MAIN MAPPING LOGIC - Find requirements for this factor
+    // =========================================================================
+    const factorType = detectFactorType(sectionName);
+    let pwsReqs = [];
+    
+    if (factorType && requirements.length > 0) {
+        // Score all requirements for this factor
+        const scoredReqs = requirements
+            .filter(r => {
+                const text = r.text || r.full_text || '';
+                return text.trim().length > 0;
+            })
+            .map(r => {
+                const text = r.text || r.full_text || '';
+                const result = scoreRequirement(text, factorType, factorNum);
+                return {
+                    ...r,
+                    _score: result.score,
+                    _reason: result.reason
+                };
+            })
+            .filter(r => r._score > 5)  // Minimum relevance threshold
+            .sort((a, b) => b._score - a._score);  // Sort by score descending
+        
+        // Take top 10 most relevant
+        pwsReqs = scoredReqs.slice(0, 10);
     }
     
-    // Fallback: if no factor-specific reqs found, show nothing (don't repeat generic reqs)
-    // This avoids the "same requirements in every section" problem
-    pwsReqs = pwsReqs.slice(0, 10);  // Limit to 10 most relevant
+    // If we still have no requirements, try a simple keyword fallback
+    if (pwsReqs.length === 0 && factorType) {
+        const profile = factorProfiles[factorType];
+        if (profile) {
+            const topKeywords = profile.keywords.slice(0, 5);
+            pwsReqs = requirements
+                .filter(r => {
+                    const text = (r.text || r.full_text || '').toLowerCase();
+                    return topKeywords.some(kw => text.includes(kw.toLowerCase()));
+                })
+                .slice(0, 5);
+        }
+    }
     
     if (pwsReqs.length > 0) {
         children.push(createAnnotationBlock(
