@@ -304,7 +304,7 @@ class SmartOutlineGenerator:
         l4_subsections = self._extract_l4_subsections(section_l)
         
         if l4_subsections:
-            print(f"[OUTLINE] Found Section L.4 subsections: {list(l4_subsections.keys())}")
+            logger.info(f"[OUTLINE] Found Section L.4 subsections: {list(l4_subsections.keys())}")
             volumes_from_subsections = self._create_volumes_from_l4_subsections(l4_subsections)
             if volumes_from_subsections:
                 volumes.extend(volumes_from_subsections)
