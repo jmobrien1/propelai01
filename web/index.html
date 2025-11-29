@@ -754,6 +754,280 @@
                             </div>
                         </div>
                     )}
+                    
+                    {/* Chat with RFP (v2.12) */}
+                    {currentRfpId && (
+                        <>
+                            {/* Chat Toggle Button */}
+                            <button
+                                className="chat-toggle-button"
+                                onClick={() => setChatOpen(!chatOpen)}
+                                title="Chat with RFP"
+                                style={{
+                                    position: 'fixed',
+                                    bottom: '24px',
+                                    right: '24px',
+                                    width: '56px',
+                                    height: '56px',
+                                    borderRadius: '50%',
+                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                    border: 'none',
+                                    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'white',
+                                    transition: 'transform 0.2s, box-shadow 0.2s',
+                                    zIndex: 1000
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1.1)';
+                                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.5)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1)';
+                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+                                }}
+                            >
+                                <Icon name={chatOpen ? "X" : "MessageCircle"} size={24} />
+                            </button>
+                            
+                            {/* Chat Panel */}
+                            {chatOpen && (
+                                <div
+                                    className="chat-panel animate-in"
+                                    style={{
+                                        position: 'fixed',
+                                        bottom: '100px',
+                                        right: '24px',
+                                        width: '400px',
+                                        height: '600px',
+                                        background: 'var(--card-bg)',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: '16px',
+                                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        zIndex: 999,
+                                        overflow: 'hidden'
+                                    }}
+                                >
+                                    {/* Chat Header */}
+                                    <div style={{
+                                        padding: '16px 20px',
+                                        borderBottom: '1px solid var(--border-color)',
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'white' }}>
+                                                Chat with RFP
+                                            </h3>
+                                            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.8)' }}>
+                                                Ask questions about this RFP
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={clearChat}
+                                            style={{
+                                                background: 'rgba(255,255,255,0.2)',
+                                                border: 'none',
+                                                borderRadius: '6px',
+                                                padding: '6px 12px',
+                                                fontSize: '12px',
+                                                color: 'white',
+                                                cursor: 'pointer'
+                                            }}
+                                            title="Clear chat history"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Chat Messages */}
+                                    <div style={{
+                                        flex: 1,
+                                        overflowY: 'auto',
+                                        padding: '16px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '16px'
+                                    }}>
+                                        {chatMessages.length === 0 ? (
+                                            <div style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                height: '100%',
+                                                textAlign: 'center',
+                                                color: 'var(--text-muted)',
+                                                padding: '20px'
+                                            }}>
+                                                <Icon name="MessageCircle" size={48} />
+                                                <p style={{ marginTop: '16px', fontSize: '14px' }}>
+                                                    Ask me anything about this RFP!
+                                                </p>
+                                                <p style={{ marginTop: '8px', fontSize: '12px' }}>
+                                                    Try: "What are the evaluation factors?" or "What's the page limit?"
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            chatMessages.map((msg, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    style={{
+                                                        display: 'flex',
+                                                        flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                                                        gap: '8px',
+                                                        alignItems: 'flex-start'
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        width: '32px',
+                                                        height: '32px',
+                                                        borderRadius: '50%',
+                                                        background: msg.role === 'user' 
+                                                            ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                                                            : 'var(--border-color)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        flexShrink: 0
+                                                    }}>
+                                                        <Icon name={msg.role === 'user' ? "User" : "Bot"} size={18} />
+                                                    </div>
+                                                    <div style={{
+                                                        maxWidth: '75%',
+                                                        background: msg.role === 'user' 
+                                                            ? 'rgba(102, 126, 234, 0.2)'
+                                                            : 'rgba(255,255,255,0.05)',
+                                                        padding: '12px 16px',
+                                                        borderRadius: '12px',
+                                                        fontSize: '14px',
+                                                        lineHeight: '1.5'
+                                                    }}>
+                                                        <div>{msg.content}</div>
+                                                        {msg.sources && msg.sources.length > 0 && (
+                                                            <details style={{ marginTop: '12px', fontSize: '12px' }}>
+                                                                <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                                                    📎 {msg.sources.length} source{msg.sources.length > 1 ? 's' : ''}
+                                                                </summary>
+                                                                <div style={{ marginTop: '8px', paddingLeft: '8px' }}>
+                                                                    {msg.sources.map((src, i) => (
+                                                                        <div key={i} style={{
+                                                                            marginTop: '8px',
+                                                                            padding: '8px',
+                                                                            background: 'rgba(255,255,255,0.03)',
+                                                                            borderRadius: '6px',
+                                                                            borderLeft: '2px solid rgba(102, 126, 234, 0.5)'
+                                                                        }}>
+                                                                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+                                                                                Section {src.section}, Page {src.page}
+                                                                            </div>
+                                                                            <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                                                                                {src.text}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </details>
+                                                        )}
+                                                        <div style={{ 
+                                                            marginTop: '8px', 
+                                                            fontSize: '11px', 
+                                                            color: 'var(--text-muted)' 
+                                                        }}>
+                                                            {new Date(msg.timestamp).toLocaleTimeString()}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                        
+                                        {chatLoading && (
+                                            <div style={{
+                                                display: 'flex',
+                                                gap: '8px',
+                                                alignItems: 'flex-start'
+                                            }}>
+                                                <div style={{
+                                                    width: '32px',
+                                                    height: '32px',
+                                                    borderRadius: '50%',
+                                                    background: 'var(--border-color)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}>
+                                                    <Icon name="Bot" size={18} />
+                                                </div>
+                                                <div style={{
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    padding: '12px 16px',
+                                                    borderRadius: '12px',
+                                                    fontSize: '14px'
+                                                }}>
+                                                    <div className="typing-indicator">
+                                                        <span></span><span></span><span></span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    {/* Chat Input */}
+                                    <div style={{
+                                        padding: '16px',
+                                        borderTop: '1px solid var(--border-color)',
+                                        background: 'var(--bg-primary)'
+                                    }}>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <input
+                                                type="text"
+                                                value={chatInput}
+                                                onChange={(e) => setChatInput(e.target.value)}
+                                                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendChatMessage()}
+                                                placeholder="Ask about this RFP..."
+                                                disabled={chatLoading}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: '12px 16px',
+                                                    border: '1px solid var(--border-color)',
+                                                    borderRadius: '8px',
+                                                    background: 'var(--card-bg)',
+                                                    color: 'var(--text-primary)',
+                                                    fontSize: '14px',
+                                                    outline: 'none'
+                                                }}
+                                            />
+                                            <button
+                                                onClick={sendChatMessage}
+                                                disabled={chatLoading || !chatInput.trim()}
+                                                style={{
+                                                    padding: '12px 20px',
+                                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    color: 'white',
+                                                    cursor: chatLoading || !chatInput.trim() ? 'not-allowed' : 'pointer',
+                                                    opacity: chatLoading || !chatInput.trim() ? 0.5 : 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}
+                                            >
+                                                <Icon name="Send" size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             );
         }
