@@ -139,4 +139,4 @@ def apply_fix():
     // Debug logging
     const sectionDebugInfo = section.name || section.title || section.id || 'Unknown';
     console.log(`[OUTLINE] Building section: ${sectionDebugInfo}`);
-    console.log(`[OUTLINE]   Requirements passed: ${requirements ? requirements.length : 'NONE'}`);
+    console.log(`[OUTLINE]   Requirements passed: ${requirements ? requirements.length : 'NONE'}`);'''
