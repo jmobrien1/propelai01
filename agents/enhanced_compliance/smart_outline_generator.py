@@ -279,7 +279,12 @@ class SmartOutlineGenerator:
         section_m: List[Dict],
         rfp_format: str
     ) -> List[ProposalVolume]:
-        """Extract proposal volumes from requirements"""
+        """
+        Extract proposal volumes from requirements.
+        
+        ENHANCED: Now looks at section_ref patterns in addition to text search
+        to better detect Section L structure.
+        """
         
         volumes = []
         seen_volumes = set()
@@ -290,13 +295,24 @@ class SmartOutlineGenerator:
             for r in all_requirements
         ])
         
-        # Strategy depends on format
-        if rfp_format == "NIH_FACTOR":
-            volumes = self._extract_nih_volumes(all_text, section_m)
-        elif rfp_format in ["GSA_BPA", "GSA_RFQ"]:
-            volumes = self._extract_gsa_volumes(all_text, section_l)
-        else:
-            volumes = self._extract_standard_volumes(all_text, section_l)
+        # ENHANCED STRATEGY 1: Look for Section L subsection patterns (L.4.A, L.4.B, etc.)
+        # This captures the actual RFP structure better than text search alone
+        l4_subsections = self._extract_l4_subsections(section_l)
+        
+        if l4_subsections:
+            print(f"[OUTLINE] Found Section L.4 subsections: {list(l4_subsections.keys())}")
+            volumes_from_subsections = self._create_volumes_from_l4_subsections(l4_subsections)
+            if volumes_from_subsections:
+                volumes.extend(volumes_from_subsections)
+        
+        # STRATEGY 2: Format-specific extraction (existing logic)
+        if not volumes:  # Only use if subsection strategy didn't work
+            if rfp_format == "NIH_FACTOR":
+                volumes = self._extract_nih_volumes(all_text, section_m)
+            elif rfp_format in ["GSA_BPA", "GSA_RFQ"]:
+                volumes = self._extract_gsa_volumes(all_text, section_l)
+            else:
+                volumes = self._extract_standard_volumes(all_text, section_l)
         
         # Deduplicate and order
         unique_volumes = []
