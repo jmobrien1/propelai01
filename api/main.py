@@ -678,7 +678,7 @@ async def process_rfp(rfp_id: str, background_tasks: BackgroundTasks):
 
 # ============== v2.8: Semantic Processing ==============
 
-def process_rfp_semantic_background(rfp_id: str):
+async def process_rfp_semantic_background(rfp_id: str):
     """Background task to process RFP with semantic extraction (v2.8)"""
     rfp = await store.get(rfp_id)
     if not rfp:
