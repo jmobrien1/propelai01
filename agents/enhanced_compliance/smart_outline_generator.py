@@ -134,6 +134,9 @@ class SmartOutlineGenerator:
     """
     
     def __init__(self, rfp_type: Optional[RFPType] = None):
+        # v3.1: Store RFP type for router-based generation
+        self.rfp_type = rfp_type or RFPType.UNKNOWN
+        
         # Volume detection patterns
         self.volume_patterns = [
             # NIH Factor-based
