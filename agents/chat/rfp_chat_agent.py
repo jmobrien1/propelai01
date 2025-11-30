@@ -21,11 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 class RFPType(Enum):
-    """RFP classification types for v3.0 Router"""
+    """RFP classification types for v4.0 Router"""
     FEDERAL_STANDARD = "federal_standard"
     SLED_STATE = "sled_state"
     DOD_ATTACHMENT = "dod_attachment"
-    SPREADSHEET = "spreadsheet"
+    SPREADSHEET = "spreadsheet"  # Questionnaires with Response columns
+    MARKET_RESEARCH = "market_research"  # RFI/White Papers with Requirements
     UNKNOWN = "unknown"
 
 
