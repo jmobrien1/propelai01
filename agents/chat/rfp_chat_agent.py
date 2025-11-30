@@ -468,12 +468,12 @@ Please answer based only on the context above. If you cite information, referenc
             "content": user_message
         })
         
-        # Call Claude API - try multiple model versions for compatibility
+        # Call Claude API - using Claude 4 models (current as of Nov 2025)
         model_versions = [
-            "claude-3-5-sonnet-20240620",   # Claude 3.5 Sonnet (June 2024 release - most stable)
-            "claude-3-opus-20240229",       # Claude 3 Opus (high capability)
-            "claude-3-sonnet-20240229",     # Claude 3 Sonnet (balanced)
-            "claude-3-haiku-20240307",      # Claude 3 Haiku (fast)
+            "claude-sonnet-4-5",                # Claude 4.5 Sonnet (recommended - alias)
+            "claude-haiku-4-5",                 # Claude 4.5 Haiku (fast and affordable)
+            "claude-sonnet-4-5-20250929",       # Claude 4.5 Sonnet (specific version)
+            "claude-3-5-sonnet-20240620",       # Legacy fallback
         ]
         
         for model in model_versions:
