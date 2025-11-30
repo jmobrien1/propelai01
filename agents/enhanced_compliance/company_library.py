@@ -741,7 +741,7 @@ class CompanyLibraryParser:
         clean_text = re.sub(r"[#*_\[\](){}]", "", text)
         
         # Find potential keywords (capitalized phrases, technical terms)
-        words = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", text)
+        words = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", clean_text)
         
         # Count frequencies
         freq = {}
