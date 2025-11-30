@@ -65,12 +65,13 @@ class RFPChatAgent:
     - Chat history management
     """
     
-    def __init__(self, anthropic_api_key: Optional[str] = None):
+    def __init__(self, anthropic_api_key: Optional[str] = None, company_library=None):
         """
         Initialize the chat agent.
         
         Args:
             anthropic_api_key: Anthropic API key. If None, reads from env.
+            company_library: Optional CompanyLibrary instance for RAG integration
         """
         self.api_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
@@ -83,6 +84,9 @@ class RFPChatAgent:
         except ImportError:
             logger.error("anthropic package not installed. Run: pip install anthropic")
             raise
+        
+        # v3.1: Company Library integration for RAG
+        self.company_library = company_library
         
         # Configuration
         self.chunk_size = 1000  # characters per chunk (increased for more context)
