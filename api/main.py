@@ -311,7 +311,7 @@ except Exception as e:
 app = FastAPI(
     title="PropelAI API",
     description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices",
-    version="2.10.0"
+    version="4.0.0"  # Phase 5: Production Hardening with MongoDB
 )
 
 # CORS - allow all origins for development
@@ -322,6 +322,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============== Phase 5: Startup & Shutdown Events ==============
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize MongoDB connection on startup"""
+    try:
+        await db.connect()
+        print("[STARTUP] PropelAI v4.0 - MongoDB connected successfully")
+    except Exception as e:
+        print(f"[STARTUP] ERROR: Failed to connect to MongoDB: {e}")
+        raise
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close MongoDB connection on shutdown"""
+    await db.close()
+    print("[SHUTDOWN] MongoDB connection closed")
 
 
 # ============== Root Route (Web UI) ==============
