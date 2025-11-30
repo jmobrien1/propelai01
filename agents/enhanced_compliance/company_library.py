@@ -930,60 +930,97 @@ class CompanyLibrary:
         """
         Search library for relevant content
         
+        v3.1: Added crash-proof error handling.
+        
         Args:
             query: Search query
             
         Returns:
-            List of matching content
+            List of matching content (empty list if error)
         """
-        results = []
-        query_lower = query.lower()
-        query_terms = query_lower.split()
-        
-        # Search capabilities
-        for cap in self.profile.capabilities:
-            score = sum(1 for term in query_terms if term in cap.name.lower() or term in cap.description.lower())
-            if score > 0:
-                results.append({
-                    "type": "capability",
-                    "score": score,
-                    "content": cap.to_dict(),
-                })
-        
-        # Search past performance
-        for pp in self.profile.past_performance:
-            score = sum(1 for term in query_terms if term in pp.project_name.lower() or term in pp.description.lower())
-            if score > 0:
-                results.append({
-                    "type": "past_performance",
-                    "score": score,
-                    "content": pp.to_dict(),
-                })
-        
-        # Search key personnel
-        for kp in self.profile.key_personnel:
-            score = sum(1 for term in query_terms if term in kp.name.lower() or term in kp.summary.lower() or any(term in s.lower() for s in kp.skills))
-            if score > 0:
-                results.append({
-                    "type": "key_personnel",
-                    "score": score,
-                    "content": kp.to_dict(),
-                })
-        
-        # Search differentiators
-        for diff in self.profile.differentiators:
-            score = sum(1 for term in query_terms if term in diff.title.lower() or term in diff.description.lower())
-            if score > 0:
-                results.append({
-                    "type": "differentiator",
-                    "score": score,
-                    "content": diff.to_dict(),
-                })
-        
-        # Sort by score
-        results.sort(key=lambda x: x["score"], reverse=True)
-        
-        return results
+        try:
+            results = []
+            
+            # Safety check: validate query
+            if not query or not isinstance(query, str):
+                print(f"[LIBRARY] Invalid query: {query}")
+                return []
+            
+            query_lower = query.lower()
+            query_terms = query_lower.split()
+            
+            if not query_terms:
+                print(f"[LIBRARY] Empty query terms")
+                return []
+            
+            print(f"[LIBRARY] Searching for: {query[:100]}...")
+            
+            # Search capabilities
+            try:
+                for cap in self.profile.capabilities:
+                    score = sum(1 for term in query_terms if term in cap.name.lower() or term in cap.description.lower())
+                    if score > 0:
+                        results.append({
+                            "type": "capability",
+                            "score": score,
+                            "content": cap.to_dict(),
+                        })
+            except Exception as e:
+                print(f"[LIBRARY] Error searching capabilities: {e}")
+            
+            # Search past performance
+            try:
+                for pp in self.profile.past_performance:
+                    score = sum(1 for term in query_terms if term in pp.project_name.lower() or term in pp.description.lower())
+                    if score > 0:
+                        results.append({
+                            "type": "past_performance",
+                            "score": score,
+                            "content": pp.to_dict(),
+                        })
+            except Exception as e:
+                print(f"[LIBRARY] Error searching past performance: {e}")
+            
+            # Search key personnel
+            try:
+                for kp in self.profile.key_personnel:
+                    score = sum(1 for term in query_terms if term in kp.name.lower() or term in kp.summary.lower() or any(term in s.lower() for s in kp.skills))
+                    if score > 0:
+                        results.append({
+                            "type": "key_personnel",
+                            "score": score,
+                            "content": kp.to_dict(),
+                        })
+            except Exception as e:
+                print(f"[LIBRARY] Error searching key personnel: {e}")
+            
+            # Search differentiators
+            try:
+                for diff in self.profile.differentiators:
+                    score = sum(1 for term in query_terms if term in diff.title.lower() or term in diff.description.lower())
+                    if score > 0:
+                        results.append({
+                            "type": "differentiator",
+                            "score": score,
+                            "content": diff.to_dict(),
+                        })
+            except Exception as e:
+                print(f"[LIBRARY] Error searching differentiators: {e}")
+            
+            # Sort by score
+            if results:
+                results.sort(key=lambda x: x["score"], reverse=True)
+                print(f"[LIBRARY] Found {len(results)} results")
+            else:
+                print(f"[LIBRARY] No results found for query")
+            
+            return results
+            
+        except Exception as e:
+            print(f"[LIBRARY] Fatal error in search: {e}")
+            import traceback
+            print(f"[LIBRARY] Traceback: {traceback.format_exc()}")
+            return []
 
 
 # Export for API
