@@ -137,6 +137,9 @@ class ParsedDocument:
     sections: List[Dict]
     extracted_data: Dict
     parse_date: str
+    file_path: Optional[str] = None
+    file_hash: Optional[str] = None
+    tag: Optional[str] = None
     
     def to_dict(self) -> Dict:
         return {
@@ -147,6 +150,9 @@ class ParsedDocument:
             "sections": self.sections,
             "extracted_data": self.extracted_data,
             "parse_date": self.parse_date,
+            "file_path": self.file_path,
+            "file_hash": self.file_hash,
+            "tag": self.tag,
         }
 
 
