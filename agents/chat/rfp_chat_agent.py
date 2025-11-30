@@ -253,6 +253,9 @@ class RFPChatAgent:
             
             # If adding this paragraph exceeds chunk size, save current chunk
             if len(current_chunk) + len(para) > self.chunk_size and current_chunk:
+                # Detect section for this chunk
+                detected_section = self.detect_rfp_section(current_chunk, metadata.get('page'))
+                
                 chunk_id = f"chunk-{metadata.get('source_file', 'unknown')}-{chunk_index}"
                 chunks.append(DocumentChunk(
                     id=chunk_id,
@@ -260,7 +263,8 @@ class RFPChatAgent:
                     metadata={
                         **metadata,
                         "chunk_index": chunk_index,
-                        "char_length": len(current_chunk)
+                        "char_length": len(current_chunk),
+                        "rfp_section": detected_section  # Add section detection
                     }
                 ))
                 
@@ -274,6 +278,8 @@ class RFPChatAgent:
         
         # Save final chunk
         if current_chunk.strip():
+            detected_section = self.detect_rfp_section(current_chunk, metadata.get('page'))
+            
             chunk_id = f"chunk-{metadata.get('source_file', 'unknown')}-{chunk_index}"
             chunks.append(DocumentChunk(
                 id=chunk_id,
@@ -281,7 +287,8 @@ class RFPChatAgent:
                 metadata={
                     **metadata,
                     "chunk_index": chunk_index,
-                    "char_length": len(current_chunk)
+                    "char_length": len(current_chunk),
+                    "rfp_section": detected_section  # Add section detection
                 }
             ))
         
