@@ -1022,6 +1022,59 @@
                                         )}
                                     </div>
                                     
+                                    {/* Starter Chips - Only show when no messages */}
+                                    {chatMessages.length === 0 && (
+                                        <div style={{
+                                            padding: '16px',
+                                            borderTop: '1px solid var(--border-color)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '8px'
+                                        }}>
+                                            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
+                                                Quick start:
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {[
+                                                    'Tell me about this RFP',
+                                                    'What is the submission deadline?',
+                                                    'Summarize evaluation criteria',
+                                                    'What are the page limits?',
+                                                    'Extract formatting rules',
+                                                    'Check for contradictions'
+                                                ].map((prompt, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => {
+                                                            setChatInput(prompt);
+                                                            setTimeout(sendChatMessage, 100);
+                                                        }}
+                                                        style={{
+                                                            padding: '6px 12px',
+                                                            fontSize: '11px',
+                                                            background: 'rgba(102, 126, 234, 0.1)',
+                                                            border: '1px solid rgba(102, 126, 234, 0.3)',
+                                                            borderRadius: '16px',
+                                                            color: 'rgba(255,255,255,0.8)',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            e.target.style.background = 'rgba(102, 126, 234, 0.2)';
+                                                            e.target.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.target.style.background = 'rgba(102, 126, 234, 0.1)';
+                                                            e.target.style.borderColor = 'rgba(102, 126, 234, 0.3)';
+                                                        }}
+                                                    >
+                                                        {prompt}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    
                                     {/* Chat Input */}
                                     <div style={{
                                         padding: '16px',
