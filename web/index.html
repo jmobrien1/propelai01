@@ -911,13 +911,15 @@
                                                         borderRadius: '50%',
                                                         background: msg.role === 'user' 
                                                             ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                                                            : msg.role === 'error'
+                                                            ? 'rgba(239, 68, 68, 0.2)'
                                                             : 'var(--border-color)',
                                                         display: 'flex',
                                                         alignItems: 'center',
                                                         justifyContent: 'center',
                                                         flexShrink: 0
                                                     }}>
-                                                        <Icon name={msg.role === 'user' ? "User" : "Bot"} size={18} />
+                                                        <Icon name={msg.role === 'user' ? "User" : msg.role === 'error' ? "AlertCircle" : "Bot"} size={18} />
                                                     </div>
                                                     <div style={{
                                                         maxWidth: '75%',
