@@ -471,6 +471,8 @@ class RFPChatAgent:
         """
         Chunk all documents associated with an RFP.
         
+        v3.0: Includes RFP classification router.
+        
         Args:
             rfp_data: RFP data dict containing file paths and requirements
             
@@ -478,6 +480,7 @@ class RFPChatAgent:
             List of all document chunks
         """
         all_chunks = []
+        all_text_for_classification = ""
         
         # 1. Extract text from uploaded file paths
         file_paths = rfp_data.get("file_paths", [])
@@ -494,6 +497,9 @@ class RFPChatAgent:
                 text = self.extract_text_from_file(file_path)
                 
                 if text and len(text.strip()) > 50:  # Only chunk if we got substantial text
+                    # Collect text for classification (first 10k chars per file)
+                    all_text_for_classification += text[:10000] + "\n\n"
+                    
                     chunks = self.chunk_document(text, metadata={
                         "source_file": filename,
                         "section": "FULL_DOCUMENT",
@@ -503,6 +509,10 @@ class RFPChatAgent:
                     logger.info(f"[CHAT] Created {len(chunks)} chunks from {filename}")
                 else:
                     logger.warning(f"[CHAT] No text extracted from {filename}")
+        
+        # v3.0: Run classification router
+        self.detected_rfp_type = self.classify_rfp_type(all_text_for_classification, file_names)
+        logger.info(f"[CHAT] RFP Type Detected: {self.detected_rfp_type.value}")
         
         # 2. Also include requirements (as fallback/supplement)
         requirements = rfp_data.get("requirements", [])
