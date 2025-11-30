@@ -171,6 +171,87 @@ class SmartOutlineGenerator:
             r"descending\s+order\s+of\s+importance",
         ]
     
+    def classify_rfp_type_from_requirements(
+        self,
+        section_l_requirements: List[Dict],
+        section_m_requirements: List[Dict],
+        technical_requirements: List[Dict],
+        file_names: List[str] = None
+    ) -> RFPType:
+        """
+        v3.1: Classify RFP type using v3.0 Router Logic.
+        
+        Similar to classify_rfp_type() from RFP Chat Agent, but uses
+        compliance matrix data instead of raw text.
+        
+        Args:
+            section_l_requirements: Section L requirements
+            section_m_requirements: Section M requirements
+            technical_requirements: Technical/SOW requirements
+            file_names: List of uploaded file names
+            
+        Returns:
+            RFPType enum
+        """
+        file_names = file_names or []
+        
+        # Collect all text for classification
+        all_text = []
+        for req in section_l_requirements + section_m_requirements + technical_requirements:
+            text = req.get('text', '') or req.get('full_text', '')
+            if text:
+                all_text.append(text.lower())
+        
+        combined_text = ' '.join(all_text)
+        
+        # Priority 1: Check file types (MODE D - Spreadsheet)
+        has_spreadsheet = any(
+            fname.lower().endswith(('.xlsx', '.xls', '.csv')) 
+            for fname in file_names
+        )
+        spreadsheet_indicators = [
+            'questionnaire', 'requirements matrix', 'self-assessment',
+            'requirements traceability', 'vendor response', 'attachment j.2'
+        ]
+        if has_spreadsheet and any(indicator in combined_text for indicator in spreadsheet_indicators):
+            logger.info("[OUTLINE ROUTER] Classified as SPREADSHEET (MODE D)")
+            return RFPType.SPREADSHEET
+        
+        # Priority 2: Check for DoD attachments (MODE C)
+        dod_indicators = [
+            'attachment j.2', 'attachment j.3', 'attachment j-2',
+            'exhibit a', 'cdrl', 'qasp', 'quality assurance surveillance'
+        ]
+        if any(indicator in combined_text for indicator in dod_indicators):
+            logger.info("[OUTLINE ROUTER] Classified as DOD_ATTACHMENT (MODE C)")
+            return RFPType.DOD_ATTACHMENT
+        
+        # Priority 3: Check for SLED/State patterns (MODE B)
+        sled_indicators = [
+            'section 4:', 'specifications', 'instructions to vendors',
+            'state of', 'commonwealth of', 'county of', 'city of'
+        ]
+        numeric_section_pattern = re.search(r'\bsection\s+\d+[:\.]', combined_text)
+        if numeric_section_pattern or any(indicator in combined_text for indicator in sled_indicators):
+            # Additional check: Does it lack federal FAR patterns?
+            far_patterns = ['section l', 'section m', 'section c', 'far clause']
+            if not any(pattern in combined_text for pattern in far_patterns):
+                logger.info("[OUTLINE ROUTER] Classified as SLED_STATE (MODE B)")
+                return RFPType.SLED_STATE
+        
+        # Priority 4: Federal Standard (MODE A)
+        federal_indicators = [
+            'section l', 'section m', 'section c', 'far clause',
+            'instructions to offerors', 'evaluation criteria'
+        ]
+        if any(indicator in combined_text for indicator in federal_indicators):
+            logger.info("[OUTLINE ROUTER] Classified as FEDERAL_STANDARD (MODE A)")
+            return RFPType.FEDERAL_STANDARD
+        
+        # Default: Federal Standard (most common)
+        logger.info("[OUTLINE ROUTER] Classified as FEDERAL_STANDARD (default)")
+        return RFPType.FEDERAL_STANDARD
+    
     def generate_from_compliance_matrix(
         self,
         section_l_requirements: List[Dict],
