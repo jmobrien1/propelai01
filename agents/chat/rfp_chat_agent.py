@@ -240,29 +240,43 @@ class RFPChatAgent:
         Chunk all documents associated with an RFP.
         
         Args:
-            rfp_data: RFP data dict containing 'files' or 'documents'
+            rfp_data: RFP data dict containing file paths and requirements
             
         Returns:
             List of all document chunks
         """
         all_chunks = []
         
-        # Extract text from various sources
-        # 1. From uploaded files (if stored)
-        files = rfp_data.get("files", [])
-        for file_info in files:
-            filename = file_info.get("filename", "unknown")
-            text = file_info.get("text", "")
-            if text:
-                chunks = self.chunk_document(text, metadata={
-                    "source_file": filename,
-                    "section": "FULL_DOCUMENT"
-                })
-                all_chunks.extend(chunks)
+        # 1. Extract text from uploaded file paths
+        file_paths = rfp_data.get("file_paths", [])
+        file_names = rfp_data.get("files", [])
         
-        # 2. From requirements (already extracted and categorized)
+        if file_paths:
+            logger.info(f"[CHAT] Extracting text from {len(file_paths)} uploaded files...")
+            
+            for idx, file_path in enumerate(file_paths):
+                # Get corresponding filename
+                filename = file_names[idx] if idx < len(file_names) else Path(file_path).name
+                
+                # Extract text from file
+                text = self.extract_text_from_file(file_path)
+                
+                if text and len(text.strip()) > 50:  # Only chunk if we got substantial text
+                    chunks = self.chunk_document(text, metadata={
+                        "source_file": filename,
+                        "section": "FULL_DOCUMENT",
+                        "file_path": file_path
+                    })
+                    all_chunks.extend(chunks)
+                    logger.info(f"[CHAT] Created {len(chunks)} chunks from {filename}")
+                else:
+                    logger.warning(f"[CHAT] No text extracted from {filename}")
+        
+        # 2. Also include requirements (as fallback/supplement)
         requirements = rfp_data.get("requirements", [])
         if requirements:
+            logger.info(f"[CHAT] Adding {len(requirements)} extracted requirements...")
+            
             # Group requirements by section for better context
             section_texts = {}
             for req in requirements:
@@ -283,6 +297,10 @@ class RFPChatAgent:
                 all_chunks.extend(chunks)
         
         logger.info(f"[CHAT] Total chunks created for RFP: {len(all_chunks)}")
+        
+        if len(all_chunks) == 0:
+            logger.warning("[CHAT] No chunks created! Check if files were uploaded and text was extracted.")
+        
         return all_chunks
     
     # ============================================================================
