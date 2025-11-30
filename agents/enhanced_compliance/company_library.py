@@ -805,35 +805,151 @@ class CompanyLibrary:
         with open(index_file, "w") as f:
             json.dump(data, f, indent=2)
     
-    def add_document(self, file_path: str, document_type: Optional[DocumentType] = None) -> ParsedDocument:
+    def _calculate_file_hash(self, file_path: str) -> str:
         """
-        Add a document to the library
+        Calculate SHA-256 hash of file content for duplicate detection.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            SHA-256 hash string
+        """
+        import hashlib
+        
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            # Read file in chunks to handle large files
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+    
+    def _find_duplicate(self, file_hash: str) -> Optional[ParsedDocument]:
+        """
+        Check if file with same content already exists.
+        
+        Args:
+            file_hash: SHA-256 hash of file
+            
+        Returns:
+            Existing document if found, None otherwise
+        """
+        for doc in self.documents.values():
+            if hasattr(doc, 'file_hash') and doc.file_hash == file_hash:
+                return doc
+        return None
+    
+    def _get_versioned_filename(self, original_name: str) -> str:
+        """
+        Generate versioned filename if duplicate name exists.
+        
+        Args:
+            original_name: Original filename
+            
+        Returns:
+            Versioned filename (e.g., Capabilities_v2.docx)
+        """
+        base_path = self.storage_dir / original_name
+        if not base_path.exists():
+            return original_name
+        
+        # Extract name and extension
+        stem = base_path.stem
+        suffix = base_path.suffix
+        
+        # Find next available version number
+        version = 2
+        while True:
+            new_name = f"{stem}_v{version}{suffix}"
+            if not (self.storage_dir / new_name).exists():
+                return new_name
+            version += 1
+    
+    def add_document(self, file_path: str, doc_type: Optional[DocumentType] = None, tag: Optional[str] = None) -> dict:
+        """
+        Add document to library with duplicate detection.
+        
+        v4.0: Added content hashing, duplicate detection, and tagging.
         
         Args:
             file_path: Path to document file
-            document_type: Optional type hint
+            doc_type: Document type (will auto-detect if not specified)
+            tag: User-provided tag/category (e.g., "OTA Experience", "Past Performance")
             
         Returns:
-            Parsed document
+            Dict with status and parsed document or error message
         """
+        file_path = Path(file_path)
+        
+        if not file_path.exists():
+            return {
+                'status': 'error',
+                'message': f"File not found: {file_path}"
+            }
+        
+        # Calculate file hash for duplicate detection
+        try:
+            file_hash = self._calculate_file_hash(str(file_path))
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f"Error calculating file hash: {e}"
+            }
+        
+        # Check for duplicate content
+        duplicate = self._find_duplicate(file_hash)
+        if duplicate:
+            return {
+                'status': 'duplicate',
+                'message': f"Duplicate detected: {file_path.name} is already in the library as {duplicate.filename}",
+                'existing_file': duplicate.filename
+            }
+        
         # Parse document
-        doc = self.parser.parse_document(file_path, document_type)
+        try:
+            parsed = self.parser.parse_document(str(file_path), doc_type)
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f"Error parsing document: {e}"
+            }
         
-        # Store document
-        self.documents[doc.id] = doc
+        # Check for filename collision (same name, different content)
+        dest_filename = file_path.name
+        if (self.storage_dir / dest_filename).exists():
+            dest_filename = self._get_versioned_filename(file_path.name)
+            print(f"[LIBRARY] Filename collision detected - versioning to: {dest_filename}")
         
-        # Copy file to storage
-        dest_path = self.storage_dir / f"{doc.id}_{doc.filename}"
-        import shutil
-        shutil.copy2(file_path, dest_path)
+        # Copy to library directory
+        dest_path = self.storage_dir / dest_filename
+        try:
+            shutil.copy2(file_path, dest_path)
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f"Error copying file: {e}"
+            }
         
-        # Update profile
-        self._update_profile(doc)
+        parsed.file_path = str(dest_path)
+        parsed.filename = dest_filename
         
-        # Save library
+        # v4.0: Add hash and tag to document
+        parsed.file_hash = file_hash
+        parsed.tag = tag or doc_type.value if doc_type else "uncategorized"
+        
+        # Add to library
+        self.documents[parsed.id] = parsed
+        self._update_profile(parsed)
         self._save_library()
         
-        return doc
+        print(f"[LIBRARY] Successfully added: {dest_filename} (tag: {parsed.tag})")
+        
+        return {
+            'status': 'success',
+            'message': f"Successfully added {dest_filename}",
+            'filename': dest_filename,
+            'document': parsed
+        }
     
     def _update_profile(self, doc: ParsedDocument):
         """Update company profile with data from new document"""
