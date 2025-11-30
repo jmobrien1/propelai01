@@ -10,6 +10,7 @@ Similar to NotebookLM - RAG-based Q&A with source citations.
 import os
 import re
 import logging
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
