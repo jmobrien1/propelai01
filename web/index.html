@@ -591,11 +591,21 @@
                     setChatMessages(prev => [...prev, assistantMsg]);
                     
                 } catch (e) {
-                    setError('Chat failed: ' + e.message);
-                    // Add error message
+                    console.error('Chat error:', e);
+                    
+                    // Extract error message from response if available
+                    let errorMessage = 'Sorry, I encountered an error. Please try again.';
+                    if (e.message && e.message.includes('Error code:')) {
+                        // Parse API error for better display
+                        errorMessage = '⚠️ Unable to generate response. This may be due to API access limitations. Please check your Anthropic API key configuration in Render.';
+                    } else if (e.message) {
+                        errorMessage = `⚠️ ${e.message}`;
+                    }
+                    
+                    // Add error message to chat
                     const errorMsg = {
-                        role: 'assistant',
-                        content: 'Sorry, I encountered an error. Please try again.',
+                        role: 'error',  // Special role for styling
+                        content: errorMessage,
                         timestamp: new Date().toISOString()
                     };
                     setChatMessages(prev => [...prev, errorMsg]);
