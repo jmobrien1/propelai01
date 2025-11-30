@@ -779,11 +779,11 @@
                             <button
                                 className="chat-toggle-button"
                                 onClick={() => setChatOpen(!chatOpen)}
-                                title="Chat with RFP"
+                                title={chatOpen ? "Close chat" : "Open chat"}
                                 style={{
                                     position: 'fixed',
                                     bottom: '24px',
-                                    right: '24px',
+                                    right: chatOpen ? '466px' : '24px',
                                     width: '56px',
                                     height: '56px',
                                     borderRadius: '50%',
@@ -791,12 +791,12 @@
                                     border: 'none',
                                     boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
                                     cursor: 'pointer',
-                                    display: chatOpen ? 'none' : 'flex',
+                                    display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     color: 'white',
                                     transition: 'all 0.3s ease',
-                                    zIndex: 10000
+                                    zIndex: 999
                                 }}
                                 onMouseEnter={(e) => {
                                     e.currentTarget.style.transform = 'scale(1.1)';
