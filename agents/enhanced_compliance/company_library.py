@@ -791,6 +791,9 @@ class CompanyLibrary:
                             sections=doc_data.get("sections", []),
                             extracted_data=doc_data.get("extracted_data", {}),
                             parse_date=doc_data.get("parse_date", ""),
+                            file_path=doc_data.get("file_path"),
+                            file_hash=doc_data.get("file_hash"),
+                            tag=doc_data.get("tag"),
                         )
                         self.documents[doc.id] = doc
                     
