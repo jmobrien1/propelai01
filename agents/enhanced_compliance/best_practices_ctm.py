@@ -591,8 +591,8 @@ class BestPracticesCTMExporter:
             ws.cell(row=row_num, column=5, value=req.source_section.value)
             ws.cell(row=row_num, column=6, value=req.binding_level.value)
             ws.cell(row=row_num, column=7, value=req.page_number)
-            ws.cell(row=row_num, column=8, value=req.source_document or "")
-            ws.cell(row=row_num, column=9, value=", ".join(req.references_to))
+            ws.cell(row=row_num, column=8, value=self._sanitize_cell_value(req.source_document or ""))
+            ws.cell(row=row_num, column=9, value=self._sanitize_cell_value(", ".join(req.references_to)))
             
             # Color by category
             color = self.COLORS.get('att_section')
