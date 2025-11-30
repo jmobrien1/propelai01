@@ -1965,10 +1965,14 @@
             const [library, setLibrary] = useState(null);
             const [loading, setLoading] = useState(true);
             const [uploading, setUploading] = useState(false);
-            const [activeTab, setActiveTab] = useState('overview');
+            const [activeTab, setActiveTab] = useState('upload');
             const [searchQuery, setSearchQuery] = useState('');
             const [searchResults, setSearchResults] = useState([]);
-            const fileInputRef = useRef(null);
+            
+            // Phase 5: New state for drag-and-drop and staging
+            const [stagingFiles, setStagingFiles] = useState([]);
+            const [isDragging, setIsDragging] = useState(false);
+            const [uploadProgress, setUploadProgress] = useState({});
             
             useEffect(() => {
                 loadLibrary();
@@ -1986,28 +1990,122 @@
                 }
             };
             
-            const handleFileUpload = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
+            // Phase 5: Drag and drop handlers
+            const handleDragEnter = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(true);
+            };
+            
+            const handleDragLeave = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(false);
+            };
+            
+            const handleDragOver = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+            
+            const handleDrop = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(false);
+                
+                const files = Array.from(e.dataTransfer.files);
+                handleFilesAdded(files);
+            };
+            
+            const handleFileInputChange = (e) => {
+                const files = Array.from(e.target.files);
+                handleFilesAdded(files);
+                e.target.value = ''; // Reset input
+            };
+            
+            const handleFilesAdded = (files) => {
+                const validExtensions = ['.pdf', '.docx', '.doc', '.pptx', '.txt', '.md'];
+                const validFiles = files.filter(file => {
+                    const ext = '.' + file.name.split('.').pop().toLowerCase();
+                    return validExtensions.includes(ext);
+                });
+                
+                const newStagingFiles = validFiles.map(file => ({
+                    id: Math.random().toString(36).substr(2, 9),
+                    file: file,
+                    name: file.name,
+                    size: file.size,
+                    tag: 'Capabilities' // Default tag
+                }));
+                
+                setStagingFiles([...stagingFiles, ...newStagingFiles]);
+            };
+            
+            const removeStagingFile = (fileId) => {
+                setStagingFiles(stagingFiles.filter(f => f.id !== fileId));
+            };
+            
+            const updateFileTag = (fileId, newTag) => {
+                setStagingFiles(stagingFiles.map(f => 
+                    f.id === fileId ? { ...f, tag: newTag } : f
+                ));
+            };
+            
+            const uploadStagingFiles = async () => {
+                if (stagingFiles.length === 0) return;
                 
                 setUploading(true);
-                const formData = new FormData();
-                formData.append('file', file);
+                const results = [];
+                
+                for (const stagedFile of stagingFiles) {
+                    try {
+                        setUploadProgress(prev => ({ ...prev, [stagedFile.id]: 'uploading' }));
+                        
+                        const formData = new FormData();
+                        formData.append('file', stagedFile.file);
+                        formData.append('tag', stagedFile.tag);
+                        
+                        const response = await fetch('/api/library/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            setUploadProgress(prev => ({ ...prev, [stagedFile.id]: 'success' }));
+                            results.push({ ...stagedFile, status: 'success' });
+                        } else if (result.duplicate) {
+                            setUploadProgress(prev => ({ ...prev, [stagedFile.id]: 'duplicate' }));
+                            results.push({ ...stagedFile, status: 'duplicate' });
+                        } else {
+                            setUploadProgress(prev => ({ ...prev, [stagedFile.id]: 'error' }));
+                            results.push({ ...stagedFile, status: 'error' });
+                        }
+                    } catch (error) {
+                        console.error('Upload error:', error);
+                        setUploadProgress(prev => ({ ...prev, [stagedFile.id]: 'error' }));
+                        results.push({ ...stagedFile, status: 'error' });
+                    }
+                }
+                
+                // Clear staging after upload
+                setTimeout(() => {
+                    setStagingFiles([]);
+                    setUploadProgress({});
+                    setUploading(false);
+                    loadLibrary();
+                }, 1500);
+            };
+            
+            const deleteDocument = async (docId) => {
+                if (!confirm('Remove this document from library?')) return;
                 
                 try {
-                    const response = await fetch('/api/library/upload', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const result = await response.json();
-                    if (result.success) {
-                        loadLibrary();
-                    }
+                    await fetch(`/api/library/documents/${docId}`, { method: 'DELETE' });
+                    loadLibrary();
                 } catch (error) {
-                    console.error('Error uploading:', error);
-                } finally {
-                    setUploading(false);
-                    fileInputRef.current.value = '';
+                    console.error('Error deleting:', error);
                 }
             };
             
@@ -2020,17 +2118,6 @@
                     setSearchResults(data.results || []);
                 } catch (error) {
                     console.error('Error searching:', error);
-                }
-            };
-            
-            const deleteDocument = async (docId) => {
-                if (!confirm('Remove this document from library?')) return;
-                
-                try {
-                    await fetch(`/api/library/documents/${docId}`, { method: 'DELETE' });
-                    loadLibrary();
-                } catch (error) {
-                    console.error('Error deleting:', error);
                 }
             };
             
@@ -2048,137 +2135,320 @@
                     <div className="view-header">
                         <div>
                             <h1>Company Library</h1>
-                            <p className="text-muted">Upload capabilities statements, past performance, and resumes for enhanced proposal generation</p>
+                            <p className="text-muted">
+                                <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--accent-green)' }}>v4.0</span> Production-Ready Document Management
+                            </p>
                         </div>
-                        <div>
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                onChange={handleFileUpload}
-                                accept=".docx,.doc,.pdf,.txt,.md"
-                                style={{ display: 'none' }}
-                            />
-                            <button 
-                                className="btn btn-primary"
-                                onClick={() => fileInputRef.current.click()}
-                                disabled={uploading}
-                            >
-                                {uploading ? 'Uploading...' : '+ Upload Document'}
-                            </button>
-                        </div>
-                    </div>
-                    
-                    {/* Stats Cards */}
-                    <div className="stats-grid" style={{ marginBottom: 24 }}>
-                        <div className="stat-card">
-                            <div className="stat-label">Documents</div>
-                            <div className="stat-value">{library?.document_count || 0}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Capabilities</div>
-                            <div className="stat-value">{library?.profile_summary?.capabilities_count || 0}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Differentiators</div>
-                            <div className="stat-value">{library?.profile_summary?.differentiators_count || 0}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Past Performance</div>
-                            <div className="stat-value">{library?.profile_summary?.past_performance_count || 0}</div>
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <div style={{ 
+                                background: 'var(--bg-card)', 
+                                padding: '12px 20px', 
+                                borderRadius: 8, 
+                                border: '1px solid var(--border-color)' 
+                            }}>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    Documents
+                                </div>
+                                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent-blue)' }}>
+                                    {library?.document_count || 0}
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
                     {/* Tabs */}
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 8 }}>
-                        {['overview', 'documents', 'search'].map(tab => (
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: '1px solid var(--border-color)', paddingBottom: 8 }}>
+                        {['upload', 'documents', 'search'].map(tab => (
                             <button
                                 key={tab}
-                                className={`btn ${activeTab === tab ? 'btn-primary' : ''}`}
+                                className={`btn ${activeTab === tab ? 'btn-primary' : 'btn-secondary'}`}
                                 onClick={() => setActiveTab(tab)}
-                                style={{ textTransform: 'capitalize' }}
+                                style={{ textTransform: 'capitalize', fontWeight: 500 }}
                             >
+                                <Icon name={tab === 'upload' ? 'Upload' : tab === 'documents' ? 'FileText' : 'Search'} size={16} />
                                 {tab}
                             </button>
                         ))}
                     </div>
                     
-                    {activeTab === 'overview' && (
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">
-                                    {library?.profile_summary?.company_name || 'Company Profile'}
+                    {/* Phase 5: Upload Tab - Drag & Drop */}
+                    {activeTab === 'upload' && (
+                        <div>
+                            {/* Smart Dropzone */}
+                            <div
+                                onDragEnter={handleDragEnter}
+                                onDragOver={handleDragOver}
+                                onDragLeave={handleDragLeave}
+                                onDrop={handleDrop}
+                                style={{
+                                    border: `2px dashed ${isDragging ? 'var(--accent-blue)' : 'var(--border-accent)'}`,
+                                    borderRadius: 16,
+                                    padding: 48,
+                                    textAlign: 'center',
+                                    background: isDragging ? 'rgba(79, 140, 255, 0.05)' : 'var(--bg-card)',
+                                    transition: 'all 0.3s',
+                                    marginBottom: 24,
+                                    cursor: 'pointer'
+                                }}
+                                onClick={() => document.getElementById('multi-file-input').click()}
+                            >
+                                <div style={{ 
+                                    width: 72, 
+                                    height: 72, 
+                                    margin: '0 auto 20px', 
+                                    background: 'var(--bg-tertiary)', 
+                                    borderRadius: 16, 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center' 
+                                }}>
+                                    <Icon name={isDragging ? 'Download' : 'UploadCloud'} size={32} style={{ color: 'var(--accent-blue)' }} />
+                                </div>
+                                <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+                                    {isDragging ? 'Drop files here' : 'Drag & Drop Files Here'}
                                 </h3>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 16 }}>
+                                    or click to browse files
+                                </p>
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                    {['.PDF', '.DOCX', '.PPTX', '.TXT', '.MD'].map(ext => (
+                                        <span key={ext} style={{ 
+                                            background: 'var(--bg-tertiary)', 
+                                            padding: '6px 12px', 
+                                            borderRadius: 6, 
+                                            fontSize: 12, 
+                                            fontFamily: 'monospace', 
+                                            color: 'var(--text-secondary)' 
+                                        }}>
+                                            {ext}
+                                        </span>
+                                    ))}
+                                </div>
+                                <input
+                                    id="multi-file-input"
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.docx,.doc,.pptx,.txt,.md"
+                                    onChange={handleFileInputChange}
+                                    style={{ display: 'none' }}
+                                />
                             </div>
                             
-                            {library?.document_count === 0 ? (
-                                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-                                    <Icon name="Building" style={{ width: 48, height: 48, marginBottom: 16, opacity: 0.5 }} />
-                                    <p>No documents in library yet</p>
-                                    <p style={{ fontSize: 13, marginTop: 8 }}>Upload a capabilities statement to get started</p>
-                                </div>
-                            ) : (
-                                <div style={{ padding: 16 }}>
-                                    <p style={{ marginBottom: 16 }}>
-                                        Your library contains <strong>{library?.profile_summary?.capabilities_count || 0}</strong> capabilities, 
-                                        <strong> {library?.profile_summary?.differentiators_count || 0}</strong> differentiators, and 
-                                        <strong> {library?.profile_summary?.past_performance_count || 0}</strong> past performance records.
-                                    </p>
-                                    <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                                        This content will be used to enhance your proposal drafts with relevant company information.
-                                    </p>
+                            {/* Staging List */}
+                            {stagingFiles.length > 0 && (
+                                <div className="card" style={{ marginBottom: 24 }}>
+                                    <div className="card-header">
+                                        <h3 className="card-title">
+                                            <Icon name="Clock" size={18} /> Staging Area ({stagingFiles.length} files)
+                                        </h3>
+                                    </div>
+                                    <div>
+                                        {stagingFiles.map(file => {
+                                            const progress = uploadProgress[file.id];
+                                            return (
+                                                <div key={file.id} style={{ 
+                                                    padding: 16, 
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    display: 'grid',
+                                                    gridTemplateColumns: '1fr 180px 140px 60px',
+                                                    gap: 16,
+                                                    alignItems: 'center'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                        <Icon 
+                                                            name={file.name.endsWith('.pdf') ? 'FileText' : file.name.endsWith('.docx') || file.name.endsWith('.doc') ? 'File' : 'FileCode'} 
+                                                            size={20} 
+                                                            style={{ color: 'var(--accent-blue)' }} 
+                                                        />
+                                                        <div>
+                                                            <div style={{ fontWeight: 500 }}>{file.name}</div>
+                                                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                                {formatFileSize(file.size)}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <select
+                                                        value={file.tag}
+                                                        onChange={(e) => updateFileTag(file.id, e.target.value)}
+                                                        disabled={uploading}
+                                                        style={{
+                                                            background: 'var(--bg-tertiary)',
+                                                            color: 'var(--text-primary)',
+                                                            border: '1px solid var(--border-color)',
+                                                            borderRadius: 6,
+                                                            padding: '8px 12px',
+                                                            fontSize: 13,
+                                                            fontWeight: 500,
+                                                            cursor: uploading ? 'not-allowed' : 'pointer'
+                                                        }}
+                                                    >
+                                                        <option value="Capabilities">Capabilities</option>
+                                                        <option value="Past Performance">Past Performance</option>
+                                                        <option value="Resume">Resume</option>
+                                                        <option value="Technical Approach">Technical Approach</option>
+                                                        <option value="Context/RFI">Context/RFI</option>
+                                                    </select>
+                                                    
+                                                    <div>
+                                                        {progress === 'uploading' && (
+                                                            <span style={{ color: 'var(--accent-amber)', fontSize: 13 }}>
+                                                                <Icon name="Loader" size={14} /> Uploading...
+                                                            </span>
+                                                        )}
+                                                        {progress === 'success' && (
+                                                            <span style={{ color: 'var(--accent-green)', fontSize: 13 }}>
+                                                                <Icon name="CheckCircle" size={14} /> Done
+                                                            </span>
+                                                        )}
+                                                        {progress === 'duplicate' && (
+                                                            <span style={{ color: 'var(--accent-amber)', fontSize: 13 }}>
+                                                                <Icon name="AlertCircle" size={14} /> Duplicate
+                                                            </span>
+                                                        )}
+                                                        {progress === 'error' && (
+                                                            <span style={{ color: 'var(--accent-red)', fontSize: 13 }}>
+                                                                <Icon name="XCircle" size={14} /> Error
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    <button
+                                                        onClick={() => removeStagingFile(file.id)}
+                                                        disabled={uploading}
+                                                        className="btn btn-ghost"
+                                                        style={{ padding: 8 }}
+                                                    >
+                                                        <Icon name="X" size={18} style={{ color: 'var(--accent-red)' }} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ padding: 16, borderTop: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={uploadStagingFiles}
+                                            disabled={uploading || stagingFiles.length === 0}
+                                            style={{ width: '100%', padding: '12px 24px', fontSize: 15, fontWeight: 600 }}
+                                        >
+                                            {uploading ? (
+                                                <>
+                                                    <Icon name="Loader" size={18} /> Uploading {stagingFiles.length} files...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Icon name="Upload" size={18} /> Upload {stagingFiles.length} {stagingFiles.length === 1 ? 'File' : 'Files'}
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>
                     )}
                     
+                    {/* Phase 5: Documents Tab - Library Grid */}
                     {activeTab === 'documents' && (
                         <div className="card">
                             <div className="card-header">
-                                <h3 className="card-title">Uploaded Documents</h3>
+                                <h3 className="card-title">Document Library</h3>
                             </div>
                             
                             {library?.documents?.length === 0 ? (
-                                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-                                    No documents uploaded yet
+                                <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    <Icon name="FolderOpen" style={{ width: 48, height: 48, marginBottom: 16, opacity: 0.5 }} />
+                                    <p style={{ fontSize: 16, fontWeight: 500 }}>No documents uploaded yet</p>
+                                    <p style={{ fontSize: 13, marginTop: 8 }}>Use the Upload tab to add documents</p>
                                 </div>
                             ) : (
-                                library?.documents?.map(doc => (
-                                    <div key={doc.id} style={{ 
-                                        padding: 16, 
-                                        borderBottom: '1px solid var(--border-color)',
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center'
-                                    }}>
-                                        <div>
-                                            <div style={{ fontWeight: 500 }}>{doc.title}</div>
-                                            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-                                                <span className={`badge badge-${doc.type === 'capabilities' ? 'blue' : doc.type === 'resume' ? 'green' : 'purple'}`}>
-                                                    {doc.type}
-                                                </span>
-                                                <span style={{ marginLeft: 8 }}>{doc.filename}</span>
-                                            </div>
-                                        </div>
-                                        <button 
-                                            className="btn"
-                                            onClick={() => deleteDocument(doc.id)}
-                                            style={{ color: 'var(--accent-red)' }}
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ))
+                                <div style={{ overflow: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                                                <th style={{ padding: 12, textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    Type
+                                                </th>
+                                                <th style={{ padding: 12, textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    Name
+                                                </th>
+                                                <th style={{ padding: 12, textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    Category
+                                                </th>
+                                                <th style={{ padding: 12, textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    Date
+                                                </th>
+                                                <th style={{ padding: 12, textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    Actions
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {library?.documents?.map((doc, idx) => (
+                                                <tr key={doc.id} style={{ 
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    transition: 'background 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                                >
+                                                    <td style={{ padding: 12 }}>
+                                                        <Icon 
+                                                            name={doc.filename.endsWith('.pdf') ? 'FileText' : doc.filename.endsWith('.docx') ? 'File' : 'FileCode'} 
+                                                            size={20} 
+                                                            style={{ color: 'var(--accent-blue)' }} 
+                                                        />
+                                                    </td>
+                                                    <td style={{ padding: 12 }}>
+                                                        <div style={{ fontWeight: 500 }}>{doc.title || doc.filename}</div>
+                                                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                            {doc.filename}
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: 12 }}>
+                                                        <span style={{
+                                                            background: 'var(--bg-tertiary)',
+                                                            padding: '4px 10px',
+                                                            borderRadius: 12,
+                                                            fontSize: 12,
+                                                            fontWeight: 500,
+                                                            color: doc.type === 'capabilities' ? 'var(--accent-blue)' : 
+                                                                   doc.type === 'resume' ? 'var(--accent-green)' : 
+                                                                   doc.type === 'past_performance' ? 'var(--accent-purple)' : 'var(--text-secondary)'
+                                                        }}>
+                                                            {doc.type.replace('_', ' ')}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
+                                                        {doc.parse_date ? new Date(doc.parse_date).toLocaleDateString() : '-'}
+                                                    </td>
+                                                    <td style={{ padding: 12, textAlign: 'center' }}>
+                                                        <button
+                                                            onClick={() => deleteDocument(doc.id)}
+                                                            className="btn btn-ghost"
+                                                            style={{ padding: '6px 12px', color: 'var(--accent-red)' }}
+                                                            title="Delete document"
+                                                        >
+                                                            <Icon name="Trash2" size={16} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             )}
                         </div>
                     )}
                     
+                    {/* Search Tab */}
                     {activeTab === 'search' && (
                         <div className="card">
                             <div className="card-header">
                                 <h3 className="card-title">Search Library</h3>
                             </div>
                             <div style={{ padding: 16 }}>
-                                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                                <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
                                     <input
                                         type="text"
                                         className="form-input"
@@ -2186,36 +2456,49 @@
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                                        style={{ flex: 1 }}
+                                        style={{ flex: 1, padding: '12px 16px', fontSize: 14 }}
                                     />
                                     <button className="btn btn-primary" onClick={handleSearch}>
+                                        <Icon name="Search" size={18} />
                                         Search
                                     </button>
                                 </div>
                                 
                                 {searchResults.length > 0 && (
                                     <div>
-                                        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, fontWeight: 500 }}>
                                             Found {searchResults.length} results
                                         </div>
                                         {searchResults.map((result, idx) => (
                                             <div key={idx} style={{ 
-                                                padding: 12, 
+                                                padding: 16, 
                                                 background: 'var(--bg-tertiary)', 
-                                                borderRadius: 8,
-                                                marginBottom: 8
+                                                borderRadius: 12,
+                                                marginBottom: 12,
+                                                border: '1px solid var(--border-color)'
                                             }}>
-                                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                                                    <span className={`badge badge-${result.type === 'capability' ? 'blue' : result.type === 'differentiator' ? 'purple' : 'green'}`}>
+                                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                                                    <span style={{
+                                                        background: 'var(--bg-card)',
+                                                        padding: '4px 10px',
+                                                        borderRadius: 12,
+                                                        fontSize: 11,
+                                                        fontWeight: 600,
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.5px',
+                                                        color: result.type === 'capability' ? 'var(--accent-blue)' : 
+                                                               result.type === 'differentiator' ? 'var(--accent-purple)' : 
+                                                               result.type === 'past_performance' ? 'var(--accent-green)' : 'var(--text-secondary)'
+                                                    }}>
                                                         {result.type}
                                                     </span>
-                                                    <span style={{ fontWeight: 500 }}>
+                                                    <span style={{ fontWeight: 600, fontSize: 15 }}>
                                                         {result.content.name || result.content.title || result.content.project_name}
                                                     </span>
                                                 </div>
-                                                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                                                    {result.content.description?.slice(0, 200) || ''}
-                                                    {result.content.description?.length > 200 ? '...' : ''}
+                                                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                    {result.content.description?.slice(0, 300) || ''}
+                                                    {result.content.description?.length > 300 ? '...' : ''}
                                                 </div>
                                             </div>
                                         ))}
