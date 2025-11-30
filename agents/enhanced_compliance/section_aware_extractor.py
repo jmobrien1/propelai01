@@ -1,5 +1,11 @@
 """
-PropelAI v2.9: Section-Aware Requirement Extractor
+PropelAI v3.1: Section-Aware Requirement Extractor
+
+v3.1 Updates:
+- Integrated v3.0 Router Logic for mode-specific extraction
+- MODE D: Extract from spreadsheet files (pandas-based)
+- MODE A: Cross-reference Section L/M for page limits injection
+- MODE A: Tag requirements with target volumes (I, II, III)
 
 Per best practices:
 - "Extract Every Requirement — NEVER Summarize in the CTM"
@@ -15,6 +21,8 @@ This extractor:
 """
 
 import re
+import sys
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
@@ -27,6 +35,21 @@ from .document_structure import (
     AttachmentInfo,
     analyze_rfp_structure
 )
+
+# v3.1: Import Router Logic
+sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from agents.chat.rfp_chat_agent import RFPType
+    ROUTER_AVAILABLE = True
+except ImportError:
+    ROUTER_AVAILABLE = False
+    # Fallback
+    class RFPType(Enum):
+        FEDERAL_STANDARD = "federal_standard"
+        SLED_STATE = "sled_state"
+        DOD_ATTACHMENT = "dod_attachment"
+        SPREADSHEET = "spreadsheet"
+        UNKNOWN = "unknown"
 
 
 class RequirementCategory(Enum):
