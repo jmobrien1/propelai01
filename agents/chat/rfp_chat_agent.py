@@ -624,6 +624,216 @@ Please answer based only on the context above. If you cite information, referenc
                 continue  # Try next model
     
     # ============================================================================
+    # PHASE 2: COMPLIANCE & LOGIC ENGINE
+    # ============================================================================
+    
+    def detect_query_type(self, question: str) -> str:
+        """
+        Detect the type of query to route to specialized handlers.
+        
+        Returns:
+            'cross_reference' | 'contradiction' | 'formatting' | 'general'
+        """
+        question_lower = question.lower()
+        
+        # Cross-reference detection
+        cross_ref_indicators = [
+            'page limit' and ('section m' in question_lower or 'factor' in question_lower),
+            'enough space' in question_lower,
+            'allow' in question_lower and 'address' in question_lower,
+            'volume' in question_lower and 'page' in question_lower and ('factor' in question_lower or 'criteria' in question_lower)
+        ]
+        if any(cross_ref_indicators):
+            return 'cross_reference'
+        
+        # Contradiction detection
+        if 'contradiction' in question_lower or 'inconsisten' in question_lower or 'conflict' in question_lower:
+            return 'contradiction'
+        
+        # Formatting rules
+        formatting_indicators = ['font', 'margin', 'format', 'file format', 'spacing', 'formatting']
+        if any(indicator in question_lower for indicator in formatting_indicators):
+            return 'formatting'
+        
+        return 'general'
+    
+    def handle_cross_reference_query(
+        self, 
+        question: str, 
+        chunks: List[DocumentChunk]
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        Handle cross-reference queries between Section L and Section M.
+        
+        Example: "Does Section L page limit allow enough space for Section M factors?"
+        """
+        # Get Section L chunks (page limits)
+        section_l_chunks = [c for c in chunks if c.metadata.get('rfp_section') == 'SECTION_L']
+        # Get Section M chunks (evaluation criteria)
+        section_m_chunks = [c for c in chunks if c.metadata.get('rfp_section') == 'SECTION_M']
+        
+        # Build specialized context
+        context_parts = []
+        sources = []
+        
+        context_parts.append("=== SECTION L: Page Limits and Instructions ===")
+        for i, chunk in enumerate(section_l_chunks[:5], 1):
+            context_parts.append(f"[Source {i}, Section L] {chunk.text[:800]}")
+            sources.append({
+                "section": chunk.metadata.get('rfp_section', 'UNKNOWN'),
+                "page": chunk.metadata.get('page', 'N/A'),
+                "text": chunk.text[:200]
+            })
+        
+        context_parts.append("\n=== SECTION M: Evaluation Factors ===")
+        for i, chunk in enumerate(section_m_chunks[:5], len(context_parts)):
+            context_parts.append(f"[Source {i}, Section M] {chunk.text[:800]}")
+            sources.append({
+                "section": chunk.metadata.get('rfp_section', 'UNKNOWN'),
+                "page": chunk.metadata.get('page', 'N/A'),
+                "text": chunk.text[:200]
+            })
+        
+        context = "\n\n".join(context_parts)
+        
+        # Specialized prompt for cross-reference
+        prompt = f"""You are analyzing cross-references between RFP sections.
+
+{context}
+
+Question: {question}
+
+TASK: Compare Section L page limits against Section M evaluation factors. Determine if there's enough space to address all factors. Provide:
+1. Section L page limits (be specific - which volume, how many pages)
+2. Section M factors (list them and estimate complexity)
+3. Analysis: Is there enough space? Flag any concerns.
+4. Recommendation: Any specific strategies for space management?
+
+Be specific and actionable."""
+
+        return prompt, sources
+    
+    def handle_contradiction_detection(
+        self,
+        question: str,
+        chunks: List[DocumentChunk]
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        Detect contradictions between different RFP sections.
+        
+        Example: "Are there contradictions between C.4 and M.2?"
+        """
+        # Extract section references from question
+        section_refs = re.findall(r'section\s+([a-z])\.?(\d+)?', question.lower())
+        
+        relevant_chunks = []
+        for section_ref in section_refs:
+            section_letter = section_ref[0].upper()
+            target_section = f"SECTION_{section_letter}"
+            matching = [c for c in chunks if c.metadata.get('rfp_section') == target_section]
+            relevant_chunks.extend(matching[:3])
+        
+        # If no specific sections mentioned, get chunks from C and M
+        if not relevant_chunks:
+            relevant_chunks = [c for c in chunks if c.metadata.get('rfp_section') in ['SECTION_C', 'SECTION_M']][:8]
+        
+        context_parts = []
+        sources = []
+        
+        for i, chunk in enumerate(relevant_chunks, 1):
+            section = chunk.metadata.get('rfp_section', 'UNKNOWN')
+            context_parts.append(f"[Source {i}, {section}] {chunk.text[:900]}")
+            sources.append({
+                "section": section,
+                "page": chunk.metadata.get('page', 'N/A'),
+                "text": chunk.text[:200]
+            })
+        
+        context = "\n\n".join(context_parts)
+        
+        prompt = f"""You are a compliance analyst reviewing RFP documents for contradictions.
+
+{context}
+
+Question: {question}
+
+TASK: Analyze the provided sections for contradictions, inconsistencies, or conflicts. Look for:
+1. Conflicting requirements (e.g., different technical specs in different sections)
+2. Inconsistent terminology or definitions
+3. Contradictory evaluation criteria vs. technical requirements
+4. Mismatched deadlines or deliverables
+
+For each contradiction found:
+- Clearly state the contradiction
+- Reference both sources
+- Assess the severity (Critical / Moderate / Minor)
+- Suggest a Q&A question to submit to the Contracting Officer
+
+If no contradictions found, explicitly state that."""
+
+        return prompt, sources
+    
+    def handle_formatting_query(
+        self,
+        question: str,
+        chunks: List[DocumentChunk]
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        Extract formatting rules from Section L.
+        
+        Example: "What are the font, margin, and file format rules?"
+        """
+        # Get Section L chunks
+        section_l_chunks = [c for c in chunks if c.metadata.get('rfp_section') == 'SECTION_L']
+        
+        context_parts = []
+        sources = []
+        
+        for i, chunk in enumerate(section_l_chunks[:8], 1):
+            context_parts.append(f"[Source {i}, Section L] {chunk.text[:900]}")
+            sources.append({
+                "section": "SECTION_L",
+                "page": chunk.metadata.get('page', 'N/A'),
+                "text": chunk.text[:200]
+            })
+        
+        context = "\n\n".join(context_parts)
+        
+        prompt = f"""You are extracting precise formatting requirements from Section L.
+
+{context}
+
+Question: {question}
+
+TASK: Extract ALL formatting requirements mentioned in Section L. Create a structured summary:
+
+**Font Requirements:**
+- Body text: [size and type]
+- Headers: [size and type]
+- Tables/figures: [size and type]
+- Exceptions: [any special cases]
+
+**Margin Requirements:**
+- Top/Bottom: [measurements]
+- Left/Right: [measurements]
+
+**File Format Requirements:**
+- Accepted formats: [list]
+- File naming: [conventions]
+
+**Page Limits:**
+- [List by volume/section]
+
+**Other Formatting Rules:**
+- Line spacing: [requirement]
+- Page numbering: [requirement]
+- Any other specific rules
+
+Be EXTREMELY precise with numbers and measurements. Quote directly when possible."""
+
+        return prompt, sources
+    
+    # ============================================================================
     # CHAT ORCHESTRATION
     # ============================================================================
     
