@@ -257,15 +257,16 @@ if BEST_PRACTICES_AVAILABLE:
     except Exception as e:
         print(f"Warning: Could not initialize best practices extractor: {e}")
 
-# v2.12: Initialize RFP Chat agent if available
+# Initialize RFP Chat Agent (v2.12+ / v3.1 with Library integration)
 rfp_chat_agent = None
-if RFP_CHAT_AVAILABLE:
-    try:
-        rfp_chat_agent = RFPChatAgent()
-        print("✅ RFP Chat agent initialized successfully")
-    except Exception as e:
-        print(f"Warning: Could not initialize RFP chat agent: {e}")
-        rfp_chat_agent = None
+try:
+    if RFP_CHAT_AVAILABLE:
+        # v3.1: Pass company_library for RAG integration
+        rfp_chat_agent = RFPChatAgent(company_library=company_library)
+        print("[STARTUP] RFP Chat Agent initialized with Company Library integration")
+except Exception as e:
+    print(f"[STARTUP] Warning: Could not initialize RFP Chat Agent: {e}")
+    rfp_chat_agent = None
 
 
 # ============== FastAPI App ==============
