@@ -415,7 +415,7 @@ async def create_rfp(rfp: RFPCreate):
 @app.get("/api/rfp")
 async def list_rfps():
     """List all RFPs"""
-    rfps = store.list_all()
+    rfps = await store.list_all()
     return {
         "count": len(rfps),
         "rfps": [
