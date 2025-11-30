@@ -1535,18 +1535,8 @@ async def export_annotated_outline(rfp_id: str):
 
 # ============== Company Library API ==============
 
-# Import company library components
-try:
-    from agents.enhanced_compliance.company_library import (
-        CompanyLibrary,
-        CompanyLibraryParser,
-        DocumentType,
-    )
-    COMPANY_LIBRARY_AVAILABLE = True
-except ImportError:
-    COMPANY_LIBRARY_AVAILABLE = False
-
-# Company library initialized earlier (before chat agent)
+# Company library already imported and initialized earlier (before chat agent)
+COMPANY_LIBRARY_AVAILABLE = company_library is not None
 
 
 @app.get("/api/library")
