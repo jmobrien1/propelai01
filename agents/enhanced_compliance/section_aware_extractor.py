@@ -568,9 +568,182 @@ class SectionAwareExtractor:
             'sections_found': [s.value for s in result.structure.sections.keys()] if result.structure else [],
             'sow_location': result.structure.sow_location if result.structure else None,
         }
+    
+    # ============================================================================
+    # v3.1: MODE-SPECIFIC EXTRACTION METHODS
+    # ============================================================================
+    
+    def _classify_rfp_type(self, documents: List[Dict[str, Any]], file_paths: List[str]) -> RFPType:
+        """v3.1: Classify RFP type for mode-specific extraction"""
+        # Collect all text
+        all_text = ' '.join([doc.get('text', '').lower() for doc in documents])
+        
+        # Check for spreadsheet
+        has_spreadsheet = any(fp.lower().endswith(('.xlsx', '.xls', '.csv')) for fp in file_paths)
+        spreadsheet_indicators = ['questionnaire', 'requirements matrix', 'self-assessment']
+        if has_spreadsheet and any(ind in all_text for ind in spreadsheet_indicators):
+            return RFPType.SPREADSHEET
+        
+        # Check for DoD attachments
+        dod_indicators = ['attachment j.2', 'attachment j.3', 'cdrl', 'qasp']
+        if any(ind in all_text for ind in dod_indicators):
+            return RFPType.DOD_ATTACHMENT
+        
+        # Check for SLED/State
+        sled_indicators = ['section 4:', 'specifications', 'state of']
+        if any(ind in all_text for ind in sled_indicators):
+            return RFPType.SLED_STATE
+        
+        # Default to Federal
+        return RFPType.FEDERAL_STANDARD
+    
+    def _extract_from_spreadsheet(self, documents: List[Dict[str, Any]], file_paths: List[str]) -> ExtractionResult:
+        """
+        MODE D: Extract from spreadsheet/questionnaire files.
+        
+        Does NOT look for "Shall/Must". Treats EVERY ROW as a requirement.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        result = ExtractionResult(structure=DocumentStructure())
+        
+        # Find spreadsheet files
+        spreadsheet_files = [fp for fp in file_paths if fp.lower().endswith(('.xlsx', '.xls', '.csv'))]
+        
+        if not spreadsheet_files:
+            logger.warning("[MODE D] No spreadsheet files found")
+            return result
+        
+        try:
+            import pandas as pd
+        except ImportError:
+            logger.error("[MODE D] pandas not available for spreadsheet extraction")
+            return result
+        
+        for file_path in spreadsheet_files:
+            try:
+                # Read file
+                if file_path.lower().endswith('.csv'):
+                    df = pd.read_csv(file_path)
+                else:
+                    df = pd.read_excel(file_path, engine='openpyxl')
+                
+                logger.info(f"[MODE D] Processing spreadsheet: {file_path} ({len(df)} rows)")
+                
+                # Find requirement column (first column with substantial text)
+                requirement_col = None
+                for col in df.columns:
+                    sample_text = str(df[col].iloc[0]) if not df[col].empty else ""
+                    if len(sample_text) > 50:
+                        requirement_col = col
+                        break
+                
+                if not requirement_col:
+                    logger.warning(f"[MODE D] No requirement column found in {file_path}")
+                    continue
+                
+                # Extract each row as a requirement
+                for idx, row in df.iterrows():
+                    req_text = str(row[requirement_col]) if pd.notna(row[requirement_col]) else ""
+                    if req_text and req_text != 'nan' and len(req_text.strip()) > 10:
+                        req = StructuredRequirement(
+                            rfp_reference=f"ROW-{idx + 2}",  # +2 for Excel (1-indexed + header)
+                            generated_id=f"SHEET-{idx + 1}",
+                            full_text=req_text,
+                            category=RequirementCategory.TECHNICAL_REQUIREMENT,
+                            binding_level=BindingLevel.MANDATORY,  # All spreadsheet rows are mandatory
+                            binding_keyword="required",
+                            source_section=UCFSection.SECTION_C,
+                            source_subsection=None,
+                            page_number=0,
+                            source_document=Path(file_path).name,
+                            parent_title="Questionnaire Requirements",
+                            evaluation_factor=None,
+                            row_number=int(idx + 2)
+                        )
+                        result.all_requirements.append(req)
+                        result.technical_requirements.append(req)
+                
+                logger.info(f"[MODE D] Extracted {len(result.technical_requirements)} requirements from spreadsheet")
+                
+            except Exception as e:
+                logger.error(f"[MODE D] Error processing {file_path}: {e}")
+        
+        result.stats = self._build_stats(result)
+        return result
+    
+    def _inject_page_limits(self, result: ExtractionResult) -> ExtractionResult:
+        """
+        MODE A: Cross-reference Section L and M to inject page limits.
+        
+        Example: "Resumes limited to 5 pages" in L.4 → inject page_limit="5 pages" 
+        into Factor 2: Personnel in Section M.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Build map of evaluation factors
+        eval_factors = {}
+        for req in result.evaluation_requirements:
+            factor_name = req.parent_title.lower()
+            eval_factors[factor_name] = req
+        
+        # Find page limits in Section L
+        page_limit_pattern = r'(?:limit(?:ed)?\s+to|not\s+(?:to\s+)?exceed|maximum\s+of)\s+(\d+)\s+pages?'
+        
+        for l_req in result.section_l_requirements:
+            text_lower = l_req.full_text.lower()
+            match = re.search(page_limit_pattern, text_lower)
+            
+            if match:
+                page_limit = f"{match.group(1)} pages"
+                
+                # Fuzzy match to evaluation factors
+                for factor_key, factor_req in eval_factors.items():
+                    # Check if factor keywords appear near page limit
+                    if any(keyword in text_lower for keyword in factor_key.split()):
+                        factor_req.page_limit = page_limit
+                        logger.info(f"[MODE A] Injected page limit '{page_limit}' into '{factor_req.parent_title}'")
+        
+        return result
+    
+    def _structure_volumes(self, result: ExtractionResult) -> ExtractionResult:
+        """
+        MODE A: Tag requirements with target volumes (I, II, III).
+        
+        Mapping:
+        - PWS/C.x → Vol I (Technical)
+        - Past Performance → Vol II
+        - Price/Cost → Vol III
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        for req in result.all_requirements:
+            text_lower = req.full_text.lower()
+            
+            # Volume I: Technical (PWS, SOW, Section C)
+            if req.source_section == UCFSection.SECTION_C or 'pws' in text_lower or 'sow' in text_lower:
+                req.target_volume = "Volume I"
+            
+            # Volume II: Past Performance
+            elif any(keyword in text_lower for keyword in ['past performance', 'relevant experience', 'similar projects']):
+                req.target_volume = "Volume II"
+            
+            # Volume III: Price/Cost
+            elif any(keyword in text_lower for keyword in ['price', 'cost', 'budget', 'pricing']):
+                req.target_volume = "Volume III"
+            
+            # Default: Volume I
+            else:
+                req.target_volume = "Volume I"
+        
+        logger.info(f"[MODE A] Structured requirements into volumes")
+        return result
 
 
-def extract_requirements_structured(documents: List[Dict[str, Any]]) -> ExtractionResult:
+def extract_requirements_structured(documents: List[Dict[str, Any]], file_paths: List[str] = None, rfp_type: Optional[RFPType] = None) -> ExtractionResult:
     """
     Convenience function for structured requirement extraction.
     
