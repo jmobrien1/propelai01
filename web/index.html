@@ -455,7 +455,20 @@
                 
                 const pollStatus = async () => {
                     try {
-                        const status = await api.getStatus(currentRfpId);
+                        const res = await fetch(`${API_BASE}/rfp/${currentRfpId}/status`);
+                        
+                        // Handle 404 - RFP was removed due to processing failure
+                        if (res.status === 404) {
+                            setProcessing(false);
+                            setError('RFP processing failed. The document may be too large or complex. Please try again with smaller files or contact support.');
+                            return;
+                        }
+                        
+                        if (!res.ok) {
+                            throw new Error(`Status check failed: ${res.statusText}`);
+                        }
+                        
+                        const status = await res.json();
                         setProcessingStatus(status);
                         
                         if (status.status === 'completed') {
@@ -468,6 +481,13 @@
                         }
                     } catch (e) {
                         console.error('Status poll error:', e);
+                        // After 3 consecutive errors, stop polling
+                        if (!window.pollErrorCount) window.pollErrorCount = 0;
+                        window.pollErrorCount++;
+                        if (window.pollErrorCount >= 3) {
+                            setProcessing(false);
+                            setError('Unable to check processing status. Please refresh and try again.');
+                        }
                     }
                 };
                 
