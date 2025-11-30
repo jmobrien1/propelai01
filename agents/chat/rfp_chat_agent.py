@@ -338,23 +338,82 @@ class RFPChatAgent:
             logger.error(f"[CHAT] DOCX extraction error: {e}")
             return ""
     
-    def _extract_from_excel(self, file_path: Path) -> str:
+    def _extract_from_excel(self, file_path: Path, context_mode: bool = False) -> str:
         """
-        Extract text from Excel files using pandas (v3.0 "Shredder" Logic).
+        Extract text from Excel files using pandas.
         
-        Implements row-by-row parsing for MODE D (Spreadsheet/Questionnaire).
-        Detects requirement/response columns automatically.
+        v4.0: Added "Context Mode" for RFI/Market Research files.
+        
+        Modes:
+        - context_mode=False (MODE D): Row-by-row questionnaire parsing
+        - context_mode=True (MODE E): Multi-tab requirements extraction
+        
+        Args:
+            file_path: Path to Excel file
+            context_mode: If True, extract as unified scope (not questions)
         """
         try:
             import pandas as pd
             
+            # MODE E: Context Mode (RFI/Market Research)
+            if context_mode:
+                logger.info(f"[CHAT] Extracting Excel in CONTEXT MODE (RFI): {file_path.name}")
+                
+                # Read all sheets
+                try:
+                    excel_file = pd.ExcelFile(str(file_path), engine='openpyxl')
+                    sheet_names = excel_file.sheet_names
+                except:
+                    # Fallback for CSV
+                    df = pd.read_csv(str(file_path))
+                    sheet_names = ['Sheet1']
+                    excel_file = {'Sheet1': df}
+                
+                text_parts = [f"[REQUIREMENTS SPECIFICATION: {file_path.name}]"]
+                text_parts.append(f"Contains {len(sheet_names)} tabs: {', '.join(sheet_names)}")
+                text_parts.append("\n=== TECHNICAL SCOPE (UNIFIED) ===\n")
+                
+                # Extract from all tabs
+                for sheet_name in sheet_names:
+                    if isinstance(excel_file, dict):
+                        df = excel_file[sheet_name]
+                    else:
+                        df = pd.read_excel(excel_file, sheet_name=sheet_name)
+                    
+                    text_parts.append(f"\n--- Tab: {sheet_name} ---")
+                    
+                    # Find requirement/description columns
+                    req_col = None
+                    for col in df.columns:
+                        col_lower = str(col).lower()
+                        if any(keyword in col_lower for keyword in [
+                            'requirement', 'description', 'capability', 'feature', 
+                            'business requirement', 'technical requirement'
+                        ]):
+                            req_col = col
+                            break
+                    
+                    if req_col:
+                        for idx, row in df.iterrows():
+                            req_text = str(row[req_col]) if pd.notna(row[req_col]) else ""
+                            if req_text and req_text != 'nan' and len(req_text.strip()) > 10:
+                                text_parts.append(f"• {req_text}")
+                    else:
+                        # No structured column - extract all text
+                        text_parts.append(df.to_string(max_rows=50))
+                
+                full_text = "\n".join(text_parts)
+                logger.info(f"[CHAT] Extracted {len(full_text)} chars from {len(sheet_names)} tabs (Context Mode)")
+                return full_text
+            
+            # MODE D: Questionnaire Mode (original logic)
             # Read Excel file
             if file_path.suffix.lower() == '.csv':
                 df = pd.read_csv(str(file_path))
             else:
                 df = pd.read_excel(str(file_path), engine='openpyxl')
             
-            text_parts = [f"[SPREADSHEET: {file_path.name}]"]
+            text_parts = [f"[QUESTIONNAIRE: {file_path.name}]"]
             text_parts.append(f"Total Rows: {len(df)}, Total Columns: {len(df.columns)}")
             
             # Detect header columns (v3.0 Shredder Logic)
@@ -409,6 +468,8 @@ class RFPChatAgent:
             
         except Exception as e:
             logger.error(f"[CHAT] Excel extraction error: {e}")
+            import traceback
+            logger.error(f"[CHAT] Traceback: {traceback.format_exc()}")
             return ""
     
     # ============================================================================
