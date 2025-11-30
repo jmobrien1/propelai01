@@ -1574,10 +1574,13 @@ async def get_company_profile():
 @app.post("/api/library/upload")
 async def upload_library_document(
     file: UploadFile = File(...),
-    document_type: Optional[str] = Form(None)
+    document_type: Optional[str] = Form(None),
+    tag: Optional[str] = Form(None)
 ):
     """
     Upload a document to the company library
+    
+    v4.0: Added duplicate detection and tagging support.
     
     Supported types: capabilities, past_performance, resume, technical_approach, corporate_info
     """
@@ -1608,15 +1611,28 @@ async def upload_library_document(
             except ValueError:
                 pass  # Let parser auto-detect
         
-        # Add to library
-        parsed_doc = company_library.add_document(str(temp_path), doc_type)
+        # Add to library (v4.0 returns dict with status)
+        result = company_library.add_document(str(temp_path), doc_type, tag)
         
-        return {
-            "success": True,
-            "document": parsed_doc.to_dict(),
-            "message": f"Document '{file.filename}' added to library as {parsed_doc.document_type.value}"
-        }
+        if result['status'] == 'success':
+            return {
+                "success": True,
+                "document": result['document'].to_dict(),
+                "message": result['message'],
+                "filename": result['filename']
+            }
+        elif result['status'] == 'duplicate':
+            return {
+                "success": False,
+                "duplicate": True,
+                "message": result['message'],
+                "existing_file": result['existing_file']
+            }
+        else:  # error
+            raise HTTPException(status_code=400, detail=result['message'])
         
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
     finally:
