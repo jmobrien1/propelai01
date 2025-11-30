@@ -75,10 +75,10 @@ class RFPChatAgent:
             raise
         
         # Configuration
-        self.chunk_size = 800  # characters per chunk
+        self.chunk_size = 1000  # characters per chunk (increased for more context)
         self.chunk_overlap = 200  # overlap between chunks
-        self.max_chunks_to_retrieve = 8  # top K chunks for context
-        self.max_context_length = 6000  # max characters in context
+        self.max_chunks_to_retrieve = 20  # top K chunks for context (increased from 8)
+        self.max_context_length = 15000  # max characters in context (increased for better answers)
     
     # ============================================================================
     # FILE TEXT EXTRACTION
