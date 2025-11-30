@@ -747,16 +747,22 @@ def extract_requirements_structured(documents: List[Dict[str, Any]], file_paths:
     """
     Convenience function for structured requirement extraction.
     
+    v3.1: Supports mode-specific extraction.
+    
     Usage:
         documents = [
             {'text': '...', 'filename': 'RFP.pdf', 'pages': [...]},
             {'text': '...', 'filename': 'SOW.pdf', 'pages': [...]},
         ]
-        result = extract_requirements_structured(documents)
+        result = extract_requirements_structured(
+            documents, 
+            file_paths=['/path/to/RFP.pdf'],
+            rfp_type=RFPType.FEDERAL_STANDARD
+        )
         
         # Access by category
         for req in result.section_l_requirements:
             print(f"{req.rfp_reference}: {req.full_text[:80]}...")
     """
-    extractor = SectionAwareExtractor()
-    return extractor.extract(documents)
+    extractor = SectionAwareExtractor(rfp_type=rfp_type)
+    return extractor.extract(documents, file_paths=file_paths)
