@@ -1076,7 +1076,7 @@
                                                     <button
                                                         key={idx}
                                                         onClick={() => {
-                                                            setChatInput(prompt);
+                                                            setChatInput(chip.prompt);
                                                             setTimeout(sendChatMessage, 100);
                                                         }}
                                                         style={{
@@ -1087,7 +1087,8 @@
                                                             borderRadius: '16px',
                                                             color: 'rgba(255,255,255,0.8)',
                                                             cursor: 'pointer',
-                                                            transition: 'all 0.2s'
+                                                            transition: 'all 0.2s',
+                                                            textAlign: 'left'
                                                         }}
                                                         onMouseEnter={(e) => {
                                                             e.target.style.background = 'rgba(102, 126, 234, 0.2)';
@@ -1098,7 +1099,7 @@
                                                             e.target.style.borderColor = 'rgba(102, 126, 234, 0.3)';
                                                         }}
                                                     >
-                                                        {prompt}
+                                                        {chip.label}
                                                     </button>
                                                 ))}
                                             </div>
