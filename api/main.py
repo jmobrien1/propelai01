@@ -1539,11 +1539,7 @@ try:
 except ImportError:
     COMPANY_LIBRARY_AVAILABLE = False
 
-# Initialize company library
-if COMPANY_LIBRARY_AVAILABLE:
-    company_library = CompanyLibrary(str(OUTPUT_DIR / "company_library"))
-else:
-    company_library = None
+# Company library initialized earlier (before chat agent)
 
 
 @app.get("/api/library")
