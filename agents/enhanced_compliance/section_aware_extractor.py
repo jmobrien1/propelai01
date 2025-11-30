@@ -197,12 +197,14 @@ class SectionAwareExtractor:
     # Maximum requirement length - if longer, it's probably multiple requirements
     MAX_REQUIREMENT_LENGTH = 2000
     
-    def __init__(self, preserve_rfp_ids: bool = True):
+    def __init__(self, preserve_rfp_ids: bool = True, rfp_type: Optional[RFPType] = None):
         """
         Args:
             preserve_rfp_ids: If True, always use RFP's own references as primary ID
+            rfp_type: v3.1 - RFP type for mode-specific extraction
         """
         self.preserve_rfp_ids = preserve_rfp_ids
+        self.rfp_type = rfp_type or RFPType.UNKNOWN
         self.counters = {}  # For generating IDs when needed
     
     def extract(self, documents: List[Dict[str, Any]], structure: Optional[DocumentStructure] = None) -> ExtractionResult:
