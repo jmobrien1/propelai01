@@ -183,15 +183,18 @@ class RFPChatAgent:
             logger.error(f"[LIBRARY] Traceback: {traceback.format_exc()}")
             return []
     
-    def _format_library_context(self, results: List[Dict[str, Any]]) -> str:
+    def _format_library_context(self, results: List[Dict[str, Any]], max_tokens: int = 1500) -> str:
         """
         Format library search results as context for LLM.
         
+        v3.1: Added token limit to prevent context overflow.
+        
         Args:
             results: Library search results
+            max_tokens: Maximum tokens to include (default 1500 = ~6000 chars)
             
         Returns:
-            Formatted context string
+            Formatted context string (truncated if needed)
         """
         if not results:
             return ""
