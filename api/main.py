@@ -436,7 +436,7 @@ async def list_rfps():
 @app.get("/api/rfp/{rfp_id}")
 async def get_rfp(rfp_id: str):
     """Get RFP details"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
