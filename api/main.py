@@ -257,6 +257,16 @@ if BEST_PRACTICES_AVAILABLE:
     except Exception as e:
         print(f"Warning: Could not initialize best practices extractor: {e}")
 
+# v3.1: Initialize Company Library FIRST (needed for Chat Agent RAG)
+company_library = None
+if COMPANY_LIBRARY_AVAILABLE:
+    try:
+        company_library = CompanyLibrary(str(OUTPUT_DIR / "company_library"))
+        print("[STARTUP] Company Library initialized")
+    except Exception as e:
+        print(f"[STARTUP] Warning: Could not initialize Company Library: {e}")
+        company_library = None
+
 # Initialize RFP Chat Agent (v2.12+ / v3.1 with Library integration)
 rfp_chat_agent = None
 try:
