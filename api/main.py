@@ -188,6 +188,7 @@ class RFPStore:
             "amendment_processor": None,
             "document_chunks": [],  # v2.12: For chat functionality
             "chat_history": [],     # v2.12: Chat message history
+            "rfp_type": "unknown",  # v3.0: Detected RFP type (federal_standard, sled_state, dod_attachment, spreadsheet)
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
