@@ -470,9 +470,9 @@ Please answer based only on the context above. If you cite information, referenc
         
         # Call Claude API - try latest model first, fallback to stable version
         model_versions = [
-            "claude-3-5-sonnet-20241022",  # Latest
-            "claude-3-5-sonnet-latest",     # Alias to latest
-            "claude-3-5-sonnet-20240620",   # Stable fallback
+            "claude-3-5-sonnet-20241022",  # Dated version (if available)
+            "claude-3-5-sonnet",            # Standard identifier (most compatible)
+            "claude-3-sonnet-20240229",     # Fallback to Claude 3
         ]
         
         for model in model_versions:
