@@ -735,8 +735,12 @@ class RFPChatAgent:
                 # Get corresponding filename
                 filename = file_names[idx] if idx < len(file_names) else Path(file_path).name
                 
+                # v4.0: Determine if file should be extracted in context mode
+                is_excel = str(file_path).lower().endswith(('.xlsx', '.xls', '.csv'))
+                use_context_mode = is_excel and self.rfp_type == RFPType.MARKET_RESEARCH
+                
                 # Extract text from file
-                text = self.extract_text_from_file(file_path)
+                text = self.extract_text_from_file(file_path, context_mode=use_context_mode)
                 
                 if text and len(text.strip()) > 50:  # Only chunk if we got substantial text
                     # Collect text for classification (first 10k chars per file)
