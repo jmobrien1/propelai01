@@ -1029,7 +1029,7 @@ async def process_rfp_best_practices_background(rfp_id: str):
 
 
 @app.post("/api/rfp/{rfp_id}/process-best-practices")
-async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTasks):
+async def process_rfp_best_practices(rfp_id: str):
     """
     Start Best Practices CTM processing of RFP documents (v2.9)
     
@@ -1040,6 +1040,8 @@ async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTa
     - Extracts complete requirement paragraphs (never fragments)
     - Maintains evaluator-friendly formatting
     """
+    import asyncio
+    
     rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
@@ -1055,7 +1057,7 @@ async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTa
     
     # Start background processing
     await store.set_status(rfp_id, "starting", 0, "Starting best practices extraction...")
-    background_tasks.add_task(process_rfp_best_practices_background, rfp_id)
+    asyncio.create_task(process_rfp_best_practices_background(rfp_id))
     
     return {
         "status": "processing_started",
