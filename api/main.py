@@ -1735,7 +1735,10 @@ async def chat_with_rfp(rfp_id: str, request: ChatRequest):
         try:
             chunks = rfp_chat_agent.chunk_rfp_documents(rfp)
             rfp["document_chunks"] = [chunk.to_dict() for chunk in chunks]
+            # v3.0: Store detected RFP type
+            rfp["rfp_type"] = rfp_chat_agent.detected_rfp_type.value
             print(f"[CHAT] Created {len(chunks)} document chunks for RFP {rfp_id}")
+            print(f"[CHAT] Detected RFP Type: {rfp['rfp_type']}")
         except Exception as e:
             raise HTTPException(
                 status_code=500,
