@@ -18,6 +18,7 @@ import json
 import uuid
 import tempfile
 import subprocess
+import shutil
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
