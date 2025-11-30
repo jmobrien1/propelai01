@@ -276,7 +276,16 @@ class RFPChatAgent:
         text_lower = text.lower()
         text_upper = text.upper()
         
-        # Check for explicit section headers
+        # v3.0: SLED/State Pattern Detection (MODE B)
+        # Map numeric sections and state-specific headers
+        if re.search(r'\bsection\s+4\b', text_lower) or 'specifications' in text_lower:
+            return "SECTION_C"  # Map "Section 4: Specifications" -> Technical Requirements
+        if re.search(r'\bsection\s+2\b', text_lower) or 'instructions to vendors' in text_lower:
+            return "SECTION_L"  # Map "Section 2" -> Instructions
+        if 'award criteria' in text_lower or 'scoring' in text_lower:
+            return "SECTION_M"  # Map state evaluation sections
+        
+        # Federal Pattern Detection (MODE A)
         if re.search(r'\bsection\s+l\b', text_lower) or 'instructions to offeror' in text_lower:
             return "SECTION_L"
         if re.search(r'\bsection\s+m\b', text_lower) or 'evaluation' in text_lower and 'criteria' in text_lower:
@@ -285,6 +294,10 @@ class RFPChatAgent:
             return "SECTION_C"
         if re.search(r'\bsection\s+b\b', text_lower) or ('schedule' in text_lower and 'contract' in text_lower):
             return "SECTION_B"
+        
+        # Check for MANDATORY/PASS-FAIL indicators (MODE B - SLED)
+        if any(keyword in text_lower for keyword in ['mandatory', 'must comply', 'minimum qualification']):
+            return "COMPLIANCE"
         
         # Check for cover page indicators
         if page_num and page_num <= 3:
