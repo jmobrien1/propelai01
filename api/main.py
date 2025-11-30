@@ -397,7 +397,7 @@ async def create_rfp(rfp: RFPCreate):
     """Create a new RFP project"""
     rfp_id = f"RFP-{uuid.uuid4().hex[:8].upper()}"
     
-    data = store.create(rfp_id, rfp.dict())
+    data = await store.create(rfp_id, rfp.dict())
     
     return RFPResponse(
         id=data["id"],
