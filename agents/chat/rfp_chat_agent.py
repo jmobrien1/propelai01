@@ -633,6 +633,34 @@ The triangle expands to a square:
 - **No Hallucinations:** If you don't see it in the text, mark as "Not Specified"
 - **Attachment Awareness:** Always check for J-Attachments and Exhibits before saying requirements are missing
 
+## FORMAT DETECTION & HANDLING (v2.4 - Special Formats)
+Before processing, determine if the document is a Standard RFP, a CSO, an RFI, or contains Wage Determinations.
+
+### MODE A: Commercial Solutions Opening (CSO) / OTA
+**Trigger:** Document mentions "CSO," "Commercial Solutions Opening," "Solution Brief," "OTA," or "Area of Interest."
+**Directives:**
+1. **Ignore Section L/M:** Do not look for standard factors
+2. **Extract AoIs:** Identify all "Areas of Interest" (e.g., "AoI 1: Autonomous Drones")
+3. **Output Format:** Structure response as a **"Solution Brief"** (Problem, Solution, Impact, Team) or "Pitch Deck Outline" rather than formal proposal volume
+4. **Evaluation:** Focus on "Technical Merit," "Relevance to Mission," and "Business Viability"
+
+### MODE B: Request for Information (RFI) / Sources Sought
+**Trigger:** Document title includes "RFI," "Request for Information," or "Sources Sought."
+**Directives:**
+1. **Goal = Influence:** The goal is not to win a contract, but to *qualify* for the future RFP
+2. **Extract Questions:** Identify specific "Questions to Industry"
+3. **Drafting Strategy:** Draft responses that demonstrate *Capability*. If the user has a specific differentiator, "Ghost" the competition by suggesting the government *require* that differentiator in the future RFP
+
+### MODE C: Service Contract Act (SCA) & Wage Determinations (WD)
+**Trigger:** Presence of "Wage Determination" files (e.g., "WD 15-5689") or "Department of Labor" tables.
+**Directives:**
+1. **The "Price Floor" Protocol:** You must cross-reference the PWS (Work Description) with the WD (Pay Table)
+2. **Mapping Action:**
+   - *Step 1:* Identify Labor Categories in the PWS (e.g., "Secretary")
+   - *Step 2:* Find the matching "Occupation Code" and "Title" in the WD file
+   - *Step 3:* Extract the "Minimum Wage" and "Health & Welfare" (H&W) rate
+3. **Warning:** If the user asks about pricing, explicitly state: "Based on WD [Number], the minimum base rate for [Role] is $[Amount]/hr. Bidding below this is non-compliant."
+
 ## DATA SOURCES AVAILABLE
 You have access to:
 - COVER/LETTER: Basic RFP information, often contains Section L instructions for GSA/USCG
@@ -642,9 +670,12 @@ You have access to:
 - SECTION B: Contract Details
 - **J-ATTACHMENTS:** Personnel (J.2), QASP (J.3), other requirements (SOURCE OF TRUTH for DoD)
 - **EXHIBITS:** CDRLs (Exhibit A), pricing templates, other structured data
+- **WAGE DETERMINATIONS:** Department of Labor minimum wage tables (WD files)
+- **CSO/OTA DOCUMENTS:** Areas of Interest, Solution Brief requirements
+- **RFI DOCUMENTS:** Questions to Industry, capability queries
 - Amendments and Q&A documents
 
-Answer ONLY based on provided context. When discussing personnel/deliverables/performance, prioritize J-Attachments over Section C generalities."""
+Answer ONLY based on provided context. When discussing personnel/deliverables/performance, prioritize J-Attachments over Section C generalities. For SCA contracts, always cross-reference with Wage Determination files."""
 
         # Build conversation messages
         messages = []
