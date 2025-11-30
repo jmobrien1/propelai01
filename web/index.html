@@ -1072,6 +1072,27 @@
                                                         prompt: 'Scan for Go/No-Go blockers: 1) Security clearances (Facility, Personnel). 2) OCI restrictions. 3) Mandatory certifications (CMMI, ISO, 508). 4) Set-aside eligibility. 5) Aggressive timeline (< 30 days). 6) Past performance requirements. For each flag, provide: Description, Source citation, Risk level (High/Medium/Low).',
                                                         category: 'war_room'
                                                     },
+                                                    // Company Library Integration
+                                                    {
+                                                        label: '🔍 Gap Analysis (RFP vs. Library)',
+                                                        prompt: 'Compare Section C/PWS requirements against our Company Library. For each major requirement: 1) Do we have relevant experience/capability? 2) If YES, cite the proof (past performance, capability statement). 3) If NO, flag as GAP. Present as table with columns: Requirement | We Have It? | Proof Source | Gap Notes.',
+                                                        category: 'library'
+                                                    },
+                                                    {
+                                                        label: '📝 Draft with Past Performance',
+                                                        prompt: 'Identify the top 3 technical requirements from Section C. For each, draft a response paragraph using our Company Library past performance as proof points. Format: [Requirement] → Our Approach → [Cite: Past Performance Project Name] → Expected Outcome.',
+                                                        category: 'library'
+                                                    },
+                                                    {
+                                                        label: '🎯 Match Personnel to J.2',
+                                                        prompt: 'Analyze Attachment J.2 labor categories. For each position (Project Manager, Engineer, etc.), search our Company Library for matching key personnel. Show: Position Required | Our Candidate | Education Match | Cert Match | Experience Match.',
+                                                        category: 'library'
+                                                    },
+                                                    {
+                                                        label: '💡 Suggest Win Themes',
+                                                        prompt: 'Based on the RFP evaluation factors (Section M) and our Company Library differentiators, suggest 3 win themes. For each theme: 1) What makes us different? 2) Which evaluation factor does it address? 3) What proof do we have (cite library)?',
+                                                        category: 'library'
+                                                    },
                                                     // Standard RFP Chips
                                                     {
                                                         label: '📊 Evaluation & Page Limits',
