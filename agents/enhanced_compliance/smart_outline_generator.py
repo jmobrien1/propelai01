@@ -257,23 +257,85 @@ class SmartOutlineGenerator:
         section_l_requirements: List[Dict],
         section_m_requirements: List[Dict],
         technical_requirements: List[Dict],
-        stats: Dict
+        stats: Dict,
+        file_names: List[str] = None
     ) -> ProposalOutline:
         """
         Generate proposal outline from compliance matrix data.
+        
+        v3.1: Uses Router Logic to dispatch to mode-specific generators.
         
         Args:
             section_l_requirements: Extracted Section L requirements
             section_m_requirements: Extracted Section M/evaluation requirements
             technical_requirements: Extracted technical/SOW requirements
             stats: Extraction statistics
+            file_names: List of uploaded file names (for classification)
             
         Returns:
             ProposalOutline with volumes, eval factors, format requirements
         """
         warnings = []
         
-        # Detect RFP format
+        # v3.1: Classify RFP type if not already set
+        if self.rfp_type == RFPType.UNKNOWN:
+            self.rfp_type = self.classify_rfp_type_from_requirements(
+                section_l_requirements,
+                section_m_requirements,
+                technical_requirements,
+                file_names or []
+            )
+        
+        logger.info(f"[OUTLINE GENERATOR v3.1] Generating outline for RFP Type: {self.rfp_type.value}")
+        
+        # v3.1: Dispatch to mode-specific generator
+        if self.rfp_type == RFPType.SPREADSHEET:
+            return self._generate_spreadsheet_outline(
+                section_l_requirements,
+                section_m_requirements,
+                technical_requirements,
+                stats
+            )
+        elif self.rfp_type == RFPType.SLED_STATE:
+            return self._generate_sled_outline(
+                section_l_requirements,
+                section_m_requirements,
+                technical_requirements,
+                stats
+            )
+        elif self.rfp_type == RFPType.DOD_ATTACHMENT:
+            return self._generate_dod_outline(
+                section_l_requirements,
+                section_m_requirements,
+                technical_requirements,
+                stats
+            )
+        else:  # FEDERAL_STANDARD or UNKNOWN
+            return self._generate_federal_outline(
+                section_l_requirements,
+                section_m_requirements,
+                technical_requirements,
+                stats
+            )
+    
+    def _generate_federal_outline(
+        self,
+        section_l_requirements: List[Dict],
+        section_m_requirements: List[Dict],
+        technical_requirements: List[Dict],
+        stats: Dict
+    ) -> ProposalOutline:
+        """
+        MODE A: Generate Federal/GSA outline with Volume-Centric Hierarchy.
+        
+        Creates:
+        - Volume I (Technical)
+        - Volume II (Past Performance)
+        - Volume III (Price)
+        """
+        warnings = []
+        
+        # Detect RFP format (keep legacy detection for sub-format)
         rfp_format = self._detect_rfp_format(
             section_l_requirements, 
             section_m_requirements,
