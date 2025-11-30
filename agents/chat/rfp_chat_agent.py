@@ -89,6 +89,9 @@ class RFPChatAgent:
         self.chunk_overlap = 200  # overlap between chunks
         self.max_chunks_to_retrieve = 20  # top K chunks for context (increased from 8)
         self.max_context_length = 15000  # max characters in context (increased for better answers)
+        
+        # v3.0 Router: Detected RFP type (set during ingestion)
+        self.detected_rfp_type = RFPType.UNKNOWN
     
     # ============================================================================
     # FILE TEXT EXTRACTION
