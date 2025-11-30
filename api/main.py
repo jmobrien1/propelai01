@@ -459,7 +459,8 @@ async def get_rfp(rfp_id: str):
 @app.delete("/api/rfp/{rfp_id}")
 async def delete_rfp(rfp_id: str):
     """Delete an RFP"""
-    if not store.delete(rfp_id):
+    deleted = await store.delete(rfp_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="RFP not found")
     
     # Clean up files
