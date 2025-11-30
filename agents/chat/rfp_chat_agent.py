@@ -98,7 +98,128 @@ class RFPChatAgent:
         self.detected_rfp_type = RFPType.UNKNOWN
     
     # ============================================================================
-    # FILE TEXT EXTRACTION
+    # v3.1: COMPANY LIBRARY RAG INTEGRATION
+    # ============================================================================
+    
+    def _detect_library_intent(self, question: str) -> bool:
+        """
+        Detect if the user is asking about company capabilities/experience.
+        
+        Triggers library search when question contains:
+        - "we", "our", "us"
+        - "experience", "capability", "past performance"
+        - "proof", "evidence", "resume", "personnel"
+        
+        Args:
+            question: User's question
+            
+        Returns:
+            True if question is about company assets
+        """
+        question_lower = question.lower()
+        
+        # Company-specific pronouns
+        company_pronouns = ['we', 'our', 'us', 'have we', 'do we', 'can we', 'are we']
+        
+        # Capability/experience keywords
+        capability_keywords = [
+            'experience', 'capability', 'capabilities', 'past performance',
+            'proof', 'evidence', 'resume', 'personnel', 'staff', 'team',
+            'similar project', 'relevant experience', 'differentiator',
+            'competitive advantage', 'our approach', 'our solution'
+        ]
+        
+        # Check for pronouns
+        has_pronoun = any(pronoun in question_lower for pronoun in company_pronouns)
+        
+        # Check for capability keywords
+        has_keyword = any(keyword in question_lower for keyword in capability_keywords)
+        
+        return has_pronoun or has_keyword
+    
+    def _query_company_library(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        """
+        Query the company library for relevant content.
+        
+        Args:
+            query: Search query
+            top_k: Number of top results to return
+            
+        Returns:
+            List of matching content with metadata
+        """
+        if not self.company_library:
+            logger.info("[LIBRARY] Company library not available")
+            return []
+        
+        try:
+            results = self.company_library.search(query)
+            logger.info(f"[LIBRARY] Found {len(results)} results for query: {query[:50]}...")
+            return results[:top_k]
+        except Exception as e:
+            logger.error(f"[LIBRARY] Error searching library: {e}")
+            return []
+    
+    def _format_library_context(self, results: List[Dict[str, Any]]) -> str:
+        """
+        Format library search results as context for LLM.
+        
+        Args:
+            results: Library search results
+            
+        Returns:
+            Formatted context string
+        """
+        if not results:
+            return ""
+        
+        context_parts = ["\n=== CONTEXT FROM COMPANY LIBRARY ===\n"]
+        
+        for idx, result in enumerate(results, 1):
+            result_type = result.get('type', 'unknown')
+            content = result.get('content', {})
+            
+            if result_type == 'capability':
+                context_parts.append(
+                    f"[Source: Company Capabilities]\n"
+                    f"Capability: {content.get('name', 'N/A')}\n"
+                    f"Description: {content.get('description', 'N/A')}\n"
+                    f"Use Cases: {', '.join(content.get('use_cases', []))}\n"
+                )
+            
+            elif result_type == 'past_performance':
+                context_parts.append(
+                    f"[Source: Past Performance - {content.get('project_name', 'N/A')}]\n"
+                    f"Client: {content.get('client', 'N/A')}\n"
+                    f"Description: {content.get('description', 'N/A')}\n"
+                    f"Period: {content.get('period', 'N/A')}\n"
+                    f"Outcomes: {', '.join(content.get('outcomes', []))}\n"
+                )
+            
+            elif result_type == 'key_personnel':
+                context_parts.append(
+                    f"[Source: Key Personnel - {content.get('name', 'N/A')}]\n"
+                    f"Title: {content.get('title', 'N/A')}\n"
+                    f"Experience: {content.get('years_experience', 'N/A')} years\n"
+                    f"Education: {', '.join(content.get('education', []))}\n"
+                    f"Certifications: {', '.join(content.get('certifications', []))}\n"
+                    f"Skills: {', '.join(content.get('skills', []))}\n"
+                )
+            
+            elif result_type == 'differentiator':
+                context_parts.append(
+                    f"[Source: Company Differentiators]\n"
+                    f"Title: {content.get('title', 'N/A')}\n"
+                    f"Description: {content.get('description', 'N/A')}\n"
+                    f"Evidence: {', '.join(content.get('evidence', []))}\n"
+                )
+            
+            context_parts.append("")  # Blank line between results
+        
+        return "\n".join(context_parts)
+    
+    # ============================================================================
+    # TEXT EXTRACTION
     # ============================================================================
     
     def extract_text_from_file(self, file_path: str) -> str:
