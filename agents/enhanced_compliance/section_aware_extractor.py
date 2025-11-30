@@ -276,6 +276,12 @@ class SectionAwareExtractor:
                         if att_info.document_type in ['SOW', 'PWS']:
                             result.technical_requirements.append(req)
         
+        # v3.1: Post-processing based on RFP type
+        if self.rfp_type == RFPType.FEDERAL_STANDARD:
+            # MODE A: Inject page limits and structure volumes
+            result = self._inject_page_limits(result)
+            result = self._structure_volumes(result)
+        
         # Build stats
         result.stats = self._build_stats(result)
         
