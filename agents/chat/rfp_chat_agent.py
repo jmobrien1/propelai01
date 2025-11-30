@@ -1026,6 +1026,17 @@ Before answering ANY user question, analyze the document structure and activate 
 2.  **Structure:** "Direct Answer First" (YES/NO), followed by "Proof Point" (Cited Capability).
 3.  **No Fluff:** Do not write introductions. Write the cell content only.
 
+### PROTOCOL E: MARKET RESEARCH / RFI (White Paper Mode)
+1.  **Context, Not Questions:** The Excel file contains Requirements Specification (what they want), NOT questions to answer.
+2.  **White Paper Structure:**
+    - Section 1: Company Overview (Who we are, credentials)
+    - Section 2: Technical Capabilities (Map our capabilities to their requirements)
+    - Section 3: Relevant Experience (Past performance with similar scope)
+    - Section 4: Proposed Approach (Consultative - how we'd solve it)
+3.  **Tone:** Consultative and educational, NOT salesy. Use phrases like "Our experience suggests..." or "Based on our work with..."
+4.  **Mapping:** For each requirement in the Excel "Technical Scope", cite matching capability from Company Library
+5.  **Format:** Narrative paragraphs (2-3 pages per section), NOT bullet points or tables
+
 ---
 
 ## PHASE 3: OUTPUT FORMATTING
