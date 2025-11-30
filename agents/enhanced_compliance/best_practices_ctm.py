@@ -506,6 +506,57 @@ class BestPracticesCTMExporter:
         
         ws.freeze_panes = 'A2'
     
+    def _sanitize_cell_value(self, value: str) -> str:
+        """
+        Sanitize cell values to prevent Excel formula errors.
+        
+        Fixes:
+        - Escape leading = signs (Excel interprets as formula)
+        - Escape leading + and - signs
+        - Escape leading @ signs
+        """
+        if not isinstance(value, str):
+            return value
+        
+        # Check if value starts with formula characters
+        if value and len(value) > 0 and value[0] in ['=', '+', '-', '@']:
+            # Escape by prefixing with single quote
+            return "'" + value
+        
+        return value
+    
+    def _create_sheet_link(self, sheet_name: str, cell_ref: str = "A1", link_text: str = "Link") -> str:
+        """
+        Create a safe HYPERLINK formula for Excel.
+        
+        Fixes:
+        - Quotes sheet names with spaces
+        - Validates length (Excel limit: 255 chars)
+        
+        Args:
+            sheet_name: Target sheet name
+            cell_ref: Target cell reference (e.g., "A1")
+            link_text: Display text for the link
+            
+        Returns:
+            HYPERLINK formula string or plain text if too long
+        """
+        # Quote sheet name if it contains spaces
+        if ' ' in sheet_name:
+            quoted_sheet = f"'{sheet_name}'"
+        else:
+            quoted_sheet = sheet_name
+        
+        # Build formula
+        formula = f'=HYPERLINK("#{quoted_sheet}!{cell_ref}", "{link_text}")'
+        
+        # Check Excel's 255-character limit for HYPERLINK
+        if len(formula) > 255:
+            # Return plain text instead
+            return link_text
+        
+        return formula
+    
     def _create_all_requirements_sheet(self, wb: "Workbook", requirements: List[StructuredRequirement]):
         """Create sheet with all requirements for reference"""
         ws = wb.create_sheet("All Requirements")
@@ -530,10 +581,10 @@ class BestPracticesCTMExporter:
                                    fill_type='solid')
         
         for row_num, req in enumerate(requirements, 2):
-            ws.cell(row=row_num, column=1, value=req.generated_id)
-            ws.cell(row=row_num, column=2, value=req.rfp_reference)
+            ws.cell(row=row_num, column=1, value=self._sanitize_cell_value(req.generated_id))
+            ws.cell(row=row_num, column=2, value=self._sanitize_cell_value(req.rfp_reference))
             
-            text_cell = ws.cell(row=row_num, column=3, value=req.full_text)
+            text_cell = ws.cell(row=row_num, column=3, value=self._sanitize_cell_value(req.full_text))
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
             
             ws.cell(row=row_num, column=4, value=req.category.value)
