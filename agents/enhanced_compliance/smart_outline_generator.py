@@ -398,7 +398,7 @@ class SmartOutlineGenerator:
         total_pages = sum(v.page_limit or 0 for v in volumes) or None
         
         return ProposalOutline(
-            rfp_format=rfp_format,
+            rfp_format="FEDERAL_STANDARD",
             volumes=volumes,
             eval_factors=eval_factors,
             format_requirements=format_req,
@@ -406,6 +406,187 @@ class SmartOutlineGenerator:
             warnings=warnings,
             total_pages=total_pages
         )
+    
+    def _generate_spreadsheet_outline(
+        self,
+        section_l_requirements: List[Dict],
+        section_m_requirements: List[Dict],
+        technical_requirements: List[Dict],
+        stats: Dict
+    ) -> ProposalOutline:
+        """
+        MODE D: Generate Spreadsheet/Questionnaire outline with Drafting Templates.
+        
+        Instead of chapters, creates a flat list of drafting tasks, one per row.
+        """
+        warnings = []
+        volumes = []
+        
+        # Create a single "Drafting Template" volume
+        drafting_sections = []
+        
+        # Parse technical requirements as spreadsheet rows
+        for idx, req in enumerate(technical_requirements, start=1):
+            text = req.get('text', '') or req.get('full_text', '')
+            req_id = req.get('req_id', f'ROW-{idx}')
+            
+            # Create a drafting section for each row
+            section = ProposalSection(
+                id=f"DRAFT-{idx}",
+                name=f"Row {idx}: {text[:60]}..." if len(text) > 60 else f"Row {idx}: {text}",
+                requirements=[
+                    f"DRAFTING INSTRUCTION: Write a compliant 'YES' response citing a capability. Max 150 words.",
+                    f"Requirement: {text}",
+                    f"[Empty Drafting Block]"
+                ]
+            )
+            drafting_sections.append(section)
+        
+        # Create single volume
+        volume = ProposalVolume(
+            id="VOL-DRAFT",
+            name="Questionnaire Response Template",
+            volume_type=VolumeType.OTHER,
+            sections=drafting_sections,
+            page_limit=None  # Spreadsheets don't have page limits
+        )
+        volumes.append(volume)
+        
+        # Extract format and submission info
+        format_req = self._extract_format_requirements(section_l_requirements)
+        submission = self._extract_submission_info(section_l_requirements)
+        
+        # No evaluation factors for spreadsheets (compliance-only)
+        eval_factors = []
+        
+        warnings.append("MODE D: Spreadsheet format detected - using drafting template structure")
+        
+        return ProposalOutline(
+            rfp_format="SPREADSHEET",
+            volumes=volumes,
+            eval_factors=eval_factors,
+            format_requirements=format_req,
+            submission_info=submission,
+            warnings=warnings,
+            total_pages=None
+        )
+    
+    def _generate_sled_outline(
+        self,
+        section_l_requirements: List[Dict],
+        section_m_requirements: List[Dict],
+        technical_requirements: List[Dict],
+        stats: Dict
+    ) -> ProposalOutline:
+        """
+        MODE B: Generate SLED/State outline with Strict Section Mirroring.
+        
+        Does NOT renumber sections - preserves RFP numbering (e.g., Section 4.1.1).
+        """
+        warnings = []
+        volumes = []
+        
+        # Extract sections from technical requirements, preserving original numbering
+        sections = []
+        for req in technical_requirements:
+            section_ref = req.get('section_ref', '')
+            text = req.get('text', '') or req.get('full_text', '')
+            
+            # Keep original section numbering
+            if section_ref:
+                section = ProposalSection(
+                    id=section_ref,  # Keep original (e.g., "4.1.1")
+                    name=f"Section {section_ref}",
+                    requirements=[text]
+                )
+                sections.append(section)
+        
+        # Group by top-level section (e.g., Section 4, Section 2)
+        section_groups = {}
+        for sec in sections:
+            top_level = sec.id.split('.')[0] if '.' in sec.id else sec.id
+            if top_level not in section_groups:
+                section_groups[top_level] = []
+            section_groups[top_level].append(sec)
+        
+        # Create volumes for each top-level section
+        for top_level, subsections in sorted(section_groups.items()):
+            volume = ProposalVolume(
+                id=f"VOL-{top_level}",
+                name=f"Section {top_level}",
+                volume_type=VolumeType.TECHNICAL,
+                sections=subsections
+            )
+            volumes.append(volume)
+        
+        # Extract evaluation factors
+        eval_factors = self._extract_eval_factors(section_m_requirements)
+        
+        # Extract format and submission info
+        format_req = self._extract_format_requirements(section_l_requirements)
+        submission = self._extract_submission_info(section_l_requirements)
+        
+        # Apply page limits
+        self._apply_page_limits(section_l_requirements, volumes)
+        
+        warnings.append("MODE B: SLED/State format detected - using strict section mirroring (no renumbering)")
+        
+        return ProposalOutline(
+            rfp_format="SLED_STATE",
+            volumes=volumes,
+            eval_factors=eval_factors,
+            format_requirements=format_req,
+            submission_info=submission,
+            warnings=warnings,
+            total_pages=sum(v.page_limit or 0 for v in volumes) or None
+        )
+    
+    def _generate_dod_outline(
+        self,
+        section_l_requirements: List[Dict],
+        section_m_requirements: List[Dict],
+        technical_requirements: List[Dict],
+        stats: Dict
+    ) -> ProposalOutline:
+        """
+        MODE C: Generate DoD outline with Attachment-Heavy structure.
+        
+        Prioritizes J-Attachments and creates dedicated sections for them.
+        """
+        warnings = []
+        
+        # Use federal outline as base
+        outline = self._generate_federal_outline(
+            section_l_requirements,
+            section_m_requirements,
+            technical_requirements,
+            stats
+        )
+        
+        # Add special sections for attachments
+        for volume in outline.volumes:
+            if volume.volume_type == VolumeType.TECHNICAL:
+                # Add J.2 section (Personnel)
+                j2_section = ProposalSection(
+                    id="SEC-J2",
+                    name="Attachment J.2: Personnel Qualifications",
+                    requirements=["Personnel qualifications per Attachment J.2"]
+                )
+                volume.sections.insert(0, j2_section)
+                
+                # Add J.3 section (QASP)
+                j3_section = ProposalSection(
+                    id="SEC-J3",
+                    name="Attachment J.3: Quality Assurance",
+                    requirements=["Quality assurance plan per Attachment J.3"]
+                )
+                volume.sections.append(j3_section)
+        
+        outline.rfp_format = "DOD_ATTACHMENT"
+        warnings.append("MODE C: DoD format detected - added J-Attachment sections")
+        outline.warnings = warnings
+        
+        return outline
     
     def _detect_rfp_format(
         self, 
