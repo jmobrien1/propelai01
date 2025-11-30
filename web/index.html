@@ -1116,6 +1116,33 @@
                                                         prompt: 'Extract the specific \'Questions to Industry\' from this RFI. Draft strategic answers that demonstrate capability while subtly ghosting competitors.',
                                                         category: 'rfi'
                                                     },
+                                                    // Spreadsheet/Questionnaire Chips (v2.5 / MODE D)
+                                                    {
+                                                        label: '📝 Draft J.2 Responses',
+                                                        prompt: 'Ingest Attachment J.2. For each row in the \'Criterion\' column, draft a \'Vendor Response\' that explains how we meet the requirement. Assume we are fully compliant. Keep answers under 150 words.',
+                                                        category: 'spreadsheet'
+                                                    },
+                                                    {
+                                                        label: '✅ Auto-Score Compliance',
+                                                        prompt: 'Scan the Attachment J.1 Required Capabilities. Compare them against our Company Library. Can we truthfully answer \'YES\' to all J.2 questions? Flag any rows where we might be non-compliant.',
+                                                        category: 'spreadsheet'
+                                                    },
+                                                    {
+                                                        label: '💰 Analyze Pricing Sheet (J.3)',
+                                                        prompt: 'Analyze Attachment J.3 detailed in the \'Pricing Sheet\'. What are the CLINs (Contract Line Item Numbers)? Is it Fixed Price or Time & Materials? List the cells we need to fill.',
+                                                        category: 'spreadsheet'
+                                                    },
+                                                    // SLED/State Chips (MODE B)
+                                                    {
+                                                        label: '⚠️ Check Mandatory Pass/Fail',
+                                                        prompt: 'Identify all requirements labeled as "Mandatory," "Must," or "Minimum Qualification." These are Pass/Fail gates. List them with their specific criteria and flag compliance risks.',
+                                                        category: 'sled'
+                                                    },
+                                                    {
+                                                        label: '📋 Extract State Requirements',
+                                                        prompt: 'This appears to be a State/Local RFP. Extract all technical requirements from the Specifications section and map them to standard RFP sections (Scope, Instructions, Evaluation).',
+                                                        category: 'sled'
+                                                    },
                                                     // Universal Chips
                                                     {
                                                         label: '⚠️ Fatal Flaw Check',
