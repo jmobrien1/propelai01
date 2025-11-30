@@ -164,18 +164,19 @@ class ChatResponse(BaseModel):
     timestamp: str
 
 
-# ============== In-Memory Store ==============
+# ============== Phase 5: MongoDB Store (Replaces In-Memory) ==============
 
 class RFPStore:
-    """In-memory store for RFP data"""
+    """
+    MongoDB-backed store for RFP data
     
-    def __init__(self):
-        self.rfps: Dict[str, Dict] = {}
-        self.processing_status: Dict[str, ProcessingStatus] = {}
+    Phase 5: Replaced in-memory dict with persistent MongoDB storage.
+    All operations are now async and use Motor for non-blocking I/O.
+    """
     
-    def create(self, rfp_id: str, data: Dict) -> Dict:
-        """Create a new RFP entry"""
-        self.rfps[rfp_id] = {
+    async def create(self, rfp_id: str, data: Dict) -> Dict:
+        """Create a new RFP entry in MongoDB"""
+        rfp_doc = {
             "id": rfp_id,
             "name": data.get("name", "Untitled RFP"),
             "solicitation_number": data.get("solicitation_number"),
@@ -189,50 +190,66 @@ class RFPStore:
             "stats": None,
             "amendments": [],
             "amendment_processor": None,
-            "document_chunks": [],  # v2.12: For chat functionality
-            "chat_history": [],     # v2.12: Chat message history
-            "rfp_type": "unknown",  # v3.0: Detected RFP type (federal_standard, sled_state, dod_attachment, spreadsheet)
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "document_chunks": [],
+            "chat_history": [],
+            "rfp_type": "unknown",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
-        return self.rfps[rfp_id]
+        
+        await db.rfps.insert_one(rfp_doc)
+        return db.serialize_doc(rfp_doc)
     
-    def get(self, rfp_id: str) -> Optional[Dict]:
-        """Get RFP by ID"""
-        return self.rfps.get(rfp_id)
+    async def get(self, rfp_id: str) -> Optional[Dict]:
+        """Get RFP by ID from MongoDB"""
+        doc = await db.rfps.find_one({"id": rfp_id}, {"_id": 0})
+        return doc
     
-    def update(self, rfp_id: str, updates: Dict) -> Dict:
-        """Update RFP"""
-        if rfp_id not in self.rfps:
+    async def update(self, rfp_id: str, updates: Dict) -> Dict:
+        """Update RFP in MongoDB"""
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        
+        result = await db.rfps.update_one(
+            {"id": rfp_id},
+            {"$set": updates}
+        )
+        
+        if result.matched_count == 0:
             raise KeyError(f"RFP not found: {rfp_id}")
         
-        self.rfps[rfp_id].update(updates)
-        self.rfps[rfp_id]["updated_at"] = datetime.now().isoformat()
-        return self.rfps[rfp_id]
+        return await self.get(rfp_id)
     
-    def list_all(self) -> List[Dict]:
-        """List all RFPs"""
-        return list(self.rfps.values())
+    async def list_all(self) -> List[Dict]:
+        """List all RFPs from MongoDB"""
+        cursor = db.rfps.find({}, {"_id": 0})
+        docs = await cursor.to_list(length=1000)
+        return docs
     
-    def delete(self, rfp_id: str) -> bool:
-        """Delete RFP"""
-        if rfp_id in self.rfps:
-            del self.rfps[rfp_id]
-            return True
-        return False
+    async def delete(self, rfp_id: str) -> bool:
+        """Delete RFP from MongoDB"""
+        result = await db.rfps.delete_one({"id": rfp_id})
+        return result.deleted_count > 0
     
-    def set_status(self, rfp_id: str, status: str, progress: int, message: str, req_count: int = None):
-        """Set processing status"""
-        self.processing_status[rfp_id] = ProcessingStatus(
-            status=status,
-            progress=progress,
-            message=message,
-            requirements_count=req_count
+    async def set_status(self, rfp_id: str, status: str, progress: int, message: str, req_count: int = None):
+        """Set processing status in RFP document"""
+        status_data = {
+            "status": status,
+            "progress": progress,
+            "message": message,
+            "requirements_count": req_count
+        }
+        await db.rfps.update_one(
+            {"id": rfp_id},
+            {"$set": {"processing_status": status_data}}
         )
     
-    def get_status(self, rfp_id: str) -> Optional[ProcessingStatus]:
-        """Get processing status"""
-        return self.processing_status.get(rfp_id)
+    async def get_status(self, rfp_id: str) -> Optional[ProcessingStatus]:
+        """Get processing status from RFP document"""
+        doc = await db.rfps.find_one({"id": rfp_id}, {"processing_status": 1, "_id": 0})
+        if doc and "processing_status" in doc:
+            status_data = doc["processing_status"]
+            return ProcessingStatus(**status_data)
+        return None
 
 
 # ============== Global Instances ==============
