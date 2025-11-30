@@ -468,28 +468,39 @@ Please answer based only on the context above. If you cite information, referenc
             "content": user_message
         })
         
-        # Call Claude API
-        try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=1500,
-                temperature=0.3,  # Lower temperature for more factual responses
-                system=system_prompt,
-                messages=messages
-            )
-            
-            answer = response.content[0].text
-            logger.info(f"[CHAT] Generated answer (length: {len(answer)})")
-            
-            return answer, sources
-            
-        except Exception as e:
-            logger.error(f"[CHAT] Error generating answer: {e}")
-            return (
-                f"I encountered an error while generating the answer: {str(e)}. "
-                "Please try again or rephrase your question.",
-                sources
-            )
+        # Call Claude API - try latest model first, fallback to stable version
+        model_versions = [
+            "claude-3-5-sonnet-20241022",  # Latest
+            "claude-3-5-sonnet-latest",     # Alias to latest
+            "claude-3-5-sonnet-20240620",   # Stable fallback
+        ]
+        
+        for model in model_versions:
+            try:
+                response = self.client.messages.create(
+                    model=model,
+                    max_tokens=1500,
+                    temperature=0.3,  # Lower temperature for more factual responses
+                    system=system_prompt,
+                    messages=messages
+                )
+                
+                answer = response.content[0].text
+                logger.info(f"[CHAT] Generated answer using {model} (length: {len(answer)})")
+                
+                return answer, sources
+                
+            except Exception as e:
+                logger.warning(f"[CHAT] Error with model {model}: {e}")
+                if model == model_versions[-1]:  # Last model in list
+                    logger.error(f"[CHAT] All models failed. Last error: {e}")
+                    return (
+                        f"I encountered an error while generating the answer. "
+                        f"This may be due to API access limitations. "
+                        f"Please check your Anthropic API key permissions. Error: {str(e)}",
+                        []
+                    )
+                continue  # Try next model
     
     # ============================================================================
     # CHAT ORCHESTRATION
