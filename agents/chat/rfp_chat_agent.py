@@ -251,6 +251,77 @@ class RFPChatAgent:
             return ""
     
     # ============================================================================
+    # v3.0 RFP CLASSIFICATION ROUTER
+    # ============================================================================
+    
+    def classify_rfp_type(self, text_sample: str, file_names: List[str]) -> RFPType:
+        """
+        v3.0 Router: Classify RFP type based on document structure.
+        
+        Scans the first ~20 pages worth of text and file names to determine:
+        - FEDERAL_STANDARD: NIH, USCG, GSA (Section L/M/C pattern)
+        - SLED_STATE: State/Local (numeric sections, "Instructions to Vendors")
+        - DOD_ATTACHMENT: Navy/Army (J-Attachments, CDRLs, QASP)
+        - SPREADSHEET: Excel/CSV questionnaires
+        
+        Args:
+            text_sample: First portion of extracted text (~10k chars)
+            file_names: List of uploaded file names
+            
+        Returns:
+            RFPType enum
+        """
+        text_lower = text_sample.lower()
+        
+        # Priority 1: Check file types (MODE D - Spreadsheet)
+        has_spreadsheet = any(
+            fname.lower().endswith(('.xlsx', '.xls', '.csv')) 
+            for fname in file_names
+        )
+        spreadsheet_indicators = [
+            'questionnaire', 'requirements matrix', 'self-assessment', 
+            'requirements traceability', 'vendor response'
+        ]
+        if has_spreadsheet and any(indicator in text_lower for indicator in spreadsheet_indicators):
+            logger.info("[ROUTER] Classified as SPREADSHEET (MODE D)")
+            return RFPType.SPREADSHEET
+        
+        # Priority 2: Check for DoD attachments (MODE C)
+        dod_indicators = [
+            'attachment j.2', 'attachment j.3', 'attachment j-2', 
+            'exhibit a', 'cdrl', 'qasp', 'quality assurance surveillance'
+        ]
+        if any(indicator in text_lower for indicator in dod_indicators):
+            logger.info("[ROUTER] Classified as DOD_ATTACHMENT (MODE C)")
+            return RFPType.DOD_ATTACHMENT
+        
+        # Priority 3: Check for SLED/State patterns (MODE B)
+        sled_indicators = [
+            'section 4:', 'specifications', 'instructions to vendors',
+            'state of', 'commonwealth of', 'county of', 'city of'
+        ]
+        numeric_section_pattern = re.search(r'\bsection\s+\d+[:\.]', text_lower)
+        if numeric_section_pattern or any(indicator in text_lower for indicator in sled_indicators):
+            # Additional check: Does it lack federal FAR patterns?
+            far_patterns = ['section l', 'section m', 'section c', 'far clause']
+            if not any(pattern in text_lower for pattern in far_patterns):
+                logger.info("[ROUTER] Classified as SLED_STATE (MODE B)")
+                return RFPType.SLED_STATE
+        
+        # Priority 4: Federal Standard (MODE A)
+        federal_indicators = [
+            'section l', 'section m', 'section c', 'far clause',
+            'instructions to offerors', 'evaluation criteria'
+        ]
+        if any(indicator in text_lower for indicator in federal_indicators):
+            logger.info("[ROUTER] Classified as FEDERAL_STANDARD (MODE A)")
+            return RFPType.FEDERAL_STANDARD
+        
+        # Default: Federal Standard (most common)
+        logger.info("[ROUTER] Classified as FEDERAL_STANDARD (default)")
+        return RFPType.FEDERAL_STANDARD
+    
+    # ============================================================================
     # SECTION DETECTION
     # ============================================================================
     
