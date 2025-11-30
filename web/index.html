@@ -1056,33 +1056,76 @@
                                             </div>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                 {[
+                                                    // Standard RFP Chips
                                                     {
                                                         label: '📊 Evaluation & Page Limits',
-                                                        prompt: 'Create a \'Unified Scoring Table\' that maps every Evaluation Factor in Section M to its specific Page Limit. Check the RFP Cover Letter if Section L is missing. If a limit isn\'t stated, mark as \'Not Specified\'.'
-                                                    },
-                                                    {
-                                                        label: '👮 Extract Labor Cats (J.2)',
-                                                        prompt: 'Analyze Attachment J.2 (Personnel Qualifications). Create a table of every Labor Category with columns for: Min Education, Min Years Experience, Required Certifications, and Security Clearance Level.'
-                                                    },
-                                                    {
-                                                        label: '📦 List CDRL Deliverables',
-                                                        prompt: 'Analyze Exhibit A (CDRLs). List every Data Item Description (DID) number, Title, and Frequency (e.g., Monthly, Quarterly) in a clean table.'
-                                                    },
-                                                    {
-                                                        label: '🎯 Analyze QASP Metrics',
-                                                        prompt: 'Review Attachment J.3 (QASP). List the Performance Objectives and the AQL (Acceptable Quality Level) for each. Suggest a \'Discriminator\' for how we can exceed this standard.'
+                                                        prompt: 'Create a \'Unified Scoring Table\' that maps every Evaluation Factor in Section M to its specific Page Limit. Check the RFP Cover Letter if Section L is missing. If a limit isn\'t stated, mark as \'Not Specified\'.',
+                                                        category: 'standard'
                                                     },
                                                     {
                                                         label: '📅 Schedule & Deadlines',
-                                                        prompt: 'Extract all dates (Questions Due, Submission Deadline, Award Date) from the Cover Letter and Instructions. Present as a chronological table.'
+                                                        prompt: 'Extract all dates (Questions Due, Submission Deadline, Award Date) from the Cover Letter and Instructions. Present as a chronological table.',
+                                                        category: 'standard'
+                                                    },
+                                                    // DoD Specific Chips
+                                                    {
+                                                        label: '👮 Extract Labor Cats (J.2)',
+                                                        prompt: 'Analyze Attachment J.2 (Personnel Qualifications). Create a table of every Labor Category with columns for: Min Education, Min Years Experience, Required Certifications, and Security Clearance Level.',
+                                                        category: 'dod'
                                                     },
                                                     {
+                                                        label: '📦 CDRL Deliverables',
+                                                        prompt: 'Analyze Exhibit A (CDRLs). List every Data Item Description (DID) number, Title, and Frequency (e.g., Monthly, Quarterly) in a clean table.',
+                                                        category: 'dod'
+                                                    },
+                                                    {
+                                                        label: '🎯 QASP Metrics',
+                                                        prompt: 'Review Attachment J.3 (QASP). List the Performance Objectives and the AQL (Acceptable Quality Level) for each. Suggest a \'Discriminator\' for how we can exceed this standard.',
+                                                        category: 'dod'
+                                                    },
+                                                    // SCA/Wage Determination Chips
+                                                    {
+                                                        label: '💰 Wage Determination Map',
+                                                        prompt: 'Create a table mapping the PWS Labor Categories to the WD Occupation Codes and Minimum Hourly Rates. Include the Health & Welfare (H&W) rate. Flag any roles without clear WD matches.',
+                                                        category: 'sca'
+                                                    },
+                                                    {
+                                                        label: '⚠️ SCA Compliance Check',
+                                                        prompt: 'Are there any \'Conformed\' classifications required? List any roles in the PWS that do not have a clear match in the WD file. Check for compliance risks.',
+                                                        category: 'sca'
+                                                    },
+                                                    // CSO/OTA Innovation Chips
+                                                    {
+                                                        label: '🚀 Match Solution to AoI',
+                                                        prompt: 'Analyze the Areas of Interest (AoIs) in this Commercial Solutions Opening. Which AoI best fits our capabilities? Draft a 1-page Solution Brief outline for that AoI.',
+                                                        category: 'cso'
+                                                    },
+                                                    {
+                                                        label: '🧪 CSO Evaluation Criteria',
+                                                        prompt: 'What are the specific \'Scientific Merit\', \'Relevance to Mission\', and \'Business Viability\' criteria for this CSO? How are solutions evaluated?',
+                                                        category: 'cso'
+                                                    },
+                                                    // RFI Chips
+                                                    {
+                                                        label: '📢 Draft Capabilities Statement',
+                                                        prompt: 'This is an RFI (Request for Information). Draft a strategic capabilities statement that positions our company for the future RFP. Highlight differentiators that could become requirements.',
+                                                        category: 'rfi'
+                                                    },
+                                                    {
+                                                        label: '❓ Answer Industry Questions',
+                                                        prompt: 'Extract the specific \'Questions to Industry\' from this RFI. Draft strategic answers that demonstrate capability while subtly ghosting competitors.',
+                                                        category: 'rfi'
+                                                    },
+                                                    // Universal Chips
+                                                    {
                                                         label: '⚠️ Fatal Flaw Check',
-                                                        prompt: 'Scan for \'Pass/Fail\' or \'Go/No-Go\' criteria in Section M. Also check for strict formatting rules (Font, Margins) in Section L/Cover Letter that could cause disqualification.'
+                                                        prompt: 'Scan for \'Pass/Fail\' or \'Go/No-Go\' criteria. Check for strict formatting rules (Font, Margins) that could cause disqualification. Identify compliance risks.',
+                                                        category: 'universal'
                                                     },
                                                     {
                                                         label: '💡 Win Themes',
-                                                        prompt: 'Based on the highest-weighted Technical Factors, suggest 3 \'Win Themes\'. Use \'Ghosting\' to position against competitors based on the agency\'s specific pain points.'
+                                                        prompt: 'Based on the highest-weighted evaluation factors, suggest 3 \'Win Themes\'. Use \'Ghosting\' to position against competitors based on the agency\'s specific pain points.',
+                                                        category: 'universal'
                                                     }
                                                 ].map((chip, idx) => (
                                                     <button
