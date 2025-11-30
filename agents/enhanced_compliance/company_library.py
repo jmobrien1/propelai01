@@ -759,6 +759,12 @@ class CompanyLibrary:
         self.documents: Dict[str, ParsedDocument] = {}
         self.profile = CompanyProfile()
         self._load_library()
+        
+        # v3.1: Debug logging
+        print(f"[LIBRARY] Initialized with {len(self.documents)} documents")
+        print(f"[LIBRARY] Profile: {len(self.profile.capabilities)} capabilities, "
+              f"{len(self.profile.past_performance)} past performance, "
+              f"{len(self.profile.key_personnel)} key personnel")
     
     def _load_library(self):
         """Load existing library from storage"""
