@@ -100,6 +100,11 @@ class StructuredRequirement:
     parent_title: str               # Title of the subsection containing this requirement
     evaluation_factor: Optional[str]  # If linked to Section M factor
     
+    # v3.1: New fields for Router Logic
+    page_limit: Optional[str] = None      # MODE A: Injected page limit (e.g., "5 pages")
+    target_volume: Optional[str] = None   # MODE A: Target volume (Vol I, II, III)
+    row_number: Optional[int] = None      # MODE D: Spreadsheet row number
+    
     # Cross-references found in text
     references_to: List[str] = field(default_factory=list)  # Other sections/attachments referenced
     
