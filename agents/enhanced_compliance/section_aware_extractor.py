@@ -207,17 +207,29 @@ class SectionAwareExtractor:
         self.rfp_type = rfp_type or RFPType.UNKNOWN
         self.counters = {}  # For generating IDs when needed
     
-    def extract(self, documents: List[Dict[str, Any]], structure: Optional[DocumentStructure] = None) -> ExtractionResult:
+    def extract(self, documents: List[Dict[str, Any]], structure: Optional[DocumentStructure] = None, file_paths: List[str] = None) -> ExtractionResult:
         """
         Extract requirements from documents using structural analysis.
+        
+        v3.1: Dispatches to mode-specific extractors based on rfp_type.
         
         Args:
             documents: List of parsed documents with 'text', 'filename', 'pages'
             structure: Pre-computed document structure (will compute if not provided)
+            file_paths: v3.1 - List of file paths for spreadsheet extraction
             
         Returns:
             ExtractionResult with categorized requirements
         """
+        # v3.1: Classify RFP type if not set
+        if self.rfp_type == RFPType.UNKNOWN and file_paths:
+            self.rfp_type = self._classify_rfp_type(documents, file_paths)
+        
+        # v3.1: MODE D - Spreadsheet extraction
+        if self.rfp_type == RFPType.SPREADSHEET:
+            return self._extract_from_spreadsheet(documents, file_paths or [])
+        
+        # Standard extraction (MODE A, B, C, UNKNOWN)
         # First, analyze document structure
         if structure is None:
             structure = analyze_rfp_structure(documents)
