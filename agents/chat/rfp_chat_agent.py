@@ -242,7 +242,16 @@ class RFPChatAgent:
             
             context_parts.append("")  # Blank line between results
         
-        return "\n".join(context_parts)
+        # Safety Protocol: Limit context size to prevent token overflow
+        full_context = "\n".join(context_parts)
+        
+        # Rough estimate: 1 token ≈ 4 characters
+        max_chars = max_tokens * 4
+        if len(full_context) > max_chars:
+            logger.warning(f"[LIBRARY] Context truncated from {len(full_context)} to {max_chars} chars")
+            full_context = full_context[:max_chars] + "\n\n[Context truncated to fit token limit]"
+        
+        return full_context
     
     # ============================================================================
     # TEXT EXTRACTION
