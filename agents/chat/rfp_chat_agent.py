@@ -177,6 +177,79 @@ class RFPChatAgent:
             logger.error(f"[CHAT] DOCX extraction error: {e}")
             return ""
     
+    def _extract_from_excel(self, file_path: Path) -> str:
+        """
+        Extract text from Excel files using pandas (v3.0 "Shredder" Logic).
+        
+        Implements row-by-row parsing for MODE D (Spreadsheet/Questionnaire).
+        Detects requirement/response columns automatically.
+        """
+        try:
+            import pandas as pd
+            
+            # Read Excel file
+            if file_path.suffix.lower() == '.csv':
+                df = pd.read_csv(str(file_path))
+            else:
+                df = pd.read_excel(str(file_path), engine='openpyxl')
+            
+            text_parts = [f"[SPREADSHEET: {file_path.name}]"]
+            text_parts.append(f"Total Rows: {len(df)}, Total Columns: {len(df.columns)}")
+            
+            # Detect header columns (v3.0 Shredder Logic)
+            requirement_col = None
+            response_col = None
+            comply_col = None
+            
+            for col in df.columns:
+                col_lower = str(col).lower()
+                if any(keyword in col_lower for keyword in ['criterion', 'requirement', 'description', 'item']):
+                    requirement_col = col
+                if any(keyword in col_lower for keyword in ['vendor response', 'offeror response', 'response', 'comments', 'explanation']):
+                    response_col = col
+                if any(keyword in col_lower for keyword in ['comply', 'meets', 'y/n', 'yes/no']):
+                    comply_col = col
+            
+            logger.info(f"[CHAT] Excel columns detected - Requirement: {requirement_col}, Response: {response_col}, Comply: {comply_col}")
+            
+            # Format as structured text (row-by-row)
+            if requirement_col:
+                text_parts.append(f"\n=== SPREADSHEET STRUCTURE ===")
+                text_parts.append(f"Requirement Column: {requirement_col}")
+                if comply_col:
+                    text_parts.append(f"Compliance Column: {comply_col}")
+                if response_col:
+                    text_parts.append(f"Response Column: {response_col}")
+                
+                text_parts.append(f"\n=== ROW-BY-ROW REQUIREMENTS ===")
+                for idx, row in df.iterrows():
+                    req_text = str(row[requirement_col]) if pd.notna(row[requirement_col]) else ""
+                    if req_text and req_text != 'nan' and len(req_text.strip()) > 0:
+                        row_text = f"\n[Row {idx + 2}]"  # +2 because Excel starts at 1 and has header
+                        row_text += f"\nRequirement: {req_text}"
+                        
+                        if comply_col and pd.notna(row[comply_col]):
+                            row_text += f"\nCompliance: {row[comply_col]}"
+                        
+                        if response_col and pd.notna(row[response_col]):
+                            resp_text = str(row[response_col])
+                            if resp_text and resp_text != 'nan':
+                                row_text += f"\nResponse: {resp_text}"
+                        
+                        text_parts.append(row_text)
+            else:
+                # Fallback: dump all data as text
+                text_parts.append("\n=== SPREADSHEET DATA ===")
+                text_parts.append(df.to_string())
+            
+            full_text = "\n".join(text_parts)
+            logger.info(f"[CHAT] Extracted {len(full_text)} characters from Excel: {file_path.name}")
+            return full_text
+            
+        except Exception as e:
+            logger.error(f"[CHAT] Excel extraction error: {e}")
+            return ""
+    
     # ============================================================================
     # SECTION DETECTION
     # ============================================================================
