@@ -844,7 +844,13 @@ Be EXTREMELY precise with numbers and measurements. Quote directly when possible
         chat_history: Optional[List[ChatMessage]] = None
     ) -> ChatMessage:
         """
-        Main chat function - retrieve context and generate answer.
+        Main chat function with specialized query routing (Phase 2).
+        
+        Routes queries to specialized handlers:
+        - Cross-reference: Section L vs. M analysis
+        - Contradiction: Detect conflicts between sections
+        - Formatting: Extract Section L rules
+        - General: Standard RAG retrieval
         
         Args:
             question: User's question
@@ -856,19 +862,88 @@ Be EXTREMELY precise with numbers and measurements. Quote directly when possible
         """
         logger.info(f"[CHAT] Processing question: {question[:100]}...")
         
-        # Step 1: Retrieve relevant chunks
-        retrieved = self.retrieve_relevant_chunks(question, document_chunks)
-        chunks_only = [chunk for chunk, score in retrieved]
+        # Detect query type
+        query_type = self.detect_query_type(question)
+        logger.info(f"[CHAT] Query type detected: {query_type}")
         
-        # Step 2: Generate answer
-        answer, sources = self.generate_answer(question, chunks_only, chat_history)
+        # Route to specialized handler
+        if query_type == 'cross_reference':
+            custom_prompt, sources = self.handle_cross_reference_query(question, document_chunks)
+            # Use custom prompt directly with Claude
+            answer = self._call_claude_with_custom_prompt(custom_prompt, chat_history)
+            
+        elif query_type == 'contradiction':
+            custom_prompt, sources = self.handle_contradiction_detection(question, document_chunks)
+            answer = self._call_claude_with_custom_prompt(custom_prompt, chat_history)
+            
+        elif query_type == 'formatting':
+            custom_prompt, sources = self.handle_formatting_query(question, document_chunks)
+            answer = self._call_claude_with_custom_prompt(custom_prompt, chat_history)
+            
+        else:
+            # Standard RAG flow
+            retrieved = self.retrieve_relevant_chunks(question, document_chunks)
+            chunks_only = [chunk for chunk, score in retrieved]
+            answer, sources = self.generate_answer(question, chunks_only, chat_history)
         
-        # Step 3: Create response message
+        # Create response message
         response = ChatMessage(
             role="assistant",
             content=answer,
             timestamp=datetime.utcnow().isoformat() + "Z",
-            sources=sources
+            sources=sources if query_type == 'general' else []
         )
         
         return response
+    
+    def _call_claude_with_custom_prompt(
+        self, 
+        custom_prompt: str,
+        chat_history: Optional[List[ChatMessage]] = None
+    ) -> str:
+        """
+        Call Claude with a custom specialized prompt.
+        Used by Phase 2 handlers.
+        """
+        messages = []
+        
+        # Add chat history if available
+        if chat_history:
+            for msg in chat_history[-4:]:
+                messages.append({
+                    "role": msg.role,
+                    "content": msg.content
+                })
+        
+        messages.append({
+            "role": "user",
+            "content": custom_prompt
+        })
+        
+        # Try models
+        model_versions = [
+            "claude-sonnet-4-5",
+            "claude-haiku-4-5",
+            "claude-sonnet-4-5-20250929",
+            "claude-3-5-sonnet-20240620",
+        ]
+        
+        for model in model_versions:
+            try:
+                response = self.client.messages.create(
+                    model=model,
+                    max_tokens=2000,  # More tokens for detailed compliance analysis
+                    temperature=0.2,  # Lower for precision
+                    messages=messages
+                )
+                
+                answer = response.content[0].text
+                logger.info(f"[CHAT] Generated specialized answer using {model}")
+                return answer
+                
+            except Exception as e:
+                logger.warning(f"[CHAT] Error with model {model}: {e}")
+                if model == model_versions[-1]:
+                    logger.error(f"[CHAT] All models failed")
+                    return f"I encountered an error while analyzing. Error: {str(e)}"
+                continue
