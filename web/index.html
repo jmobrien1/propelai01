@@ -1056,13 +1056,23 @@
                                             </div>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                 {[
-                                                    'Tell me about this RFP',
-                                                    'What is the submission deadline?',
-                                                    'Summarize evaluation criteria',
-                                                    'What are the page limits?',
-                                                    'Extract formatting rules',
-                                                    'Check for contradictions'
-                                                ].map((prompt, idx) => (
+                                                    {
+                                                        label: '🚩 Evaluation Factors (Full List)',
+                                                        prompt: 'Create a detailed table of ALL Evaluation Factors (Factors 1 through X) found in Section M. Include their relative importance/weighting and the specific page limit for each from Section L.'
+                                                    },
+                                                    {
+                                                        label: '📅 Deliverable Schedule',
+                                                        prompt: 'Extract all dates and deadlines from the RFP. Create a table showing: Event (e.g., Questions Due, Proposal Due, Kickoff), Date, and Time/Timezone.'
+                                                    },
+                                                    {
+                                                        label: '⚠️ Compliance Checks',
+                                                        prompt: 'Review Section L (Instructions) and Section M (Evaluation). Identify any contradictions between them (e.g., page limits vs. required content). List the top 3 compliance risks.'
+                                                    },
+                                                    {
+                                                        label: '💡 Win Themes',
+                                                        prompt: 'Based on the Technical Factors in Section M, suggest 3 \'Win Themes\' that would maximize our score. Focus on \'Best Value\' discriminators.'
+                                                    }
+                                                ].map((chip, idx) => (
                                                     <button
                                                         key={idx}
                                                         onClick={() => {
