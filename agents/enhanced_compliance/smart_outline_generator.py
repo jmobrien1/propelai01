@@ -1,22 +1,40 @@
 """
-PropelAI: Smart Proposal Outline Generator v2.10
+PropelAI: Smart Proposal Outline Generator v3.1
 
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
 already parsed from Section L and M rather than re-parsing PDFs.
 
-Key improvements:
-- Uses compliance matrix data (already parsed and categorized)
-- Detects RFP format (NIH Factor-based, GSA Volume-based, State RFP, etc.)
-- Better volume/section detection using actual requirement text
-- Proper evaluation factor mapping
+v3.1 Updates:
+- Integrated v3.0 Router Logic from RFP Chat Agent
+- Mode-specific outline generation (Federal, SLED, DoD, Spreadsheet)
+- Proper handling of spreadsheet questionnaires (drafting templates)
+- Strict section mirroring for State RFPs
+- Volume-centric hierarchy for Federal RFPs
 """
 
 import re
 import logging
+import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Import v3.0 Router Logic
+sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from agents.chat.rfp_chat_agent import RFPType
+    ROUTER_AVAILABLE = True
+except ImportError:
+    ROUTER_AVAILABLE = False
+    # Fallback: Define RFPType locally if import fails
+    class RFPType(Enum):
+        FEDERAL_STANDARD = "federal_standard"
+        SLED_STATE = "sled_state"
+        DOD_ATTACHMENT = "dod_attachment"
+        SPREADSHEET = "spreadsheet"
+        UNKNOWN = "unknown"
 
 # Configure logging
 logger = logging.getLogger(__name__)
