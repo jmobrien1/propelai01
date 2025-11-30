@@ -1057,20 +1057,20 @@
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                 {[
                                                     {
-                                                        label: '🚩 Evaluation Factors (Full List)',
-                                                        prompt: 'Create a detailed table of ALL Evaluation Factors (Factors 1 through X) found in Section M. Include their relative importance/weighting and the specific page limit for each from Section L.'
+                                                        label: '📊 Evaluation & Page Limits',
+                                                        prompt: 'Create a \'Unified Scoring Table\' that maps every Evaluation Factor in Section M to its specific Page Limit. Check the RFP Cover Letter if Section L is missing. If a limit isn\'t stated, mark as \'Not Specified\'.'
                                                     },
                                                     {
-                                                        label: '📅 Deliverable Schedule',
-                                                        prompt: 'Extract all dates and deadlines from the RFP. Create a table showing: Event (e.g., Questions Due, Proposal Due, Kickoff), Date, and Time/Timezone.'
+                                                        label: '📅 Schedule & Deadlines',
+                                                        prompt: 'Extract all dates (Questions Due, Submission Deadline, Award Date) from the Cover Letter and Instructions. Present as a chronological table.'
                                                     },
                                                     {
-                                                        label: '⚠️ Compliance Checks',
-                                                        prompt: 'Review Section L (Instructions) and Section M (Evaluation). Identify any contradictions between them (e.g., page limits vs. required content). List the top 3 compliance risks.'
+                                                        label: '⚠️ Fatal Flaw Check',
+                                                        prompt: 'Scan for \'Pass/Fail\' or \'Go/No-Go\' criteria in Section M. Also check for strict formatting rules (Font, Margins) in Section L/Cover Letter that could cause disqualification.'
                                                     },
                                                     {
                                                         label: '💡 Win Themes',
-                                                        prompt: 'Based on the Technical Factors in Section M, suggest 3 \'Win Themes\' that would maximize our score. Focus on \'Best Value\' discriminators.'
+                                                        prompt: 'Based on the highest-weighted Technical Factors, suggest 3 \'Win Themes\'. Use \'Ghosting\' to position against competitors based on the agency\'s specific pain points.'
                                                     }
                                                 ].map((chip, idx) => (
                                                     <button
