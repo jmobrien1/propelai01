@@ -417,13 +417,14 @@ class RFPChatAgent:
     
     def classify_rfp_type(self, text_sample: str, file_names: List[str]) -> RFPType:
         """
-        v3.0 Router: Classify RFP type based on document structure.
+        v4.0 Router: Classify RFP type based on document structure.
         
         Scans the first ~20 pages worth of text and file names to determine:
         - FEDERAL_STANDARD: NIH, USCG, GSA (Section L/M/C pattern)
         - SLED_STATE: State/Local (numeric sections, "Instructions to Vendors")
         - DOD_ATTACHMENT: Navy/Army (J-Attachments, CDRLs, QASP)
-        - SPREADSHEET: Excel/CSV questionnaires
+        - SPREADSHEET: Excel/CSV questionnaires with Response columns
+        - MARKET_RESEARCH: RFI/White Papers with Requirements (no Response column)
         
         Args:
             text_sample: First portion of extracted text (~10k chars)
@@ -434,7 +435,23 @@ class RFPChatAgent:
         """
         text_lower = text_sample.lower()
         
-        # Priority 1: Check file types (MODE D - Spreadsheet)
+        # Priority 0: Check for RFI/Market Research (MODE E)
+        rfi_indicators = ['rfi', 'market research', 'white paper', 'sources sought', 'industry day']
+        has_rfi_keyword = any(indicator in text_lower for indicator in rfi_indicators)
+        has_rfi_filename = any(indicator in fname.lower() for fname in file_names for indicator in rfi_indicators)
+        
+        # Check for Requirements Specification (not Questionnaire)
+        has_requirements_spec = any(indicator in text_lower for indicator in [
+            'business requirements', 'technical scope', 'scope of work', 
+            'requirements specification'
+        ])
+        has_no_response_column = 'vendor response' not in text_lower and 'offeror response' not in text_lower
+        
+        if (has_rfi_keyword or has_rfi_filename) or (has_requirements_spec and has_no_response_column):
+            logger.info("[ROUTER] Classified as MARKET_RESEARCH (MODE E)")
+            return RFPType.MARKET_RESEARCH
+        
+        # Priority 1: Check file types (MODE D - Spreadsheet Questionnaire)
         has_spreadsheet = any(
             fname.lower().endswith(('.xlsx', '.xls', '.csv')) 
             for fname in file_names
