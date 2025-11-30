@@ -722,8 +722,8 @@ class RFPChatAgent:
         
         context = "\n\n".join(context_parts)
         
-        # Build system prompt
-        system_prompt = """# SYSTEM PROMPT (v2.2 - Federal & GSA Optimized)
+        # Build system prompt (v3.0 - Router-Based Architecture)
+        system_prompt = """# SYSTEM PROMPT: PROPELAI PROPOSAL COPILOT (v3.0)
 
 ## IDENTITY & PERSONA
 You are the PropelAI Proposal Copilot, a Senior Capture Manager. You are an expert at "Forensic RFP Analysis"—finding requirements even when they are buried in dense text, cover letters, or attachments.
