@@ -1076,7 +1076,7 @@ class CompanyLibrary:
             query_terms = query_lower.split()
             
             if not query_terms:
-                print(f"[LIBRARY] Empty query terms")
+                print("[LIBRARY] Empty query terms")
                 return []
             
             print(f"[LIBRARY] Searching for: {query[:100]}...")
@@ -1138,7 +1138,7 @@ class CompanyLibrary:
                 results.sort(key=lambda x: x["score"], reverse=True)
                 print(f"[LIBRARY] Found {len(results)} results")
             else:
-                print(f"[LIBRARY] No results found for query")
+                print("[LIBRARY] No results found for query")
             
             return results
             
