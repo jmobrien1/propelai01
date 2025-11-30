@@ -479,7 +479,7 @@ async def upload_files(
     files: List[UploadFile] = File(...)
 ):
     """Upload RFP documents"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -513,7 +513,7 @@ async def upload_files(
         })
     
     # Update store
-    store.update(rfp_id, {
+    await store.update(rfp_id, {
         "files": file_names,
         "file_paths": file_paths,
         "status": "files_uploaded"
@@ -530,7 +530,7 @@ async def upload_files(
 
 def process_rfp_background(rfp_id: str):
     """Background task to process RFP - uses best practices extractor when available"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         return
     
@@ -541,22 +541,22 @@ def process_rfp_background(rfp_id: str):
     
     try:
         # Update status
-        store.set_status(rfp_id, "processing", 10, "Parsing documents...")
-        store.update(rfp_id, {"status": "processing"})
+        await store.set_status(rfp_id, "processing", 10, "Parsing documents...")
+        await store.update(rfp_id, {"status": "processing"})
         
         # Get file paths
         file_paths = rfp["file_paths"]
         if not file_paths:
-            store.set_status(rfp_id, "error", 0, "No files to process")
-            store.update(rfp_id, {"status": "error"})
+            await store.set_status(rfp_id, "error", 0, "No files to process")
+            await store.update(rfp_id, {"status": "error"})
             return
         
         # Process with Enhanced Compliance Agent
-        store.set_status(rfp_id, "processing", 30, "Extracting requirements...")
+        await store.set_status(rfp_id, "processing", 30, "Extracting requirements...")
         
         result = agent.process_files(file_paths)
         
-        store.set_status(rfp_id, "processing", 70, "Classifying and prioritizing...")
+        await store.set_status(rfp_id, "processing", 70, "Classifying and prioritizing...")
         
         # Convert requirements graph to list
         requirements = []
@@ -626,14 +626,14 @@ def process_rfp_background(rfp_id: str):
             sec = req["section"]
             stats["by_section"][sec] = stats["by_section"].get(sec, 0) + 1
         
-        store.set_status(rfp_id, "processing", 90, "Finalizing...")
+        await store.set_status(rfp_id, "processing", 90, "Finalizing...")
         
         # Initialize amendment processor
         amendment_processor = AmendmentProcessor()
         amendment_processor.load_base_requirements(result.requirements_graph)
         
         # Update store
-        store.update(rfp_id, {
+        await store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "requirements_graph": result.requirements_graph,
@@ -641,17 +641,17 @@ def process_rfp_background(rfp_id: str):
             "amendment_processor": amendment_processor
         })
         
-        store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
+        await store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
         
     except Exception as e:
-        store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
-        store.update(rfp_id, {"status": "error"})
+        await store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
+        await store.update(rfp_id, {"status": "error"})
 
 
 @app.post("/api/rfp/{rfp_id}/process")
 async def process_rfp(rfp_id: str, background_tasks: BackgroundTasks):
     """Start processing RFP documents"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -659,7 +659,7 @@ async def process_rfp(rfp_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="No files uploaded")
     
     # Start background processing
-    store.set_status(rfp_id, "starting", 0, "Starting processing...")
+    await store.set_status(rfp_id, "starting", 0, "Starting processing...")
     background_tasks.add_task(process_rfp_background, rfp_id)
     
     return {
@@ -673,13 +673,13 @@ async def process_rfp(rfp_id: str, background_tasks: BackgroundTasks):
 
 def process_rfp_semantic_background(rfp_id: str):
     """Background task to process RFP with semantic extraction (v2.8)"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         return
     
     if not semantic_extractor:
-        store.set_status(rfp_id, "error", 0, "Semantic extractor not available")
-        store.update(rfp_id, {"status": "error"})
+        await store.set_status(rfp_id, "error", 0, "Semantic extractor not available")
+        await store.update(rfp_id, {"status": "error"})
         return
     
     try:
@@ -687,18 +687,18 @@ def process_rfp_semantic_background(rfp_id: str):
         start_time = time.time()
         
         # Update status
-        store.set_status(rfp_id, "processing", 10, "Reading documents...")
-        store.update(rfp_id, {"status": "processing"})
+        await store.set_status(rfp_id, "processing", 10, "Reading documents...")
+        await store.update(rfp_id, {"status": "processing"})
         
         # Get file paths
         file_paths = rfp["file_paths"]
         if not file_paths:
-            store.set_status(rfp_id, "error", 0, "No files to process")
-            store.update(rfp_id, {"status": "error"})
+            await store.set_status(rfp_id, "error", 0, "No files to process")
+            await store.update(rfp_id, {"status": "error"})
             return
         
         # Parse documents into text
-        store.set_status(rfp_id, "processing", 20, "Parsing documents...")
+        await store.set_status(rfp_id, "processing", 20, "Parsing documents...")
         
         from agents.enhanced_compliance import MultiFormatParser, DocumentType
         parser = MultiFormatParser()
@@ -740,16 +740,16 @@ def process_rfp_semantic_background(rfp_id: str):
                 print(f"Warning: Could not parse {file_path}: {e}")
         
         if not documents:
-            store.set_status(rfp_id, "error", 0, "No documents could be parsed")
-            store.update(rfp_id, {"status": "error"})
+            await store.set_status(rfp_id, "error", 0, "No documents could be parsed")
+            await store.update(rfp_id, {"status": "error"})
             return
         
         # Run semantic extraction
-        store.set_status(rfp_id, "processing", 40, "Extracting requirements semantically...")
+        await store.set_status(rfp_id, "processing", 40, "Extracting requirements semantically...")
         
         result = semantic_extractor.extract(documents, strict_mode=True)
         
-        store.set_status(rfp_id, "processing", 70, "Classifying and scoring...")
+        await store.set_status(rfp_id, "processing", 70, "Classifying and scoring...")
         
         # Convert to API format
         requirements = []
@@ -789,10 +789,10 @@ def process_rfp_semantic_background(rfp_id: str):
             "extractor_version": "semantic_v2.8"
         }
         
-        store.set_status(rfp_id, "processing", 90, "Finalizing...")
+        await store.set_status(rfp_id, "processing", 90, "Finalizing...")
         
         # Store semantic results
-        store.update(rfp_id, {
+        await store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "semantic_result": result,  # Keep full semantic result for export
@@ -802,13 +802,13 @@ def process_rfp_semantic_background(rfp_id: str):
             "extraction_mode": "semantic"
         })
         
-        store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
+        await store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
-        store.update(rfp_id, {"status": "error"})
+        await store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
+        await store.update(rfp_id, {"status": "error"})
 
 
 @app.post("/api/rfp/{rfp_id}/process-semantic")
@@ -823,7 +823,7 @@ async def process_rfp_semantic(rfp_id: str, background_tasks: BackgroundTasks):
     - Action verb and actor extraction
     - Cross-reference detection
     """
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -837,7 +837,7 @@ async def process_rfp_semantic(rfp_id: str, background_tasks: BackgroundTasks):
         )
     
     # Start background processing
-    store.set_status(rfp_id, "starting", 0, "Starting semantic processing...")
+    await store.set_status(rfp_id, "starting", 0, "Starting semantic processing...")
     background_tasks.add_task(process_rfp_semantic_background, rfp_id)
     
     return {
@@ -860,13 +860,13 @@ def process_rfp_best_practices_background(rfp_id: str):
     - Creates separate L/M/C matrices
     - Extracts complete paragraphs, not sentence fragments
     """
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         return
     
     if not best_practices_extractor:
-        store.set_status(rfp_id, "error", 0, "Best practices extractor not available")
-        store.update(rfp_id, {"status": "error"})
+        await store.set_status(rfp_id, "error", 0, "Best practices extractor not available")
+        await store.update(rfp_id, {"status": "error"})
         return
     
     try:
@@ -874,18 +874,18 @@ def process_rfp_best_practices_background(rfp_id: str):
         start_time = time.time()
         
         # Update status
-        store.set_status(rfp_id, "processing", 10, "Analyzing document structure...")
-        store.update(rfp_id, {"status": "processing"})
+        await store.set_status(rfp_id, "processing", 10, "Analyzing document structure...")
+        await store.update(rfp_id, {"status": "processing"})
         
         # Get file paths
         file_paths = rfp["file_paths"]
         if not file_paths:
-            store.set_status(rfp_id, "error", 0, "No files to process")
-            store.update(rfp_id, {"status": "error"})
+            await store.set_status(rfp_id, "error", 0, "No files to process")
+            await store.update(rfp_id, {"status": "error"})
             return
         
         # Parse documents into text
-        store.set_status(rfp_id, "processing", 20, "Parsing documents...")
+        await store.set_status(rfp_id, "processing", 20, "Parsing documents...")
         
         from agents.enhanced_compliance import MultiFormatParser, DocumentType
         parser = MultiFormatParser()
@@ -923,19 +923,19 @@ def process_rfp_best_practices_background(rfp_id: str):
                 print(f"Warning: Could not parse {file_path}: {e}")
         
         if not documents:
-            store.set_status(rfp_id, "error", 0, "No documents could be parsed")
-            store.update(rfp_id, {"status": "error"})
+            await store.set_status(rfp_id, "error", 0, "No documents could be parsed")
+            await store.update(rfp_id, {"status": "error"})
             return
         
         # Analyze document structure
-        store.set_status(rfp_id, "processing", 40, "Analyzing RFP structure (L/M/C sections)...")
+        await store.set_status(rfp_id, "processing", 40, "Analyzing RFP structure (L/M/C sections)...")
         structure = analyze_rfp_structure(documents)
         
         # Extract requirements with structure awareness
-        store.set_status(rfp_id, "processing", 60, "Extracting requirements by section...")
+        await store.set_status(rfp_id, "processing", 60, "Extracting requirements by section...")
         result = best_practices_extractor.extract(documents, structure)
         
-        store.set_status(rfp_id, "processing", 80, "Building compliance matrices...")
+        await store.set_status(rfp_id, "processing", 80, "Building compliance matrices...")
         
         # Convert to API format
         requirements = []
@@ -997,10 +997,10 @@ def process_rfp_best_practices_background(rfp_id: str):
             ) if is_non_ucf else None
         }
         
-        store.set_status(rfp_id, "processing", 95, "Finalizing...")
+        await store.set_status(rfp_id, "processing", 95, "Finalizing...")
         
         # Store results
-        store.update(rfp_id, {
+        await store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "best_practices_result": result,  # Keep full result for export
@@ -1008,13 +1008,13 @@ def process_rfp_best_practices_background(rfp_id: str):
             "extraction_mode": "best_practices"
         })
         
-        store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
+        await store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
-        store.update(rfp_id, {"status": "error"})
+        await store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
+        await store.update(rfp_id, {"status": "error"})
 
 
 @app.post("/api/rfp/{rfp_id}/process-best-practices")
@@ -1029,7 +1029,7 @@ async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTa
     - Extracts complete requirement paragraphs (never fragments)
     - Maintains evaluator-friendly formatting
     """
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1043,7 +1043,7 @@ async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTa
         )
     
     # Start background processing
-    store.set_status(rfp_id, "starting", 0, "Starting best practices extraction...")
+    await store.set_status(rfp_id, "starting", 0, "Starting best practices extraction...")
     background_tasks.add_task(process_rfp_best_practices_background, rfp_id)
     
     return {
@@ -1057,11 +1057,11 @@ async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTa
 @app.get("/api/rfp/{rfp_id}/status")
 async def get_processing_status(rfp_id: str):
     """Get processing status"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
-    status = store.get_status(rfp_id)
+    status = await store.get_status(rfp_id)
     if status:
         return status.dict()
     
@@ -1086,7 +1086,7 @@ async def get_requirements(
     offset: int = 0
 ):
     """Get requirements with optional filters"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1124,7 +1124,7 @@ async def get_requirements(
 @app.get("/api/rfp/{rfp_id}/requirements/{req_id}")
 async def get_requirement(rfp_id: str, req_id: str):
     """Get a single requirement by ID"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1140,7 +1140,7 @@ async def get_requirement(rfp_id: str, req_id: str):
 @app.get("/api/rfp/{rfp_id}/export")
 async def export_rfp(rfp_id: str, format: str = "xlsx"):
     """Export RFP to Excel"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1231,7 +1231,7 @@ async def upload_amendment(
     amendment_date: Optional[str] = Form(None)
 ):
     """Upload an amendment document"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1323,7 +1323,7 @@ async def upload_amendment(
                 "keywords": getattr(req, 'keywords', []) or []
             })
         
-        store.update(rfp_id, {
+        await store.update(rfp_id, {
             "amendments": amendments,
             "requirements": updated_reqs
         })
@@ -1340,7 +1340,7 @@ async def upload_amendment(
 @app.get("/api/rfp/{rfp_id}/amendments")
 async def get_amendments(rfp_id: str):
     """Get amendment history"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1365,7 +1365,7 @@ async def get_amendments(rfp_id: str):
 @app.get("/api/rfp/{rfp_id}/amendments/report")
 async def get_amendment_report(rfp_id: str):
     """Get amendment change report"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1386,7 +1386,7 @@ async def get_amendment_report(rfp_id: str):
 @app.get("/api/rfp/{rfp_id}/stats")
 async def get_stats(rfp_id: str):
     """Get detailed statistics"""
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1421,7 +1421,7 @@ async def generate_outline(rfp_id: str):
     """
     from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
     
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1462,7 +1462,7 @@ async def generate_outline(rfp_id: str):
         outline_data = generator.to_json(outline)
         
         # Store outline
-        store.update(rfp_id, {"outline": outline_data})
+        await store.update(rfp_id, {"outline": outline_data})
         
         return {
             "status": "generated",
@@ -1480,7 +1480,7 @@ async def get_outline(rfp_id: str, format: str = "json"):
     """Get proposal outline"""
     from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
     
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1517,7 +1517,7 @@ async def get_outline(rfp_id: str, format: str = "json"):
             stats=stats
         )
         outline = generator.to_json(outline_obj)
-        store.update(rfp_id, {"outline": outline})
+        await store.update(rfp_id, {"outline": outline})
     
     return {"format": "json", "outline": outline}
 
@@ -1533,7 +1533,7 @@ async def export_annotated_outline(rfp_id: str):
             detail="Annotated outline export not available. Install Node.js and docx package."
         )
     
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
@@ -1544,7 +1544,7 @@ async def export_annotated_outline(rfp_id: str):
         section_m = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("M")]
         outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, rfp.get("documents", []))
         outline = generator.to_json(outline_obj)
-        store.update(rfp_id, {"outline": outline})
+        await store.update(rfp_id, {"outline": outline})
     
     requirements = rfp.get("requirements", [])
     
@@ -1786,7 +1786,7 @@ async def chat_with_rfp(rfp_id: str, request: ChatRequest):
             detail="Chat functionality not available. Please ensure anthropic package is installed."
         )
     
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail=f"RFP {rfp_id} not found")
     
@@ -1863,7 +1863,7 @@ async def get_chat_history(rfp_id: str, limit: int = 50):
     if not RFP_CHAT_AVAILABLE:
         raise HTTPException(status_code=503, detail="Chat functionality not available")
     
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail=f"RFP {rfp_id} not found")
     
@@ -1883,7 +1883,7 @@ async def clear_chat_history(rfp_id: str):
     if not RFP_CHAT_AVAILABLE:
         raise HTTPException(status_code=503, detail="Chat functionality not available")
     
-    rfp = store.get(rfp_id)
+    rfp = await store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail=f"RFP {rfp_id} not found")
     
