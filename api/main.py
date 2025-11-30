@@ -31,7 +31,14 @@ from pydantic import BaseModel, Field
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Phase 5: Import MongoDB database layer
+# Phase 5: Load environment variables and MongoDB layer
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+
+# Ensure MONGO_URL is set
+if not os.getenv('MONGO_URL'):
+    os.environ['MONGO_URL'] = 'mongodb://localhost:27017/propelai'
+
 from api.db import db
 
 from agents.enhanced_compliance import (
