@@ -19,7 +19,7 @@ import json
 import shutil
 import tempfile
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Response
@@ -30,6 +30,9 @@ from pydantic import BaseModel, Field
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Phase 5: Import MongoDB database layer
+from api.db import db
 
 from agents.enhanced_compliance import (
     EnhancedComplianceAgent,
