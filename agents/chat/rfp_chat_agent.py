@@ -374,15 +374,22 @@ class RFPChatAgent:
         top_k: Optional[int] = None
     ) -> List[Tuple[DocumentChunk, float]]:
         """
-        Retrieve most relevant chunks for a question using keyword matching.
+        Section-aware retrieval: Ensures diverse coverage of RFP sections.
+        
+        For general questions, prioritizes retrieving from key sections:
+        - COVER (basic info)
+        - SECTION_L (instructions)
+        - SECTION_M (evaluation)
+        - SECTION_C (SOW)
+        - SECTION_B (contract details)
         
         Args:
             question: User's question
             chunks: All available document chunks
-            top_k: Number of chunks to retrieve (default: self.max_chunks_to_retrieve)
+            top_k: Number of chunks to retrieve
             
         Returns:
-            List of (chunk, score) tuples, sorted by relevance
+            List of (chunk, score) tuples with section diversity
         """
         if not chunks:
             return []
@@ -390,8 +397,7 @@ class RFPChatAgent:
         top_k = top_k or self.max_chunks_to_retrieve
         question_lower = question.lower()
         
-        # Extract keywords from question
-        # Remove common stop words
+        # Extract keywords
         stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
                      'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'what',
                      'when', 'where', 'who', 'how', 'why', 'which', 'this', 'that'}
@@ -399,44 +405,89 @@ class RFPChatAgent:
         words = re.findall(r'\b\w+\b', question_lower)
         keywords = [w for w in words if w not in stop_words and len(w) > 2]
         
+        # Define priority sections for general questions
+        priority_sections = ['COVER', 'SECTION_L', 'SECTION_M', 'SECTION_C', 'SECTION_B']
+        
+        # Detect if question is general (about the whole RFP)
+        general_question_indicators = ['about', 'overview', 'summary', 'tell me', 'describe', 'what is']
+        is_general = any(indicator in question_lower for indicator in general_question_indicators)
+        
         # Score each chunk
         scored_chunks = []
         for chunk in chunks:
             chunk_text_lower = chunk.text.lower()
+            rfp_section = chunk.metadata.get('rfp_section', 'GENERAL')
             score = 0
             
             # Keyword matching
             for keyword in keywords:
                 count = chunk_text_lower.count(keyword)
-                score += count * 2  # Weight by frequency
+                score += count * 2
             
-            # Boost for section mentions
-            if any(section_word in question_lower for section_word in ['section', 'factor', 'volume']):
-                # Extract section reference from question
-                section_match = re.search(r'section\s+([a-z0-9\.]+)', question_lower)
-                if section_match:
-                    section_ref = section_match.group(1).upper()
-                    chunk_section = chunk.metadata.get('section', '').upper()
-                    if section_ref in chunk_section:
-                        score += 20
+            # Section-aware bonuses
+            if is_general and rfp_section in priority_sections:
+                # Boost priority sections for general questions
+                section_priority = priority_sections.index(rfp_section) if rfp_section in priority_sections else 10
+                score += (10 - section_priority) * 5  # Higher boost for earlier sections
             
-            # Boost for exact phrase matches
-            # Extract 2-3 word phrases
+            # Boost for specific section mentions in question
+            if 'section l' in question_lower or 'instruction' in question_lower:
+                if rfp_section == 'SECTION_L':
+                    score += 30
+            if 'section m' in question_lower or 'evaluation' in question_lower or 'criteria' in question_lower:
+                if rfp_section == 'SECTION_M':
+                    score += 30
+            if 'section c' in question_lower or 'statement of work' in question_lower or 'sow' in question_lower:
+                if rfp_section == 'SECTION_C':
+                    score += 30
+            if 'deadline' in question_lower or 'due date' in question_lower or 'submission' in question_lower:
+                if rfp_section in ['COVER', 'SECTION_L']:
+                    score += 25
+            
+            # Phrase matching boost
             for i in range(len(keywords) - 1):
                 phrase = ' '.join(keywords[i:i+2])
                 if phrase in chunk_text_lower:
                     score += 10
             
-            scored_chunks.append((chunk, score))
+            scored_chunks.append((chunk, score, rfp_section))
         
-        # Sort by score and return top K
+        # Sort by score
         scored_chunks.sort(key=lambda x: x[1], reverse=True)
-        top_chunks = scored_chunks[:top_k]
         
-        # Filter out chunks with very low scores
-        top_chunks = [(c, s) for c, s in top_chunks if s > 0]
+        # Section-diverse selection for general questions
+        if is_general:
+            selected_chunks = []
+            section_counts = {section: 0 for section in priority_sections}
+            max_per_section = max(2, top_k // len(priority_sections))
+            
+            # First pass: get chunks from priority sections
+            for chunk, score, section in scored_chunks:
+                if score == 0:
+                    continue
+                if section in priority_sections and section_counts[section] < max_per_section:
+                    selected_chunks.append((chunk, score))
+                    section_counts[section] += 1
+                    if len(selected_chunks) >= top_k * 0.7:  # 70% from priority sections
+                        break
+            
+            # Second pass: fill remaining with highest scores
+            for chunk, score, section in scored_chunks:
+                if score == 0:
+                    continue
+                if (chunk, score) not in selected_chunks:
+                    selected_chunks.append((chunk, score))
+                    if len(selected_chunks) >= top_k:
+                        break
+            
+            top_chunks = selected_chunks[:top_k]
+        else:
+            # For specific questions, just use top scores
+            top_chunks = [(c, s) for c, s, _ in scored_chunks[:top_k] if s > 0]
         
-        logger.info(f"[CHAT] Retrieved {len(top_chunks)} relevant chunks (scores: {[s for _, s in top_chunks[:5]]})")
+        sections_retrieved = [c.metadata.get('rfp_section', 'UNKNOWN') for c, _ in top_chunks]
+        logger.info(f"[CHAT] Retrieved {len(top_chunks)} chunks from sections: {Counter(sections_retrieved)}")
+        
         return top_chunks
     
     # ============================================================================
