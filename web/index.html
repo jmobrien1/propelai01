@@ -772,8 +772,8 @@
                                 title="Chat with RFP"
                                 style={{
                                     position: 'fixed',
-                                    bottom: '24px',
-                                    right: '24px',
+                                    bottom: chatOpen ? '24px' : '24px',
+                                    right: chatOpen ? '464px' : '24px',
                                     width: '56px',
                                     height: '56px',
                                     borderRadius: '50%',
@@ -785,7 +785,7 @@
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     color: 'white',
-                                    transition: 'transform 0.2s, box-shadow 0.2s',
+                                    transition: 'all 0.3s ease',
                                     zIndex: 1000
                                 }}
                                 onMouseEnter={(e) => {
