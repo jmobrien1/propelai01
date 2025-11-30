@@ -141,23 +141,46 @@ class RFPChatAgent:
         """
         Query the company library for relevant content.
         
+        v3.1: Added crash-proof safety protocols.
+        
         Args:
             query: Search query
             top_k: Number of top results to return
             
         Returns:
-            List of matching content with metadata
+            List of matching content with metadata (empty list on error)
         """
+        # Safety Protocol 1: Check if library is available
         if not self.company_library:
-            logger.info("[LIBRARY] Company library not available")
+            logger.warning("[LIBRARY] Company library not initialized")
             return []
         
+        # Safety Protocol 2: Wrap in try-except to prevent crashes
         try:
             results = self.company_library.search(query)
+            
+            # Safety Protocol 3: Handle None or empty results
+            if results is None:
+                logger.warning("[LIBRARY] Search returned None - library may be empty")
+                return []
+            
+            if not results or len(results) == 0:
+                logger.info(f"[LIBRARY] No results found for query: {query[:50]}...")
+                return []
+            
             logger.info(f"[LIBRARY] Found {len(results)} results for query: {query[:50]}...")
             return results[:top_k]
+            
+        except AttributeError as e:
+            logger.error(f"[LIBRARY] AttributeError - library object may be malformed: {e}")
+            return []
+        except TypeError as e:
+            logger.error(f"[LIBRARY] TypeError during search: {e}")
+            return []
         except Exception as e:
-            logger.error(f"[LIBRARY] Error searching library: {e}")
+            logger.error(f"[LIBRARY] Unexpected error searching library: {e}")
+            import traceback
+            logger.error(f"[LIBRARY] Traceback: {traceback.format_exc()}")
             return []
     
     def _format_library_context(self, results: List[Dict[str, Any]]) -> str:
