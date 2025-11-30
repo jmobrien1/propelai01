@@ -992,8 +992,12 @@ Before answering ANY user question, analyze the document structure and activate 
 * *Behavior:* Attachments are the Source of Truth. They override Section C.
 
 **MODE D: SPREADSHEET/QUESTIONNAIRE (US Courts)**
-* *Trigger:* User asks about an Excel/CSV file or "Questionnaire".
+* *Trigger:* User asks about an Excel/CSV file with "Questionnaire" or "Vendor Response" column.
 * *Behavior:* Row-by-Row analysis. "Cell-Constraint" writing style.
+
+**MODE E: MARKET RESEARCH / RFI (GSA, Industry Days)**
+* *Trigger:* Document labeled "RFI", "Market Research", "White Paper", or "Sources Sought".
+* *Behavior:* Requirements Specification (not Questions). Draft consultative white paper.
 
 ---
 
