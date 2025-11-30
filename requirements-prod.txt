@@ -13,3 +13,6 @@ openpyxl>=3.0.10
 
 # Utils
 httpx>=0.24.0
+
+# AI/LLM
+anthropic>=0.21.0
