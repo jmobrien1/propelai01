@@ -1,141 +1,128 @@
 <analysis>**original_problem_statement:**
-The user is developing PropelAI, an autonomous proposal operating system. The initial goal was to fix a bug in annotated outline generation. The project's scope has since expanded dramatically into creating a Chat with RFP feature. This feature has evolved through multiple iterations of user-driven prompt engineering to become a sophisticated, context-aware Proposal Copilot. The user provides expert-level feedback, identifying specific failure modes (e.g., context window laziness, attachment dependency) and providing progressively more complex system prompts (v2.1 through v2.5) to handle various non-standard RFP formats like CSOs, RFIs, and spreadsheet-based proposals.
+The user is developing PropelAI, an autonomous proposal operating system. The initial request in this session was to continue implementing the v2.5 Spreadsheet Proposal feature. However, the scope quickly expanded based on user feedback to a full v3.0 architecture refactor, introducing a Router-Based system to handle different RFP types. This was followed by multiple iterative enhancements, including v3.1 data synchronization fixes for artifact generators, War Room intelligence features, a v4.0 RFI/White Paper mode, and a comprehensive Omni-Federal v4.0 system prompt. The most recent task involves a major v4.0 refactor of the Company Library for production readiness and a final request to generate a comprehensive technical document summarizing the application's current state.
 
 **PRODUCT REQUIREMENTS:**
-1.  **Chat with RFP Feature:** A robust chat interface that allows users to ask complex, analytical questions about uploaded RFP documents.
-2.  **Context-Aware Logic:** The system must be able to detect the type of RFP document (e.g., standard FAR, CSO, RFI, SCA, Spreadsheet-based) and apply a different analysis mode accordingly.
-3.  **Forensic RFP Analysis:** The AI must perform deep, forensic analysis, such as:
-    *   Finding requirements buried in cover letters or J-attachments, not just the main RFP body.
-    *   Mapping labor categories from a PWS to minimum wage rates in a Wage Determination file.
-    *   Cross-referencing Section M (Evaluation) with Section L (Instructions) to find page limits and contradictions.
-    *   Extracting requirements from specific columns in an Excel-based questionnaire.
-4.  **Specialized UI:** The frontend must provide Starter Chips (quick-action buttons) that are contextually relevant to the detected RFP type, guiding the user to ask high-value questions.
-5.  **High-Quality Responses:** The chat responses must be structured, professional, and heavily cited, often formatted as tables, to be immediately useful for a proposal manager.
+1.  **Router-Based Architecture (v3.0/v4.0):** The application must classify incoming RFPs into one of six distinct modes (Standard Federal, GSA, OTA, R&D, Spreadsheet, RFI) and apply a unique Operational Protocol for each.
+2.  **Synchronized Artifact Generation (v3.1):** The Compliance Matrix and Smart Outline generators must use the same router logic as the chat agent to ensure data consistency across all generated artifacts.
+3.  **War Room Intelligence:** The chat agent must perform Forensic Analysis to identify conflicts between documents (e.g., amendments overriding base RFPs), trace all extracted requirements to their source, and flag critical risks (Red Flags).
+4.  **Company Library with RAG Integration:** A robust, searchable repository for company assets (capabilities, past performance, etc.). The chat agent must query this library (using Retrieval-Augmented Generation) to answer questions about the company's experience and qualifications.
+5.  **Production-Ready Company Library (v4.0):** The library must support bulk drag-and-drop uploads, prevent duplicate files via content hashing (SHA-256), auto-version files with the same name, and provide a clear UI to view and manage stored documents.
+6.  **Comprehensive Technical Documentation:** A final document that captures the full functionality of the application in its current state.
 
 **User's preferred language**: English
 
 **what currently exists?**
-The application is a full-stack project with a FastAPI backend and a React frontend (within a single ). The core of the application is now the , which contains a highly complex, multi-modal system prompt (currently at v2.5) that routes user queries to different modes of analysis based on keywords. The frontend features a copilot-style side-drawer for the chat UI, which includes a dynamic set of Starter Chips to trigger these specialized analyses. The initial dependency and deployment issues have been resolved, and the application is running on a Render Pro plan to handle the resource-intensive processing.
+The application is a full-stack project with a FastAPI backend () and a monolithic React frontend (). Its core is the , which implements a v4.0 Omni-Federal system prompt and a sophisticated Super-Router that classifies RFPs into six modes. The artifact generators (, ) are synchronized with this router logic. A Company Library feature exists with a refactored backend supporting content hashing for deduplication and RAG integration with the chat agent. However, the frontend for the library's bulk upload and document view is not yet implemented. The application is running, but chat functionality requires a user-provided .
 
 **Last working item**:
-*   **Last item agent was working:** Implementing the v2.5 Spreadsheet Proposal feature.
-*   **Reasoning:** The user identified a new RFP type where the proposal submission is an Excel spreadsheet. The agent was tasked with adding a new Mode D to the system prompt to handle this Questionnaire/Spreadsheet format and updating the UI with new starter chips to trigger this analysis.
-*   **Status:** IN PROGRESS
-*   **Agent Testing Done:** N
-*   **Which testing method agent to use?** Manual testing by the user is required. The agent needs to ask the user to test the feature with the  RFP documents and report on the results.
-*   **User Testing Done:** N
+- **Last item agent was working:** The agent was tasked with creating a comprehensive technical reference document that captures 100% of the application's current functionality after all the recent v3.0 and v4.0 upgrades.
+- **Status:** IN PROGRESS
+- **Agent Testing Done:** N/A (Documentation task)
+- **Which testing method agent to use?** N/A
+- **User Testing Done:** N/A
 
 **All Pending/In progress Issue list**:
-*   **Issue 1: Test and validate the v2.5 Spreadsheet Proposal mode (P0)**
-    *   **Description:** The agent has implemented the system prompt v2.5 and UI chips to handle spreadsheet-based RFPs. This functionality is untested.
-    *   **Attempted fixes:** None.
-    *   **Next debug checklist:**
-        1.  Ask the user to deploy the latest changes to Render.
-        2.  Guide the user to upload the  RFP documents.
-        3.  Instruct the user to use the new starter chips (📝 Draft J.2 Responses, ✅ Auto-Score Compliance) and evaluate the AI's response.
-        4.  Request the user to provide the chat response and any relevant logs for analysis.
-    *   **Why fix this issue and what will be achieved with the fix?** This will complete the implementation of the final requested Special Forces mode, making the copilot capable of handling the 5 most common traps in government contracting.
-    *   **Status:** IN PROGRESS
-    *   **Is recurring issue?** N
-    *   **Should Test frontend/backend/both after fix?** Both. The frontend chips need to be validated, and the backend prompt logic needs to be checked.
-    *   **Blocked on other issue:** None.
+- **Issue 1: Frontend for Company Library v4.0 is incomplete (P1)**
+    - **Description:** The previous agent successfully implemented the backend for the v4.0 Company Library refactor (multi-file upload, hashing, versioning) but did not complete the required frontend changes due to token limits. The current UI still has a single-file upload button.
+    - **Attempted fixes:** The backend was completed, but the frontend was not started.
+    - **Next debug checklist:**
+        1.  Locate the frontend code in .
+        2.  Refactor the Company Library section.
+        3.  Implement a drag-and-drop component (e.g., using ) to allow multiple file uploads (PDF, DOCX, PPTX).
+        4.  Create a Staging List UI that appears before upload, showing Filename, Size, and a Tagging Dropdown for each file.
+        5.  Implement a Document Table component in the Documents tab to display the list of uploaded files with columns: Icon, Filename, Category, Date Uploaded, and Actions ([Preview], [Delete]).
+    - **Why fix this issue and what will be achieved with the fix?** The Company Library is a core feature but is unusable in its current state. Completing the UI will make bulk document management possible, unlocking the full potential of the RAG integration.
+    - **Status:** NOT STARTED
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Frontend
+    - **Blocked on other issue:** The documentation task is the most recent request, but this is the primary blocking feature work.
 
 **In progress Task List**:
-*   **Task 1: Implement Spreadsheet Mode (v2.5) (P0)**
-    *   **Where to resume:** The agent has just added the v2.5 prompt to  and the new chips to . The next step is to summarize the work and ask the user to test.
-    *   **What will be achieved with this?** A new capability for the Proposal Copilot to handle RFPs where the submission format is a spreadsheet.
-    *   **Status:** IN PROGRESS
-    *   **Should Test frontend/backend/both after fix?** Both.
-    *   **Blocked on something:** User testing and feedback.
+- **Task 1: Create Comprehensive Technical Reference Document (P0)**
+    - **Where to resume:** A new markdown file needs to be created. It should detail the v4.0 architecture, the 6-mode router, the War Room prompt, the RAG-integrated Company Library, the synchronized artifact generators, and the state of the frontend.
+    - **What will be achieved with this?** A complete technical snapshot of the application, fulfilling the user's latest request and providing a baseline for future development.
+    - **Status:** IN PROGRESS
+    - **Should Test frontend/backend/both after fix?** N/A
+    - **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
-*   **Upcoming Tasks:**
-    *   **Implement v3.0 Active Compliance Manager (P1):** This was a user request for a major architectural upgrade to a Requirements Graph architecture. This was paused in favor of the iterative prompt engineering. The agent should re-propose this as the next major step after v2.5 is validated.
-*   **Future Tasks:**
-    *   **Persistent Storage:** Replace the in-memory  with a persistent database to prevent data loss on service restarts.
-    *   **Enhanced Chat Retrieval:** Upgrade the chat feature's keyword-based search to a more robust semantic search using vector embeddings (as originally planned).
-    *   **Frontend Refactoring:** Break down the monolithic  into a proper React component structure for maintainability.
+- **Upcoming Tasks:**
+    - **Frontend Refactor (P1):** Break down the monolithic  into a proper React component structure for maintainability and scalability.
+- **Future Tasks:**
+    - **Persistent Data Store (P2):** Replace the in-memory  with a persistent database (e.g., MongoDB, PostgreSQL) to prevent data loss on service restarts.
+    - **Semantic Search (P3):** Upgrade the Company Library's keyword-based search to a more robust semantic search using vector embeddings.
 
 **Completed work in this session**
-*   **Dependency Fix:** Resolved the initial deployment failure by adding the  package to .
-*   **Text Extraction Fix:** Modified the chat agent to correctly read text content from file paths stored on the server, fixing a .
-*   **Model Name Fixes:** Corrected multiple invalid Anthropic model names, added a fallback mechanism, and finally updated to the correct  models.
-*   **UI Overhaul:** Iteratively improved the chat UI from an overlapping panel to a modal overlay, and finally to a copilot-style side drawer as requested by the user.
-*   **Prompt Engineering (v2.1 -> v2.5):** Performed a series of five major, user-guided updates to the system prompt and UI starter chips in  and  to create a multi-modal Proposal Copilot that can handle:
-    *   **v2.1:** Federal RFP Context Laziness.
-    *   **v2.2:** GSA/USCG Location Agnosticism (Cover Letter as Section L).
-    *   **v2.3:** DoD Attachment Dependency (J-Attachments).
-    *   **v2.4:** Special Forces modes for CSO, RFI, and SCA/Wage Determination documents.
-    *   **v2.5:** Spreadsheet Proposal mode.
+- **v4.0 Omni-Federal Architecture:** Implemented a new system prompt and expanded the router in  to handle 6 distinct Federal document modes (A-F).
+- **v4.0 Company Library Backend Refactor:** Upgraded  to support multi-file uploads, content hashing (SHA-256) for deduplication, and auto-versioning.
+- **v4.0 RFI/White Paper Mode (Mode E):** Added logic to the router, Excel parser, and system prompt to handle RFI/Market Research documents.
+- **War Room Intelligence Prompt:** Integrated a prompt focused on Traceability, Conflict Resolution, and Red Flag Detection into the chat agent.
+- **Company Library RAG Integration & Crash Fix:** Integrated the Company Library with the chat agent via RAG, then fixed a resulting  crash by adding safety protocols, installing , and correcting backend initialization order in .
+- **v3.1 Artifact Generator Sync:** Refactored  and  to use the same router logic as the chat agent, fixing data synchronization gaps.
+- **Excel Export Bug Fix:** Patched  to correctly sanitize cell content, resolving an Excel formula corruption error.
+- **v3.0 Router-Based Architecture:** Re-architected the backend to use a Router that classifies RFPs and applies specific protocols, moving beyond a one-size-fits-all approach.
 
 **Earlier issues found/mentioned but not fixed**
-*   None. The user has been driving the fixes, and the agent has been implementing them. The hanging issue on the USCG RFP was resolved by the user upgrading their Render plan.
-
-**Known issue recurrence from previous fork**
-*   **Issue recurrence in previous fork:** None.
+- **Issue 1: Monolithic Frontend Architecture**
+    - **Debug checklist:** Plan a refactor to move from  to a standard  structure with components, hooks, and services.
+    - **Why to solve this issue and what will be achieved with this?** The current single-file frontend is extremely difficult to maintain, debug, and expand. A refactor is critical for long-term project health.
+    - **Should Test frontend/backend/both after fix:** Frontend
+    - **Is recurring issue?** Y
+- **Issue 2: In-memory Data Store**
+    - **Debug checklist:** Design a database schema for RFP sessions and their associated data. Replace calls to the in-memory  dictionary in  with database operations.
+    - **Why to solve this issue and what will be achieved with this?** The current in-memory store ( in ) loses all data on server restart, making the application unsuitable for production use.
+    - **Should Test frontend/backend/both after fix:** Backend
+    - **Is recurring issue?** Y
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-*   **Backend:** FastAPI
-*   **Frontend:** Vanilla JavaScript with in-browser React/JSX
-*   **AI:** Multi-modal, prompt-driven RAG agent using Anthropic Claude 4. The core innovation is the extensive, expert-level **Prompt Engineering** to create different modes of analysis for various RFP types.
-*   **Data Storage:** In-memory Python dictionary ().
+- **Router-Based Architecture:** A Super-Router in  classifies RFPs into 6 modes (A-F) to apply specialized analysis protocols.
+- **Retrieval-Augmented Generation (RAG):** The chat agent queries the  to inject relevant company capabilities and past performance into the LLM context, enabling informed responses.
+- **Forensic Prompt Engineering:** System prompts are designed for deep analysis, including conflict resolution between amended documents, traceability of requirements, and flagging of contractual risks.
+- **Content Hashing:** SHA-256 hashing is used in  to create a fingerprint of each uploaded file, preventing duplicates.
 
 **key DB schema**
-*   **No Database:** The application still uses an in-memory Python dictionary.
-
-**changes in tech stack**
-*   None.
+- **No Database:** The application uses an in-memory Python dictionary ( in ) for RFP session data and a file-based JSON index for the Company Library ().
 
 **All files**
-*   **/app/agents/chat/rfp_chat_agent.py:** Heavily modified. Contains the core logic and the large, multi-modal system prompt (v2.5) that defines the agent's behavior.
-*   **/app/web/index.html:** Heavily modified. Contains the copilot-style side-drawer UI and the logic for the context-aware Starter Chips.
-*   **/app/api/main.py:** Modified to handle background tasks and error states more gracefully.
-*   **/app/requirements-prod.txt:** Updated to include the  package.
+- : Heavily modified. Contains the core v4.0 Omni-Federal system prompt, the 6-mode router logic, and the RAG integration with the company library.
+- : Heavily modified to handle the initialization and integration of the Company Library, fixing several scope and ordering bugs.
+- : Heavily modified to implement the v4.0 backend refactor, including hashing, versioning, and improved parsing.
+- : Modified to add new Starter Chips for the various modes and library features. The bulk-upload UI is missing.
+- : Refactored to be mode-aware and support spreadsheet extraction.
+- : Refactored to generate mode-specific outlines.
+- : Patched to fix an Excel HYPERLINK export bug.
+- : Updated to include  and .
+- : Created to resolve a supervisor startup issue.
 
 **Areas that need refactoring**:
-*   **/app/agents/chat/rfp_chat_agent.py:** This file has grown extremely large and complex. The giant system prompt is becoming difficult to manage. The logic should be broken into separate classes or modules for each mode instead of being handled by one large prompt.
-*   **/app/web/index.html:** This monolithic file contains the entire frontend. It should be broken down into a standard React project with separate components, especially for the complex chat UI.
-*   **Data Storage:** The in-memory  is not scalable and was the source of earlier processing issues. It needs to be replaced by a persistent database.
+- **/app/web/index.html:** This monolithic file is the largest source of technical debt. It needs to be broken down into a standard React project with separate components, especially for the complex Chat and Company Library UIs.
 
 **key api endpoints**
-*   : Creates a new RFP session.
-*   : Uploads RFP documents.
-*   : Triggers the backend processing of the documents.
-*   : Polls for the processing status.
-*   : The main endpoint for the chat functionality.
+- : The main endpoint for the RAG-enabled chat functionality.
+- : Endpoint for uploading documents to the Company Library. (Backend now supports multi-file, but frontend doesn't).
+- : Retrieves the status and document list for the Company Library.
 
 **Critical Info for New Agent**
-*   **User is the Expert:** The user is a domain expert in proposal writing and is driving the development through highly specific, iterative prompt engineering. Trust the user's analysis of why a feature is failing and implement their suggested prompts.
-*   **Multi-Modal Prompts:** The core of this application is no longer simple RAG; it's a multi-modal agent controlled by a very large and complex system prompt in . All recent changes have been to this prompt and the corresponding UI chips in .
-*   **Architecture Debt:** The rapid, prompt-based feature development has created significant technical debt. The  and  files are becoming unmanageable. The next major step after validating v2.5 should be the v3.0 architectural refactor that the user previously mentioned.
-*   **Resource Constraints:** Although the user upgraded to a Render Pro plan, the application's processing is intensive. Be mindful of timeouts and long-running tasks. The move to background processing was a key fix.
+- **User is the Domain Expert:** The user provides highly specific, expert-level feedback and prompts. Trust their analysis and implement their directives closely.
+- **Architecture is Prompt-Driven:** The application's core logic resides in the v4.0 Omni-Federal system prompt in . Understanding this prompt is key to understanding the application.
+- **Company Library Frontend is Incomplete:** This is the most significant piece of unfinished work. The user wants a production-ready bulk upload feature, but only the backend is complete.
+- **Immediate Task:** The user's last request was to create a comprehensive technical document outlining the current state of the app. This should be the first priority.
 
 **documents created in this job**
-*   
-*   
+- 
+- 
+- 
+- 
+- 
 
 **Last 5 User Messages and any pending user messages**
-1.  **User:** Provided System Prompt v2.2 to handle GSA/USCG RFPs where instructions are in the cover letter. **Status: Implemented.**
-2.  **User:** Provided System Prompt v2.3 to handle DoD RFPs with Attachment Dependency (J-Attachments). **Status: Implemented.**
-3.  **User:** Provided System Prompt v2.4 (Special Forces) to handle edge cases like CSOs, RFIs, and Wage Determinations. **Status: Implemented.**
-4.  **User:** Provided System Prompt v2.5 (Spreadsheet Mode) to handle RFPs where the proposal is an Excel questionnaire. **Status: Implemented, pending user testing.**
-5.  **User (pending):** The last user message was the prompt and instructions for v2.5. The agent has implemented it and is waiting to present a summary and ask the user to test.
+1.  **User:** Provided a prompt to fix a  crash when querying the Company Library. **Status: Implemented.**
+2.  **User:** Requested a v4.0 refactor of the Company Library to add multi-file drag-and-drop, duplicate prevention, and a document table view. **Status: Partially Implemented (Backend complete, Frontend pending).**
+3.  **User (pending):** Requested the creation of a comprehensive technical document to capture 100% of the current app's functionality. **Status: IN PROGRESS.**
 
 **Project Health Check:**
-*   **Broken:** None currently known. The hanging issue was resolved by the user upgrading their Render plan.
-*   **Mocked:** None.
-
-**Testing status**
-*   **Testing agent used after significant changes:** NO
-*   **Troubleshoot agent used after agent stuck in loop:** NO
-*   **Test files created:** []
-*   **Known regressions:** None.
-
-**Credentials to test flow:**
-The user has their own  set as an environment variable in the Render service. The agent does not have access to it.
-
-**What agent forgot to execute**
-The agent has been closely following the user's detailed instructions. It has not forgotten to execute any major tasks, but it has paused the larger v3.0 architectural work in favor of the user's iterative prompt engineering requests. This was the correct prioritization.</analysis>
+- **Broken:** The Company Library feature is functionally broken from a user's perspective because the frontend for bulk-uploading and viewing documents is missing.
+- **Mocked:** None.</analysis>
