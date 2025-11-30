@@ -163,6 +163,59 @@ class RFPChatAgent:
             return ""
     
     # ============================================================================
+    # SECTION DETECTION
+    # ============================================================================
+    
+    def detect_rfp_section(self, text: str, page_num: Optional[int] = None) -> str:
+        """
+        Detect which RFP section this text belongs to.
+        
+        Common RFP sections:
+        - Section L: Instructions to Offerors
+        - Section M: Evaluation Criteria
+        - Section C: Statement of Work / Performance Work Statement
+        - Section B: Contract Details / Schedule
+        - Cover/Front Matter
+        - Amendments/Q&A
+        
+        Args:
+            text: Text to analyze
+            page_num: Page number (if available)
+            
+        Returns:
+            Section identifier string
+        """
+        text_lower = text.lower()
+        text_upper = text.upper()
+        
+        # Check for explicit section headers
+        if re.search(r'\bsection\s+l\b', text_lower) or 'instructions to offeror' in text_lower:
+            return "SECTION_L"
+        if re.search(r'\bsection\s+m\b', text_lower) or 'evaluation' in text_lower and 'criteria' in text_lower:
+            return "SECTION_M"
+        if re.search(r'\bsection\s+c\b', text_lower) or 'statement of work' in text_lower or 'performance work statement' in text_lower:
+            return "SECTION_C"
+        if re.search(r'\bsection\s+b\b', text_lower) or ('schedule' in text_lower and 'contract' in text_lower):
+            return "SECTION_B"
+        
+        # Check for cover page indicators
+        if page_num and page_num <= 3:
+            if any(term in text_lower for term in ['solicitation', 'rfp', 'request for proposal']):
+                return "COVER"
+        
+        # Check for amendments/Q&A
+        if 'amendment' in text_lower or 'question' in text_lower and 'answer' in text_lower:
+            return "AMENDMENT"
+        
+        # Check for other common sections
+        if re.search(r'\bsection\s+[a-z]\b', text_lower):
+            match = re.search(r'\bsection\s+([a-z])\b', text_lower)
+            if match:
+                return f"SECTION_{match.group(1).upper()}"
+        
+        return "GENERAL"
+    
+    # ============================================================================
     # DOCUMENT CHUNKING
     # ============================================================================
     
