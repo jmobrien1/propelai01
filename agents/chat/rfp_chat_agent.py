@@ -957,14 +957,23 @@ Answer ONLY based on provided context. Apply the correct protocol based on the R
                     "content": msg.content
                 })
         
+        # v3.1: Check if question is about company capabilities
+        library_context = ""
+        if self._detect_library_intent(question):
+            library_results = self._query_company_library(question)
+            if library_results:
+                library_context = self._format_library_context(library_results)
+                logger.info(f"[LIBRARY] Added {len(library_results)} library results to context")
+        
         # Add current question with context
         user_message = f"""Context from RFP documents:
 
 {context}
+{library_context}
 
 Question: {question}
 
-Please answer based only on the context above. If you cite information, reference the source number."""
+Please answer based on the context above (both RFP and Company Library if provided). If you cite information, reference the source."""
 
         messages.append({
             "role": "user",
