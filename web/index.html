@@ -1056,6 +1056,22 @@
                                             </div>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                 {[
+                                                    // War Room Intelligence
+                                                    {
+                                                        label: '⚡ War Room Executive Snapshot',
+                                                        prompt: 'Generate an Executive Snapshot with: 1) Agency, Solicitation Number, Title, Due Date (check amendments), Set-Aside, NAICS. 2) 🚩 RED FLAGS: List critical blockers (facility clearance, OCI, aggressive timelines, certifications). 3) Conflict Detection: Check if amendments override base RFP dates or requirements. Present as structured summary.',
+                                                        category: 'war_room'
+                                                    },
+                                                    {
+                                                        label: '🔍 Amendment Conflict Analysis',
+                                                        prompt: 'Analyze all amendments and base RFP. Identify: 1) Date changes (Questions Due, Submission Deadline). 2) Requirement changes. 3) Evaluation changes. For each conflict, show: ORIGINAL [Source] vs UPDATED [Amendment X]. Mark critical updates with ⚡.',
+                                                        category: 'war_room'
+                                                    },
+                                                    {
+                                                        label: '🚩 Red Flag Scan',
+                                                        prompt: 'Scan for Go/No-Go blockers: 1) Security clearances (Facility, Personnel). 2) OCI restrictions. 3) Mandatory certifications (CMMI, ISO, 508). 4) Set-aside eligibility. 5) Aggressive timeline (< 30 days). 6) Past performance requirements. For each flag, provide: Description, Source citation, Risk level (High/Medium/Low).',
+                                                        category: 'war_room'
+                                                    },
                                                     // Standard RFP Chips
                                                     {
                                                         label: '📊 Evaluation & Page Limits',
