@@ -295,11 +295,11 @@ class BestPracticesCTMExporter:
         
         # Write requirements
         for row_num, req in enumerate(requirements, 2):
-            # RFP Reference (preserve their numbering!)
-            ws.cell(row=row_num, column=1, value=req.rfp_reference)
+            # RFP Reference (preserve their numbering!) - sanitized
+            ws.cell(row=row_num, column=1, value=self._sanitize_cell_value(req.rfp_reference))
             
-            # Full text - VERBATIM
-            text_cell = ws.cell(row=row_num, column=2, value=req.full_text)
+            # Full text - VERBATIM - sanitized
+            text_cell = ws.cell(row=row_num, column=2, value=self._sanitize_cell_value(req.full_text))
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
             
             # Page
