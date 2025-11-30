@@ -81,6 +81,88 @@ class RFPChatAgent:
         self.max_context_length = 6000  # max characters in context
     
     # ============================================================================
+    # FILE TEXT EXTRACTION
+    # ============================================================================
+    
+    def extract_text_from_file(self, file_path: str) -> str:
+        """
+        Extract text content from PDF or DOCX files.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            Extracted text content
+        """
+        file_path = Path(file_path)
+        
+        if not file_path.exists():
+            logger.error(f"[CHAT] File not found: {file_path}")
+            return ""
+        
+        ext = file_path.suffix.lower()
+        
+        try:
+            if ext == '.pdf':
+                return self._extract_from_pdf(file_path)
+            elif ext in ['.docx', '.doc']:
+                return self._extract_from_docx(file_path)
+            else:
+                logger.warning(f"[CHAT] Unsupported file type: {ext}")
+                return ""
+        except Exception as e:
+            logger.error(f"[CHAT] Error extracting text from {file_path}: {e}")
+            return ""
+    
+    def _extract_from_pdf(self, file_path: Path) -> str:
+        """Extract text from PDF using pypdf"""
+        try:
+            from pypdf import PdfReader
+            
+            reader = PdfReader(str(file_path))
+            text_parts = []
+            
+            for page_num, page in enumerate(reader.pages, 1):
+                text = page.extract_text()
+                if text.strip():
+                    text_parts.append(f"[Page {page_num}]\n{text}")
+            
+            full_text = "\n\n".join(text_parts)
+            logger.info(f"[CHAT] Extracted {len(full_text)} characters from PDF: {file_path.name}")
+            return full_text
+            
+        except Exception as e:
+            logger.error(f"[CHAT] PDF extraction error: {e}")
+            return ""
+    
+    def _extract_from_docx(self, file_path: Path) -> str:
+        """Extract text from DOCX using python-docx"""
+        try:
+            from docx import Document
+            
+            doc = Document(str(file_path))
+            text_parts = []
+            
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_parts.append(para.text)
+            
+            # Also extract from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            text_parts.append(cell.text)
+            
+            full_text = "\n\n".join(text_parts)
+            logger.info(f"[CHAT] Extracted {len(full_text)} characters from DOCX: {file_path.name}")
+            return full_text
+            
+        except Exception as e:
+            logger.error(f"[CHAT] DOCX extraction error: {e}")
+            return ""
+    
+    # ============================================================================
     # DOCUMENT CHUNKING
     # ============================================================================
     
