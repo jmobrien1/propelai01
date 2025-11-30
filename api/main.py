@@ -257,15 +257,22 @@ if BEST_PRACTICES_AVAILABLE:
     except Exception as e:
         print(f"Warning: Could not initialize best practices extractor: {e}")
 
-# v3.1: Initialize Company Library FIRST (needed for Chat Agent RAG)
+# v3.1: Import and Initialize Company Library FIRST (needed for Chat Agent RAG)
 company_library = None
-if COMPANY_LIBRARY_AVAILABLE:
-    try:
-        company_library = CompanyLibrary(str(OUTPUT_DIR / "company_library"))
-        print("[STARTUP] Company Library initialized")
-    except Exception as e:
-        print(f"[STARTUP] Warning: Could not initialize Company Library: {e}")
-        company_library = None
+try:
+    from agents.enhanced_compliance.company_library import (
+        CompanyLibrary,
+        CompanyLibraryParser,
+        DocumentType,
+    )
+    company_library = CompanyLibrary(str(OUTPUT_DIR / "company_library"))
+    print("[STARTUP] Company Library initialized")
+except ImportError as e:
+    print(f"[STARTUP] Warning: Company Library not available: {e}")
+    company_library = None
+except Exception as e:
+    print(f"[STARTUP] Warning: Could not initialize Company Library: {e}")
+    company_library = None
 
 # Initialize RFP Chat Agent (v2.12+ / v3.1 with Library integration)
 rfp_chat_agent = None
