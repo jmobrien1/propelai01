@@ -258,12 +258,15 @@ class RFPChatAgent:
     # TEXT EXTRACTION
     # ============================================================================
     
-    def extract_text_from_file(self, file_path: str) -> str:
+    def extract_text_from_file(self, file_path: str, context_mode: bool = False) -> str:
         """
         Extract text content from PDF, DOCX, or Excel files.
         
+        v4.0: Added context_mode for RFI/Market Research Excel files.
+        
         Args:
             file_path: Path to the file
+            context_mode: If True, extract Excel as unified scope (not questionnaire)
             
         Returns:
             Extracted text content
@@ -282,7 +285,7 @@ class RFPChatAgent:
             elif ext in ['.docx', '.doc']:
                 return self._extract_from_docx(file_path)
             elif ext in ['.xlsx', '.xls', '.csv']:
-                return self._extract_from_excel(file_path)
+                return self._extract_from_excel(file_path, context_mode=context_mode)
             else:
                 logger.warning(f"[CHAT] Unsupported file type: {ext}")
                 return ""
