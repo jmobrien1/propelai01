@@ -127,11 +127,13 @@ class SmartOutlineGenerator:
     """
     Generate proposal outlines from compliance matrix data.
     
+    v3.1: Integrated v3.0 Router Logic for mode-specific generation.
+    
     This generator uses already-extracted Section L and M data
     rather than re-parsing PDFs, making it more accurate.
     """
     
-    def __init__(self):
+    def __init__(self, rfp_type: Optional[RFPType] = None):
         # Volume detection patterns
         self.volume_patterns = [
             # NIH Factor-based
