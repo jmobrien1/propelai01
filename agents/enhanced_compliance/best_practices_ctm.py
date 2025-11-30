@@ -392,12 +392,12 @@ class BestPracticesCTMExporter:
         
         # Write requirements
         for row_num, req in enumerate(requirements, 2):
-            ws.cell(row=row_num, column=1, value=req.rfp_reference)
+            ws.cell(row=row_num, column=1, value=self._sanitize_cell_value(req.rfp_reference))
             
-            text_cell = ws.cell(row=row_num, column=2, value=req.full_text)
+            text_cell = ws.cell(row=row_num, column=2, value=self._sanitize_cell_value(req.full_text))
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
             
-            ws.cell(row=row_num, column=3, value=req.source_subsection or req.source_section.value)
+            ws.cell(row=row_num, column=3, value=self._sanitize_cell_value(req.source_subsection or req.source_section.value))
             ws.cell(row=row_num, column=4, value=req.page_number)
             
             # Priority
