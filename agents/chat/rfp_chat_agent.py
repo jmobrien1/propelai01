@@ -989,13 +989,22 @@ Answer ONLY based on provided context. Apply the correct protocol based on the R
                     "content": msg.content
                 })
         
-        # v3.1: Check if question is about company capabilities
+        # v3.1: Check if question is about company capabilities (crash-proof)
         library_context = ""
-        if self._detect_library_intent(question):
-            library_results = self._query_company_library(question)
-            if library_results:
-                library_context = self._format_library_context(library_results)
-                logger.info(f"[LIBRARY] Added {len(library_results)} library results to context")
+        try:
+            if self._detect_library_intent(question):
+                logger.info("[LIBRARY] Intent detected - querying company library")
+                library_results = self._query_company_library(question)
+                
+                if library_results and len(library_results) > 0:
+                    library_context = self._format_library_context(library_results)
+                    logger.info(f"[LIBRARY] Added {len(library_results)} library results to context")
+                else:
+                    logger.info("[LIBRARY] No relevant company documents found for this query")
+        except Exception as e:
+            logger.error(f"[LIBRARY] RAG Error (non-fatal): {e}")
+            logger.warning("[LIBRARY] Continuing with RFP context only")
+            # Continue without library context - chat should not crash
         
         # Add current question with context
         user_message = f"""Context from RFP documents:
