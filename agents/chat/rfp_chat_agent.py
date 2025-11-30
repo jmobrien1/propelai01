@@ -99,7 +99,7 @@ class RFPChatAgent:
     
     def extract_text_from_file(self, file_path: str) -> str:
         """
-        Extract text content from PDF or DOCX files.
+        Extract text content from PDF, DOCX, or Excel files.
         
         Args:
             file_path: Path to the file
@@ -120,6 +120,8 @@ class RFPChatAgent:
                 return self._extract_from_pdf(file_path)
             elif ext in ['.docx', '.doc']:
                 return self._extract_from_docx(file_path)
+            elif ext in ['.xlsx', '.xls', '.csv']:
+                return self._extract_from_excel(file_path)
             else:
                 logger.warning(f"[CHAT] Unsupported file type: {ext}")
                 return ""
