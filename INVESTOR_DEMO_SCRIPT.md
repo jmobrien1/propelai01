@@ -94,58 +94,77 @@ This is true **proposal intelligence** - not just document Q&A.
 
 ---
 
-### Step 3: Chat with Your RFP - Ask Questions (1 minute)
+### Step 4: THE MAGIC - Ask Questions About RFP + Your Company (2 minutes)
 
-1. Click the **"Chat"** tab at the top
-2. Try these questions:
+**Now click "Chat" and watch the magic happen:**
 
-**Question 1: Basic Info**
-```
-"What is the contract period of performance?"
-```
+1. Click the **"Chat"** tab in the sidebar
+2. **Don't ask generic questions** - ask about YOUR company vs. the RFP!
 
-**Question 2: Requirements**
+**🔥 Question 1: Capability Match (THE WOW MOMENT)**
 ```
-"What are the key deliverables for Phase 1?"
+"Do our capabilities match this RFP's requirements?"
 ```
 
-**Question 3: Compliance**
-```
-"What certifications are required for personnel?"
-```
-
-**Question 4: Evaluation (Advanced)**
-```
-"What are the evaluation factors and their weights?"
-```
-
-✅ **Result:** AI answers with:
-- Direct quotes from RFP
-- Source citations (page numbers)
-- Context-aware responses
+**What Happens:**
+- AI reads the RFP requirements
+- AI searches YOUR company library
+- AI provides detailed match analysis
+- Shows what you HAVE and what you're MISSING
 
 ---
 
-### Step 4: Company Library - Match Capabilities (30 seconds)
-
-1. Click **"Library"** in the left sidebar
-2. You'll see the Company Library v4.0 interface
-3. Click **"Upload"** tab at the top
-4. Drag and drop documents:
-   - Capability statements
-   - Past performance summaries
-   - Resumes/CVs
-   - Technical whitepapers
-
-5. Go back to **"Chat"** and ask:
+**🔥 Question 2: Experience Match**
 ```
-"Do we have experience with similar intelligence support contracts?"
+"Do we have relevant past performance for this type of contract?"
 ```
 
-✅ **Result:** AI searches BOTH:
-- The uploaded RFP
-- Your company library
-- Provides match analysis
+**What Happens:**
+- AI scans RFP for contract type/requirements
+- AI searches your past performance docs
+- Shows matching projects
+- Identifies gaps
+
+---
+
+**🔥 Question 3: Team Qualification**
+```
+"Do we have personnel with the required certifications and clearances?"
+```
+
+**What Happens:**
+- AI extracts personnel requirements from RFP
+- AI searches uploaded resumes
+- Shows qualified staff
+- Flags missing qualifications
+
+---
+
+**🔥 Question 4: Technical Approach**
+```
+"What technical approach should we propose based on our experience?"
+```
+
+**What Happens:**
+- AI analyzes RFP technical requirements
+- AI reviews your technical whitepapers/case studies
+- Suggests approach based on YOUR actual capabilities
+- Highlights differentiators
+
+---
+
+**🔥 Question 5: Go/No-Go Analysis**
+```
+"Should we bid on this opportunity? What are our strengths and weaknesses?"
+```
+
+**What Happens:**
+- AI performs comprehensive gap analysis
+- Evaluates your company docs against RFP
+- Provides bid/no-bid recommendation
+- Lists must-haves you're missing
+
+✅ **Result:** This is NOT generic AI chat - this is **intelligent proposal analysis specific to YOUR company**
 
 ---
 
