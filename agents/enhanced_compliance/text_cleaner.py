@@ -5,7 +5,6 @@ Handles HTML entities, special characters, and text normalization
 
 import re
 import html
-from typing import str
 
 
 class TextCleaner:
