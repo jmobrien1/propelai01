@@ -168,18 +168,19 @@ class ChatResponse(BaseModel):
     timestamp: str
 
 
-# ============== Phase 5: MongoDB Store (Replaces In-Memory) ==============
+# ============== Phase 5: File-Based JSON Store (Stable & Simple) ==============
 
 class RFPStore:
     """
-    MongoDB-backed store for RFP data
+    File-based JSON store for RFP data
     
-    Phase 5: Replaced in-memory dict with persistent MongoDB storage.
-    All operations are now async and use Motor for non-blocking I/O.
+    Phase 5 Stability Refactor: Simple synchronous file operations.
+    No async, no external dependencies, immediate availability.
+    Data persists to /app/outputs/data/rfps.json
     """
     
-    async def create(self, rfp_id: str, data: Dict) -> Dict:
-        """Create a new RFP entry in MongoDB"""
+    def create(self, rfp_id: str, data: Dict) -> Dict:
+        """Create a new RFP entry"""
         rfp_doc = {
             "id": rfp_id,
             "name": data.get("name", "Untitled RFP"),
@@ -201,57 +202,54 @@ class RFPStore:
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         
-        await db.rfps.insert_one(rfp_doc)
-        return db.serialize_doc(rfp_doc)
+        db.rfps_insert_one(rfp_doc)
+        return rfp_doc
     
-    async def get(self, rfp_id: str) -> Optional[Dict]:
-        """Get RFP by ID from MongoDB"""
-        doc = await db.rfps.find_one({"id": rfp_id}, {"_id": 0})
-        return doc
+    def get(self, rfp_id: str) -> Optional[Dict]:
+        """Get RFP by ID"""
+        return db.rfps_find_one({"id": rfp_id})
     
-    async def update(self, rfp_id: str, updates: Dict) -> Dict:
-        """Update RFP in MongoDB"""
+    def update(self, rfp_id: str, updates: Dict) -> Dict:
+        """Update RFP"""
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         
-        result = await db.rfps.update_one(
+        result = db.rfps_update_one(
             {"id": rfp_id},
             {"$set": updates}
         )
         
-        if result.matched_count == 0:
+        if result['matched_count'] == 0:
             raise KeyError(f"RFP not found: {rfp_id}")
         
-        return await self.get(rfp_id)
+        return self.get(rfp_id)
     
-    async def list_all(self) -> List[Dict]:
-        """List all RFPs from MongoDB"""
-        cursor = db.rfps.find({}, {"_id": 0})
-        docs = await cursor.to_list(length=1000)
-        return docs
+    def list_all(self) -> List[Dict]:
+        """List all RFPs"""
+        return db.rfps_find()
     
-    async def delete(self, rfp_id: str) -> bool:
-        """Delete RFP from MongoDB"""
-        result = await db.rfps.delete_one({"id": rfp_id})
-        return result.deleted_count > 0
+    def delete(self, rfp_id: str) -> bool:
+        """Delete RFP"""
+        result = db.rfps_delete_one({"id": rfp_id})
+        return result['deleted_count'] > 0
     
-    async def set_status(self, rfp_id: str, status: str, progress: int, message: str, req_count: int = None):
-        """Set processing status in RFP document"""
+    def set_status(self, rfp_id: str, status: str, progress: int, message: str, req_count: int = None):
+        """Set processing status"""
         status_data = {
             "status": status,
             "progress": progress,
             "message": message,
             "requirements_count": req_count
         }
-        await db.rfps.update_one(
+        db.rfps_update_one(
             {"id": rfp_id},
             {"$set": {"processing_status": status_data}}
         )
     
-    async def get_status(self, rfp_id: str) -> Optional[ProcessingStatus]:
-        """Get processing status from RFP document"""
-        doc = await db.rfps.find_one({"id": rfp_id}, {"processing_status": 1, "_id": 0})
-        if doc and "processing_status" in doc:
-            status_data = doc["processing_status"]
+    def get_status(self, rfp_id: str) -> Optional[ProcessingStatus]:
+        """Get processing status"""
+        rfp = db.rfps_find_one({"id": rfp_id})
+        if rfp and "processing_status" in rfp:
+            status_data = rfp["processing_status"]
             return ProcessingStatus(**status_data)
         return None
 
