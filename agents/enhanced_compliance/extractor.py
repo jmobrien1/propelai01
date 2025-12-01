@@ -480,9 +480,12 @@ class RequirementExtractor:
             section_id=section_id,
         )
         
+        # Clean the requirement text
+        cleaned_sentence = clean_requirement_text(sentence)
+        
         return RequirementNode(
             id=req_id,
-            text=sentence.strip(),
+            text=cleaned_sentence,
             requirement_type=req_type,
             confidence=confidence,
             source=source,
