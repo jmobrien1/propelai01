@@ -57,46 +57,89 @@ class MultiFormatParser:
             "parse_failures": 0,
         }
     
-    def parse_bundle(self, bundle: RFPBundle) -> Dict[str, ParsedDocument]:
+    def parse_bundle(self, bundle) -> Dict[str, ParsedDocument]:
         """
         Parse all documents in the bundle
+        
+        Args:
+            bundle: Either RFPBundle (legacy) or DocumentBundle (from bundle_detector)
         
         Returns:
             Dict mapping document role to ParsedDocument
         """
         results = {}
         
+        # Check if this is a new DocumentBundle (has 'documents' list attribute)
+        is_new_bundle = hasattr(bundle, 'documents') and isinstance(bundle.documents, list)
+        
+        if is_new_bundle:
+            # New DocumentBundle format from bundle_detector
+            # Parse documents in priority order
+            for doc in bundle.get_processing_order():
+                file_path = doc.get('file_path')
+                doc_type_str = doc.get('type', 'unknown')
+                
+                # Map string type to DocumentType enum
+                doc_type_map = {
+                    'main_solicitation': DocumentType.MAIN_SOLICITATION,
+                    'rfp_letter': DocumentType.RFP_LETTER,
+                    'amendment': DocumentType.AMENDMENT,
+                    'attachment': DocumentType.ATTACHMENT,
+                    'requirements_doc': DocumentType.REQUIREMENTS_DOC,
+                    'pricing_template': DocumentType.PRICING_TEMPLATE,
+                    'questionnaire': DocumentType.QUESTIONNAIRE,
+                    'clause': DocumentType.CLAUSE,
+                }
+                doc_type = doc_type_map.get(doc_type_str, DocumentType.UNKNOWN)
+                
+                if file_path:
+                    parsed = self.parse_file(file_path, doc_type)
+                    if parsed:
+                        # Use filename as key
+                        key = doc.get('filename', f"doc_{len(results)}")
+                        results[key] = parsed
+            
+            return results
+        
+        # Legacy RFPBundle format handling
         # Parse main solicitation
-        if bundle.main_solicitation:
-            # Handle both dict (from bundle_detector) and string (legacy) formats
+        if hasattr(bundle, 'main_solicitation') and bundle.main_solicitation:
             file_path = bundle.main_solicitation.get('file_path') if isinstance(bundle.main_solicitation, dict) else bundle.main_solicitation
             if file_path:
                 parsed = self.parse_file(file_path, DocumentType.MAIN_SOLICITATION)
                 if parsed:
                     results["main"] = parsed
-                    bundle.parsed_documents["main"] = parsed
+                    if hasattr(bundle, 'parsed_documents'):
+                        bundle.parsed_documents["main"] = parsed
         
         # Parse SOW if separate
-        if bundle.sow_document:
+        if hasattr(bundle, 'sow_document') and bundle.sow_document:
             parsed = self.parse_file(bundle.sow_document, DocumentType.STATEMENT_OF_WORK)
             if parsed:
                 results["sow"] = parsed
-                bundle.parsed_documents["sow"] = parsed
+                if hasattr(bundle, 'parsed_documents'):
+                    bundle.parsed_documents["sow"] = parsed
         
         # Parse amendments in order
-        for i, amendment_path in enumerate(bundle.amendments):
-            parsed = self.parse_file(amendment_path, DocumentType.AMENDMENT)
-            if parsed:
-                key = f"amendment_{i+1}"
-                results[key] = parsed
-                bundle.parsed_documents[key] = parsed
+        if hasattr(bundle, 'amendments') and bundle.amendments:
+            for i, amendment in enumerate(bundle.amendments):
+                amendment_path = amendment.get('file_path') if isinstance(amendment, dict) else amendment
+                if amendment_path:
+                    parsed = self.parse_file(amendment_path, DocumentType.AMENDMENT)
+                    if parsed:
+                        key = f"amendment_{i+1}"
+                        results[key] = parsed
+                        if hasattr(bundle, 'parsed_documents'):
+                            bundle.parsed_documents[key] = parsed
         
         # Parse research outlines (NIH-specific)
-        for ro_id, ro_path in bundle.research_outlines.items():
-            parsed = self.parse_file(ro_path, DocumentType.RESEARCH_OUTLINE)
-            if parsed:
-                results[ro_id] = parsed
-                bundle.parsed_documents[ro_id] = parsed
+        if hasattr(bundle, 'research_outlines'):
+            for ro_id, ro_path in bundle.research_outlines.items():
+                parsed = self.parse_file(ro_path, DocumentType.RESEARCH_OUTLINE)
+                if parsed:
+                    results[ro_id] = parsed
+                    if hasattr(bundle, 'parsed_documents'):
+                        bundle.parsed_documents[ro_id] = parsed
         
         # Parse attachments
         for att_id, att_path in bundle.attachments.items():
