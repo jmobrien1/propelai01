@@ -514,7 +514,7 @@ async def upload_files(
 
 # ============== Processing ==============
 
-async def process_rfp_background(rfp_id: str):
+def process_rfp_background(rfp_id: str):
     """Background task to process RFP - uses best practices extractor when available"""
     rfp = store.get(rfp_id)
     if not rfp:
