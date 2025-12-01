@@ -56,6 +56,17 @@ except ImportError as e:
     BundleDetector = None
     DocumentCorrelator = None
 
+# Phase 4.1 Sprint 2: Import RFP Letter Extractor
+try:
+    from agents.enhanced_compliance.rfp_letter_extractor import extract_rfp_letter, RFPLetterExtractor
+    RFP_LETTER_EXTRACTION_AVAILABLE = True
+    print("[STARTUP] RFP Letter extraction available")
+except ImportError as e:
+    print(f"[STARTUP] RFP Letter extraction not available: {e}")
+    RFP_LETTER_EXTRACTION_AVAILABLE = False
+    RFPLetterExtractor = None
+    extract_rfp_letter = None
+
 # v2.8: Import semantic extractor
 try:
     from agents.enhanced_compliance import (
