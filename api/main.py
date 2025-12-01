@@ -522,7 +522,7 @@ def process_rfp_background(rfp_id: str):
     
     # Use best practices extraction if available (v2.10+)
     if BEST_PRACTICES_AVAILABLE and best_practices_extractor:
-        await process_rfp_best_practices_background(rfp_id)
+        process_rfp_best_practices_background(rfp_id)
         return
     
     try:
