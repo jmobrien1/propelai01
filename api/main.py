@@ -577,6 +577,42 @@ async def upload_files(
     return response
 
 
+# ============== Bundle Management (Phase 4.1) ==============
+
+@app.get("/api/rfp/{rfp_id}/bundle")
+async def get_bundle_info(rfp_id: str):
+    """
+    Get bundle classification information for an RFP.
+    
+    Returns document hierarchy and classification.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+    
+    if not rfp.get("is_bundle"):
+        return {
+            "is_bundle": False,
+            "message": "Single document RFP"
+        }
+    
+    bundle_info = rfp.get("bundle_info", {})
+    
+    return {
+        "is_bundle": True,
+        "rfp_id": rfp_id,
+        "bundle_format": rfp.get("bundle_format", "unknown"),
+        "total_documents": bundle_info.get("total_documents", 0),
+        "main_solicitation": bundle_info.get("main_solicitation"),
+        "rfp_letter": bundle_info.get("rfp_letter"),
+        "amendments": bundle_info.get("amendments", []),
+        "attachments": bundle_info.get("attachments", []),
+        "all_documents": bundle_info.get("documents", []),
+        "metadata": bundle_info.get("metadata", {}),
+        "validation": bundle_info.get("metadata", {}).get("validation", {})
+    }
+
+
 # ============== Processing ==============
 
 def process_rfp_background(rfp_id: str):
