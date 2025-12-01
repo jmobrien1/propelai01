@@ -67,11 +67,14 @@ class MultiFormatParser:
         results = {}
         
         # Parse main solicitation
-        if bundle.main_document:
-            parsed = self.parse_file(bundle.main_document, DocumentType.MAIN_SOLICITATION)
-            if parsed:
-                results["main"] = parsed
-                bundle.parsed_documents["main"] = parsed
+        if bundle.main_solicitation:
+            # Handle both dict (from bundle_detector) and string (legacy) formats
+            file_path = bundle.main_solicitation.get('file_path') if isinstance(bundle.main_solicitation, dict) else bundle.main_solicitation
+            if file_path:
+                parsed = self.parse_file(file_path, DocumentType.MAIN_SOLICITATION)
+                if parsed:
+                    results["main"] = parsed
+                    bundle.parsed_documents["main"] = parsed
         
         # Parse SOW if separate
         if bundle.sow_document:
