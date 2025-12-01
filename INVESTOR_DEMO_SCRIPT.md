@@ -37,9 +37,10 @@ PropelAI helps government contractors:
 
 ### Step 2: Process & Extract Requirements - The Magic (2 minutes)
 
-1. After upload completes, click **"Process RFP"** button
-2. Select: **"Best Practices Extraction"** (recommended)
-3. Wait ~30-60 seconds while AI analyzes the document
+1. After upload completes, look in the left sidebar
+2. Click **"Compliance Matrix"** or **"Upload RFP"** depending on what you see
+3. If there's a **"Process"** button, click it and select **"Best Practices Extraction"**
+4. Wait ~30-60 seconds while AI analyzes the document
 
 **What's Happening Behind the Scenes:**
 - AI reads entire RFP (500+ pages in minutes)
@@ -56,7 +57,7 @@ PropelAI helps government contractors:
 
 ---
 
-### Step 4: Chat with Your RFP - Ask Questions (1 minute)
+### Step 3: Chat with Your RFP - Ask Questions (1 minute)
 
 1. Click the **"Chat"** tab at the top
 2. Try these questions:
