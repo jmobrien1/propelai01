@@ -326,24 +326,8 @@ app.add_middleware(
 )
 
 
-# ============== Phase 5: Startup & Shutdown Events ==============
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize MongoDB connection on startup"""
-    try:
-        await db.connect()
-        print("[STARTUP] PropelAI v4.0 - MongoDB connected successfully")
-    except Exception as e:
-        print(f"[STARTUP] ERROR: Failed to connect to MongoDB: {e}")
-        raise
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close MongoDB connection on shutdown"""
-    await db.close()
-    print("[SHUTDOWN] MongoDB connection closed")
+# ============== Phase 5: No Startup/Shutdown Events Needed ==============
+# File-based DB is immediately available - no async initialization required
 
 
 # ============== Root Route (Web UI) ==============
