@@ -328,8 +328,11 @@ class RequirementExtractor:
         requirements = []
         self._seen_hashes.clear()  # Reset duplicate detection per document
         
+        # Clean the document text first (remove HTML entities, normalize)
+        cleaned_text = clean_text(doc.full_text)
+        
         # Split into sentences for processing
-        sentences = self._split_into_sentences(doc.full_text)
+        sentences = self._split_into_sentences(cleaned_text)
         
         for i, sentence in enumerate(sentences):
             # Apply quality filters in strict mode
