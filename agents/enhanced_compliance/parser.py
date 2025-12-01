@@ -79,18 +79,20 @@ class MultiFormatParser:
                 file_path = doc.get('file_path')
                 doc_type_str = doc.get('type', 'unknown')
                 
-                # Map string type to DocumentType enum
+                # Map bundle_detector types to models.DocumentType enum
+                # Some types from bundle_detector don't have equivalents, so use closest match
                 doc_type_map = {
                     'main_solicitation': DocumentType.MAIN_SOLICITATION,
-                    'rfp_letter': DocumentType.RFP_LETTER,
+                    'rfp_letter': DocumentType.MAIN_SOLICITATION,  # Treat as main doc
                     'amendment': DocumentType.AMENDMENT,
                     'attachment': DocumentType.ATTACHMENT,
-                    'requirements_doc': DocumentType.REQUIREMENTS_DOC,
-                    'pricing_template': DocumentType.PRICING_TEMPLATE,
-                    'questionnaire': DocumentType.QUESTIONNAIRE,
-                    'clause': DocumentType.CLAUSE,
+                    'requirements_doc': DocumentType.STATEMENT_OF_WORK,  # Closest match
+                    'pricing_template': DocumentType.BUDGET_TEMPLATE,
+                    'questionnaire': DocumentType.FORM,
+                    'clause': DocumentType.ATTACHMENT,
+                    'unknown': DocumentType.ATTACHMENT,  # Default fallback
                 }
-                doc_type = doc_type_map.get(doc_type_str, DocumentType.UNKNOWN)
+                doc_type = doc_type_map.get(doc_type_str, DocumentType.ATTACHMENT)
                 
                 if file_path:
                     parsed = self.parse_file(file_path, doc_type)
