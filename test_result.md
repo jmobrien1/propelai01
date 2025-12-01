@@ -107,16 +107,21 @@ Agent: E1 (Forked from previous session)
 
 ## Known Issues & Limitations
 
-### Issue 1: BundleDetector Missing Method (FIXED ✅)
-**Description:** `BundleDetector` class was missing the `detect_from_files` method that's called by `EnhancedComplianceAgent`
+### Issue 1: Bundle Processing Errors (FIXED ✅)
+**Description:** Two critical bugs prevented RFP bundle processing:
+1. `BundleDetector` missing `detect_from_files` method
+2. Incompatible bundle data structures (DocumentBundle vs RFPBundle)
 
-**Impact:** HIGH - Processing RFP bundles would fail with AttributeError
+**Impact:** CRITICAL - RFP processing completely broken, user unable to process AO package
 
-**Fix Applied:** Added `detect_from_files` method to BundleDetector class that converts file paths to the format expected by `detect_bundle`
+**Fixes Applied:**
+1. Added `detect_from_files` method to BundleDetector
+2. Made parser handle both old and new bundle formats
+3. Fixed DocumentType enum mapping between modules
 
 **Status:** ✅ FIXED (December 1, 2025)
 
-**Testing:** Verified locally, ready for deployment
+**Testing:** Verified locally with compatibility tests
 
 ### Issue 2: Document Parser Dependency  
 **Description:** The API integration code references `DocumentParser` for extracting text from PDF/DOCX files, but this may not extract text if the parser isn't set up correctly.
