@@ -263,23 +263,16 @@ class RFPLetterExtractor:
     
     def _extract_page_limits(self, text: str):
         """Extract page limits and associate with volumes"""
-        # Split text into paragraphs for context
-        paragraphs = text.split('\n\n')
+        # Split text into lines for better context matching
+        lines = text.split('\n')
         
-        for para in paragraphs:
-            para_lower = para.lower()
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
             
-            # Check for volume mentions in paragraph
-            volume_in_para = None
-            for vol in self.volumes:
-                if f"volume {vol.volume_id.lower()}" in para_lower:
-                    volume_in_para = vol
-                    break
-            
-            # Extract page limits
+            # Look for page limit patterns
             for pattern in self.PAGE_LIMIT_PATTERNS:
-                matches = re.finditer(pattern, para, re.IGNORECASE)
-                for match in matches:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
                     page_limit_text = match.group(0)
                     
                     # Extract number
@@ -289,16 +282,29 @@ class RFPLetterExtractor:
                     # Check if "per reference/project"
                     is_per_item = bool(re.search(r'per\s+(reference|project|contract)', match.group(0), re.I))
                     
-                    if volume_in_para:
-                        # Associate with specific volume
-                        volume_in_para.page_limit = page_limit
-                        volume_in_para.page_limit_text = page_limit_text
+                    # Find which volume this belongs to
+                    # Look in current line and up to 3 lines above
+                    volume_in_context = None
+                    for offset in range(0, min(4, i + 1)):
+                        context_line = lines[i - offset].lower()
+                        for vol in self.volumes:
+                            if f"volume {vol.volume_id.lower()}" in context_line:
+                                volume_in_context = vol
+                                break
+                        if volume_in_context:
+                            break
+                    
+                    if volume_in_context and not volume_in_context.page_limit:
+                        # Associate with specific volume (only if not already set)
+                        volume_in_context.page_limit = page_limit
+                        volume_in_context.page_limit_text = page_limit_text
                         if is_per_item:
-                            volume_in_para.page_limit_text += " (per item)"
-                    else:
+                            volume_in_context.page_limit_text += " (per item)"
+                    elif not volume_in_context:
                         # General page limit (might be total)
-                        self.metadata['general_page_limit'] = page_limit
-                        self.metadata['general_page_limit_text'] = page_limit_text
+                        if 'general_page_limit' not in self.metadata:
+                            self.metadata['general_page_limit'] = page_limit
+                            self.metadata['general_page_limit_text'] = page_limit_text
     
     def _extract_formatting_rules(self, text: str):
         """Extract formatting requirements"""
