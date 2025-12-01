@@ -39,17 +39,27 @@ class Database:
     
     async def connect(self):
         """Initialize MongoDB connection"""
+        if not MOTOR_AVAILABLE:
+            print("[DB] ERROR: Motor not installed. MongoDB features disabled.")
+            print("[DB] Install with: pip install motor>=3.3.0 dnspython>=2.3.0 pymongo>=4.3.3")
+            return
+        
         if self._client is None:
             mongo_url = os.getenv("MONGO_URL")
             if not mongo_url:
-                raise ValueError("MONGO_URL environment variable not set")
+                print("[DB] WARNING: MONGO_URL not set. Using default: mongodb://localhost:27017/propelai")
+                mongo_url = "mongodb://localhost:27017/propelai"
             
-            self._client = AsyncIOMotorClient(mongo_url)
-            # Get database name from URL or default to 'propelai'
-            db_name = mongo_url.split('/')[-1].split('?')[0] if '/' in mongo_url else 'propelai'
-            self._db = self._client[db_name]
-            
-            print(f"[DB] Connected to MongoDB: {db_name}")
+            try:
+                self._client = AsyncIOMotorClient(mongo_url)
+                # Get database name from URL or default to 'propelai'
+                db_name = mongo_url.split('/')[-1].split('?')[0] if '/' in mongo_url else 'propelai'
+                self._db = self._client[db_name]
+                
+                print(f"[DB] Connected to MongoDB: {db_name}")
+            except Exception as e:
+                print(f"[DB] ERROR: Failed to connect to MongoDB: {e}")
+                print("[DB] Application will continue but database features may be limited")
     
     async def close(self):
         """Close MongoDB connection"""
