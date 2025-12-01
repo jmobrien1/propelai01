@@ -840,7 +840,7 @@ async def process_rfp_semantic(rfp_id: str):
 
 # ============== v2.9: Best Practices CTM Processing ==============
 
-async def process_rfp_best_practices_background(rfp_id: str):
+def process_rfp_best_practices_background(rfp_id: str):
     """
     Background task to process RFP with Best Practices CTM extraction (v2.9).
     
