@@ -1406,9 +1406,10 @@ Be EXTREMELY precise with numbers and measurements. Quote directly when possible
         chat_history: Optional[List[ChatMessage]] = None
     ) -> ChatMessage:
         """
-        Main chat function with specialized query routing (Phase 2).
+        Main chat function with specialized query routing and Company Library RAG.
         
         Routes queries to specialized handlers:
+        - Company Library: Questions about capabilities, experience, team
         - Cross-reference: Section L vs. M analysis
         - Contradiction: Detect conflicts between sections
         - Formatting: Extract Section L rules
@@ -1423,6 +1424,35 @@ Be EXTREMELY precise with numbers and measurements. Quote directly when possible
             ChatMessage with assistant's response
         """
         logger.info(f"[CHAT] Processing question: {question[:100]}...")
+        
+        # v4.0 FIX: Check if user is asking about company capabilities
+        if self._detect_library_intent(question):
+            logger.info("[CHAT] Library intent detected - querying company assets")
+            library_results = self._query_company_library(question, top_k=3)
+            
+            if library_results:
+                logger.info(f"[CHAT] Found {len(library_results)} library results")
+                # Combine RFP context + Library context
+                retrieved = self.retrieve_relevant_chunks(question, document_chunks)
+                chunks_only = [chunk for chunk, score in retrieved]
+                library_context = self._format_library_context(library_results)
+                answer, sources = self.generate_answer(
+                    question, 
+                    chunks_only, 
+                    chat_history,
+                    additional_context=library_context
+                )
+                
+                # Create response with library citation
+                response = ChatMessage(
+                    role="assistant",
+                    content=answer,
+                    timestamp=datetime.utcnow().isoformat() + "Z",
+                    sources=sources
+                )
+                return response
+            else:
+                logger.info("[CHAT] No library results found - proceeding with RFP-only context")
         
         # Detect query type
         query_type = self.detect_query_type(question)
