@@ -1,76 +1,82 @@
 <analysis>**original_problem_statement:**
-The user is developing PropelAI, an autonomous proposal operating system. The initial request in this session was to continue implementing the v2.5 Spreadsheet Proposal feature. However, the scope quickly expanded based on user feedback to a full v3.0 architecture refactor, introducing a Router-Based system to handle different RFP types. This was followed by multiple iterative enhancements, including v3.1 data synchronization fixes for artifact generators, War Room intelligence features, a v4.0 RFI/White Paper mode, and a comprehensive Omni-Federal v4.0 system prompt. The most recent task involves a major v4.0 refactor of the Company Library for production readiness and a final request to generate a comprehensive technical document summarizing the application's current state.
+The user is developing PropelAI, an autonomous proposal operating system. The initial request was to implement a Phase 5: Production Hardening plan. This involved migrating the application's in-memory data store to MongoDB and building a production-grade React UI for the Company Library. However, due to instability issues with the MongoDB implementation, the user requested an immediate Stability Refactor to a local, file-based JSON data store to ensure the application was stable for a critical demo.
+
+Following the stability refactor, the user reported that the RAG (Retrieval-Augmented Generation) feature, which allows chatting with RFPs in the context of the company library, was no longer working. After the agent fixed this regression, the user requested the creation of several investor-facing demo documents.
+
+Most recently, the user presented a new set of requirements to handle complex, multi-document RFPs (e.g., packages with amendments, attachments, etc.) and approved a multi-sprint plan to implement these edge case enhancements.
 
 **PRODUCT REQUIREMENTS:**
-1.  **Router-Based Architecture (v3.0/v4.0):** The application must classify incoming RFPs into one of six distinct modes (Standard Federal, GSA, OTA, R&D, Spreadsheet, RFI) and apply a unique Operational Protocol for each.
-2.  **Synchronized Artifact Generation (v3.1):** The Compliance Matrix and Smart Outline generators must use the same router logic as the chat agent to ensure data consistency across all generated artifacts.
-3.  **War Room Intelligence:** The chat agent must perform Forensic Analysis to identify conflicts between documents (e.g., amendments overriding base RFPs), trace all extracted requirements to their source, and flag critical risks (Red Flags).
-4.  **Company Library with RAG Integration:** A robust, searchable repository for company assets (capabilities, past performance, etc.). The chat agent must query this library (using Retrieval-Augmented Generation) to answer questions about the company's experience and qualifications.
-5.  **Production-Ready Company Library (v4.0):** The library must support bulk drag-and-drop uploads, prevent duplicate files via content hashing (SHA-256), auto-version files with the same name, and provide a clear UI to view and manage stored documents.
-6.  **Comprehensive Technical Documentation:** A final document that captures the full functionality of the application in its current state.
+1.  **File-Based JSON Storage:** The application must use a synchronous, file-based JSON store for all data (RFPs, chat history, company library) to ensure stability and eliminate external database dependencies. Data must persist in .
+2.  **Company Library UI:** A production-ready UI for the Company Library must exist, supporting multi-file drag-and-drop uploads with a staging area for tagging files, and a grid view to display/manage uploaded documents.
+3.  **RAG Integration:** The chat agent must be able to answer questions about an RFP in the context of documents uploaded to the Company Library, effectively combining information from both sources.
+4.  **Multi-Document RFP Handling (Edge Case Enhancement):**
+    *   **Sprint 1 (Complete):** The system must be able to process an upload of multiple files as a single RFP bundle and correctly classify each file's role (e.g., Main Solicitation, Amendment, Pricing Sheet).
+    *   **Sprint 2 (In Progress):** The system must be able to extract critical submission rules (deadlines, page limits, formatting) from RFP Letter or transmittal documents within a bundle.
+    *   **Sprint 3 (Upcoming):** The system must perform deep content analysis, including resolving conflicts between original RFPs and their amendments.
 
 **User's preferred language**: English
 
 **what currently exists?**
-The application is a full-stack project with a FastAPI backend () and a monolithic React frontend (). Its core is the , which implements a v4.0 Omni-Federal system prompt and a sophisticated Super-Router that classifies RFPs into six modes. The artifact generators (, ) are synchronized with this router logic. A Company Library feature exists with a refactored backend supporting content hashing for deduplication and RAG integration with the chat agent. However, the frontend for the library's bulk upload and document view is not yet implemented. The application is running, but chat functionality requires a user-provided .
+The application uses a FastAPI backend and a monolithic React frontend (). All data persistence is handled by a custom  class () that reads/writes to JSON files in , a change made to ensure stability for a demo. The frontend for the Company Library has been refactored to support multi-file drag-and-drop uploads and a document grid view. A regression where the RAG functionality for the Company Library was disconnected has been fixed by reconnecting the logic in , but this fix has not been verified by the user.
+
+The agent has completed Sprint 1 of the Edge Case Enhancement Plan by implementing a  agent and updating the API to handle multi-file uploads for a single RFP project. Work on Sprint 2 has just begun.
 
 **Last working item**:
-- **Last item agent was working:** The agent was tasked with creating a comprehensive technical reference document that captures 100% of the application's current functionality after all the recent v3.0 and v4.0 upgrades.
+- **Last item agent was working:** Implementing Sprint 2 of the Edge Case Enhancement Plan: RFP Letter Extraction. The agent created the necessary files ( and updated ) and was about to test the new module's functionality.
 - **Status:** IN PROGRESS
-- **Agent Testing Done:** N/A (Documentation task)
-- **Which testing method agent to use?** N/A
-- **User Testing Done:** N/A
+- **Agent Testing Done:** N
+- **Which testing method agent to use?** main agent to test via small test file
+- **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-- **Issue 1: Frontend for Company Library v4.0 is incomplete (P1)**
-    - **Description:** The previous agent successfully implemented the backend for the v4.0 Company Library refactor (multi-file upload, hashing, versioning) but did not complete the required frontend changes due to token limits. The current UI still has a single-file upload button.
-    - **Attempted fixes:** The backend was completed, but the frontend was not started.
+- **Issue 1: Complete Sprint 2: RFP Letter Extraction (P0)**
+    - **Description:** The agent needs to finish implementing and testing the  module to parse critical submission data from RFP letter documents.
+    - **Attempted fixes:** N/A (Just started).
     - **Next debug checklist:**
-        1.  Locate the frontend code in .
-        2.  Refactor the Company Library section.
-        3.  Implement a drag-and-drop component (e.g., using ) to allow multiple file uploads (PDF, DOCX, PPTX).
-        4.  Create a Staging List UI that appears before upload, showing Filename, Size, and a Tagging Dropdown for each file.
-        5.  Implement a Document Table component in the Documents tab to display the list of uploaded files with columns: Icon, Filename, Category, Date Uploaded, and Actions ([Preview], [Delete]).
-    - **Why fix this issue and what will be achieved with the fix?** The Company Library is a core feature but is unusable in its current state. Completing the UI will make bulk document management possible, unlocking the full potential of the RAG integration.
-    - **Status:** NOT STARTED
+        1.  Write a simple test script or use  to execute the  against sample text from the  document provided by the user.
+        2.  Integrate the new extractor into the main processing workflow in , likely within the background task that processes RFP bundles.
+        3.  Update the  endpoint to include the extracted letter data.
+    - **Why fix this issue and what will be achieved with the fix?** This is the next step in the user-approved plan to handle complex RFPs, a critical feature enhancement.
+    - **Status:** IN PROGRESS
     - **Is recurring issue?** N
-    - **Should Test frontend/backend/both after fix?** Frontend
-    - **Blocked on other issue:** The documentation task is the most recent request, but this is the primary blocking feature work.
+    - **Should Test frontend/backend/both after fix?** backend
+    - **Blocked on other issue:** None.
 
 **In progress Task List**:
-- **Task 1: Create Comprehensive Technical Reference Document (P0)**
-    - **Where to resume:** A new markdown file needs to be created. It should detail the v4.0 architecture, the 6-mode router, the War Room prompt, the RAG-integrated Company Library, the synchronized artifact generators, and the state of the frontend.
-    - **What will be achieved with this?** A complete technical snapshot of the application, fulfilling the user's latest request and providing a baseline for future development.
+- **Task 1: Complete Edge Case Enhancement Plan (P0)**
+    - **Where to resume:** Continue with Sprint 2 implementation as described in Issue 1.
+    - **What will be achieved with this?** The application will be able to intelligently parse and utilize information from complex, multi-document RFP packages.
     - **Status:** IN PROGRESS
-    - **Should Test frontend/backend/both after fix?** N/A
+    - **Should Test frontend/backend/both after fix?** backend
     - **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
 - **Upcoming Tasks:**
-    - **Frontend Refactor (P1):** Break down the monolithic  into a proper React component structure for maintainability and scalability.
+    - **Implement Sprint 3: Deep Content Analysis & Conflict Resolution (P1):** Once Sprint 2 is complete, implement the final phase of the plan. This involves creating an agent that can identify and resolve contradictions between an RFP and its amendments (e.g., changed due dates, updated requirements).
+    - **User Verification of RAG Fix (P1):** The RAG functionality for the Company Library was fixed but not tested. The next agent must prompt the user to provide an  (if needed) and test this by asking a question about an RFP that requires company context.
+
 - **Future Tasks:**
-    - **Persistent Data Store (P2):** Replace the in-memory  with a persistent database (e.g., MongoDB, PostgreSQL) to prevent data loss on service restarts.
-    - **Semantic Search (P3):** Upgrade the Company Library's keyword-based search to a more robust semantic search using vector embeddings.
+    - **Frontend Refactor (P2):** The monolithic  remains a source of technical debt. It should be broken down into a standard React component structure for maintainability.
+    - **Persistent Data Store (P3):** The current JSON file store was a stability refactor for a demo. For true production use, migrating to a robust database like PostgreSQL or a properly managed MongoDB instance should be reconsidered.
 
 **Completed work in this session**
-- **v4.0 Omni-Federal Architecture:** Implemented a new system prompt and expanded the router in  to handle 6 distinct Federal document modes (A-F).
-- **v4.0 Company Library Backend Refactor:** Upgraded  to support multi-file uploads, content hashing (SHA-256) for deduplication, and auto-versioning.
-- **v4.0 RFI/White Paper Mode (Mode E):** Added logic to the router, Excel parser, and system prompt to handle RFI/Market Research documents.
-- **War Room Intelligence Prompt:** Integrated a prompt focused on Traceability, Conflict Resolution, and Red Flag Detection into the chat agent.
-- **Company Library RAG Integration & Crash Fix:** Integrated the Company Library with the chat agent via RAG, then fixed a resulting  crash by adding safety protocols, installing , and correcting backend initialization order in .
-- **v3.1 Artifact Generator Sync:** Refactored  and  to use the same router logic as the chat agent, fixing data synchronization gaps.
-- **Excel Export Bug Fix:** Patched  to correctly sanitize cell content, resolving an Excel formula corruption error.
-- **v3.0 Router-Based Architecture:** Re-architected the backend to use a Router that classifies RFPs and applies specific protocols, moving beyond a one-size-fits-all approach.
+- **Stability Refactor to JSON Store:** Ripped out the entire MongoDB/motor implementation and replaced it with a synchronous, file-based JSON storage system () to ensure application stability. This included removing all  database logic from .
+- **Pathing and Permission Fixes:** Corrected file pathing logic in  to use relative paths, resolving deployment crashes due to permission errors.
+- **Company Library v4.0 UI:** Implemented the full frontend for the Company Library in , including a drag-and-drop zone, a file staging list with tagging, and a document grid for viewing uploaded files.
+- **RAG Integration Regression Fix:** Diagnosed and fixed a critical bug where the chat agent was no longer querying the Company Library. Re-integrated the query logic in .
+- **Investor Demo Collateral:** Created and iteratively refined several documents for an investor demo (, , ) based on user feedback.
+- **Technical As-Built Document:** Generated a comprehensive  document detailing the entire application architecture and feature set.
+- **Edge Case Plan & Sprint 1 Implementation:** Analyzed user requirements for multi-document RFPs, created a 3-sprint plan, and fully implemented Sprint 1 (Bundle Detection), including a new  agent and API updates.
 
 **Earlier issues found/mentioned but not fixed**
 - **Issue 1: Monolithic Frontend Architecture**
     - **Debug checklist:** Plan a refactor to move from  to a standard  structure with components, hooks, and services.
-    - **Why to solve this issue and what will be achieved with this?** The current single-file frontend is extremely difficult to maintain, debug, and expand. A refactor is critical for long-term project health.
+    - **Why to solve this issue and what will be achieved with this?** The current single-file frontend is difficult to maintain and expand. A refactor is critical for long-term project health.
     - **Should Test frontend/backend/both after fix:** Frontend
     - **Is recurring issue?** Y
-- **Issue 2: In-memory Data Store**
-    - **Debug checklist:** Design a database schema for RFP sessions and their associated data. Replace calls to the in-memory  dictionary in  with database operations.
-    - **Why to solve this issue and what will be achieved with this?** The current in-memory store ( in ) loses all data on server restart, making the application unsuitable for production use.
+- **Issue 2: Non-Production Database**
+    - **Debug checklist:** Re-evaluate the decision to use a JSON file store. Plan a migration to a production-grade database when stability is less critical than scalability and performance.
+    - **Why to solve this issue and what will be achieved with this?** The JSON store is not suitable for concurrent use or large datasets. A proper database is needed for a production environment.
     - **Should Test frontend/backend/both after fix:** Backend
     - **Is recurring issue?** Y
 
@@ -78,51 +84,59 @@ The application is a full-stack project with a FastAPI backend () and a monolith
 
 
 **Key Technical Concepts**
-- **Router-Based Architecture:** A Super-Router in  classifies RFPs into 6 modes (A-F) to apply specialized analysis protocols.
-- **Retrieval-Augmented Generation (RAG):** The chat agent queries the  to inject relevant company capabilities and past performance into the LLM context, enabling informed responses.
-- **Forensic Prompt Engineering:** System prompts are designed for deep analysis, including conflict resolution between amended documents, traceability of requirements, and flagging of contractual risks.
-- **Content Hashing:** SHA-256 hashing is used in  to create a fingerprint of each uploaded file, preventing duplicates.
+- **File-Based JSON Datastore:** The application was refactored to use a simple, synchronous JSON file-based database for stability, eliminating the  complexity and external dependency of MongoDB.
+- **RFP Bundle Detection:** A new concept where an upload of multiple files is treated as a single bundle. An agent () classifies each file's role within the RFP package.
+- **Retrieval-Augmented Generation (RAG):** The chat agent queries both the RFP documents and the Company Library to provide contextually rich answers. This feature was broken and subsequently fixed.
 
 **key DB schema**
-- **No Database:** The application uses an in-memory Python dictionary ( in ) for RFP session data and a file-based JSON index for the Company Library ().
+- The application uses a file-based store in .
+  - **rfps.json:** A dictionary where keys are  and values are objects containing RFP metadata.
+  - **chat_history.json:** A dictionary storing chat messages, likely keyed by .
+  - **library.json:** An index of documents in the company library, containing metadata like hash, filename, and tags.
+
+**changes in tech stack**
+- **Database:** Major pivot from **MongoDB (, )** back to a **synchronous file-based JSON store**. All  database logic was removed.
 
 **All files**
-- : Heavily modified. Contains the core v4.0 Omni-Federal system prompt, the 6-mode router logic, and the RAG integration with the company library.
-- : Heavily modified to handle the initialization and integration of the Company Library, fixing several scope and ordering bugs.
-- : Heavily modified to implement the v4.0 backend refactor, including hashing, versioning, and improved parsing.
-- : Modified to add new Starter Chips for the various modes and library features. The bulk-upload UI is missing.
-- : Refactored to be mode-aware and support spreadsheet extraction.
-- : Refactored to generate mode-specific outlines.
-- : Patched to fix an Excel HYPERLINK export bug.
-- : Updated to include  and .
-- : Created to resolve a supervisor startup issue.
-
-**Areas that need refactoring**:
-- **/app/web/index.html:** This monolithic file is the largest source of technical debt. It needs to be broken down into a standard React project with separate components, especially for the complex Chat and Company Library UIs.
-
-**key api endpoints**
-- : The main endpoint for the RAG-enabled chat functionality.
-- : Endpoint for uploading documents to the Company Library. (Backend now supports multi-file, but frontend doesn't).
-- : Retrieves the status and document list for the Company Library.
+- : Created and then completely rewritten to implement , replacing the MongoDB  class.
+- : Heavily modified. All database calls were converted from  to synchronous. Startup/shutdown events were removed. Logic was added to handle multi-file uploads and integrate new agents.
+- : Modified to remove , ,  and add .
+- : Significantly refactored to implement the new Company Library React component.
+- : Modified to fix the broken RAG integration by re-connecting the library query logic.
+- : Created to implement Sprint 1.
+- : Created to begin Sprint 2.
+- , , , , : New documentation and demo files created.
 
 **Critical Info for New Agent**
-- **User is the Domain Expert:** The user provides highly specific, expert-level feedback and prompts. Trust their analysis and implement their directives closely.
-- **Architecture is Prompt-Driven:** The application's core logic resides in the v4.0 Omni-Federal system prompt in . Understanding this prompt is key to understanding the application.
-- **Company Library Frontend is Incomplete:** This is the most significant piece of unfinished work. The user wants a production-ready bulk upload feature, but only the backend is complete.
-- **Immediate Task:** The user's last request was to create a comprehensive technical document outlining the current state of the app. This should be the first priority.
+- **Stability Over Features:** The user prioritized stability for a demo, leading to the removal of MongoDB. Do not attempt to re-introduce a complex database without explicit user direction. The JSON store is the current source of truth.
+- **Follow the Plan:** The user has approved a multi-sprint Edge Case Enhancement Plan. Your immediate priority is to continue with Sprint 2.
+- **Verify the RAG Fix:** The fix for the Company Library chat integration has not been confirmed by the user. This is a critical feature and must be verified. Ask the user to test this as soon as possible.
+- **API Key Dependency:** Full chat functionality depends on a user-provided . The RAG fix cannot be tested without it.
 
 **documents created in this job**
-- 
-- 
-- 
-- 
-- 
+- /app/INVESTOR_DEMO_SCRIPT.md
+- /app/QUICK_START_CARD.md
+- /app/web/demo.html
+- /app/TECHNICAL_AS_BUILT.md
+- /app/EDGE_CASE_ENHANCEMENT_PLAN.md
+- /app/DEPLOYMENT_GUIDE.md
 
 **Last 5 User Messages and any pending user messages**
-1.  **User:** Provided a prompt to fix a  crash when querying the Company Library. **Status: Implemented.**
-2.  **User:** Requested a v4.0 refactor of the Company Library to add multi-file drag-and-drop, duplicate prevention, and a document table view. **Status: Partially Implemented (Backend complete, Frontend pending).**
-3.  **User (pending):** Requested the creation of a comprehensive technical document to capture 100% of the current app's functionality. **Status: IN PROGRESS.**
+1.  **User:** Requested a comprehensive technical as-built document. **Status: Completed.**
+2.  **User:** Provided an analysis of a complex RFP and asked for a plan to handle such edge cases. **Status: Completed.**
+3.  **User:** Approved the plan and said, begin implementation. **Status: In Progress.**
+4.  **User:** Approved moving to the next phase: proceed to Sprint 2: RFP Letter Extraction. **Status: In Progress.**
+5.  **User (pending from previous requests):** The user has not yet verified the fix for the RAG feature or tested the full end-to-end flow of the new Company Library UI.
 
 **Project Health Check:**
-- **Broken:** The Company Library feature is functionally broken from a user's perspective because the frontend for bulk-uploading and viewing documents is missing.
-- **Mocked:** None.</analysis>
+- **Broken:** The RAG (chat with company library) functionality is unverified. While the code fix is in, it's a critical feature that may still have issues.
+- **Mocked:** None.
+
+**Testing status**
+- **Testing agent used after significant changes:** NO
+- **Troubleshoot agent used after agent stuck in loop:** NO
+- **Test files created:** None
+- **Known regressions:** The RAG functionality was a major regression that was recently fixed but remains unverified.
+
+**What agent forgot to execute**
+The agent fixed the critical RAG regression but did not establish a clear plan to verify the fix with the user. It simply noted that an API key was needed and moved on to the next task. The next agent should prioritize this verification.</analysis>
