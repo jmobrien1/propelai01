@@ -217,6 +217,9 @@ class RequirementExtractor:
         self._compile_patterns()
         self._req_counter = 0
         self._seen_hashes = set()  # For duplicate detection
+        
+        # Load the VisibleThread-style requirement dictionary
+        self.req_dictionary = get_requirement_dictionary()
     
     def _compile_patterns(self):
         """Pre-compile regex patterns"""
