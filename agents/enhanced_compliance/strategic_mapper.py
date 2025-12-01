@@ -235,9 +235,6 @@ class StrategicMapper:
         elif req_type == RequirementType.COMPLIANCE or req_type == RequirementType.PROHIBITION:
             return "Confirm compliance and provide supporting documentation. Reference specific FAR/DFARS clauses as applicable."
         
-        elif req_type == RequirementType.PRICING:
-            return "Provide detailed pricing breakdown by CLIN/labor category. Justify rates with market data if requested."
-        
         else:
             if is_mandatory:
                 return "Provide clear statement of compliance with supporting evidence and documentation."
