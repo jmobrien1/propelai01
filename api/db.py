@@ -73,21 +73,37 @@ class Database:
     def rfps(self):
         """RFP collection - stores RFP metadata, requirements, state"""
         if self._db is None:
-            raise RuntimeError("Database not connected. Call await db.connect() first.")
+            # More helpful error message
+            raise RuntimeError(
+                "Database not connected. This usually means:\n"
+                "1. FastAPI startup event hasn't completed yet\n"
+                "2. MongoDB connection failed during startup\n"
+                "Check logs for '[DB] Connected to MongoDB' message"
+            )
         return self._db.rfps
     
     @property
     def chat_history(self):
         """Chat history collection - stores message logs by rfp_id"""
         if self._db is None:
-            raise RuntimeError("Database not connected. Call await db.connect() first.")
+            raise RuntimeError(
+                "Database not connected. This usually means:\n"
+                "1. FastAPI startup event hasn't completed yet\n"
+                "2. MongoDB connection failed during startup\n"
+                "Check logs for '[DB] Connected to MongoDB' message"
+            )
         return self._db.chat_history
     
     @property
     def company_library(self):
         """Company library collection - stores document metadata"""
         if self._db is None:
-            raise RuntimeError("Database not connected. Call await db.connect() first.")
+            raise RuntimeError(
+                "Database not connected. This usually means:\n"
+                "1. FastAPI startup event hasn't completed yet\n"
+                "2. MongoDB connection failed during startup\n"
+                "Check logs for '[DB] Connected to MongoDB' message"
+            )
         return self._db.company_library
     
     @staticmethod
