@@ -506,6 +506,9 @@ class RequirementExtractor:
         """Extract requirements with section context"""
         requirements = []
         
+        # Clean section text first
+        cleaned_section_text = clean_text(section_text)
+        
         # Determine expected requirement type based on section
         section_letter = section_id.replace("section_", "").upper()
         
@@ -517,7 +520,7 @@ class RequirementExtractor:
             "F": RequirementType.DELIVERABLE,
         }.get(section_letter, RequirementType.PERFORMANCE)
         
-        sentences = self._split_into_sentences(section_text)
+        sentences = self._split_into_sentences(cleaned_section_text)
         
         for i, sentence in enumerate(sentences):
             # Apply quality filters
