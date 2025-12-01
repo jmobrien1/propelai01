@@ -247,13 +247,18 @@ class ComplianceMatrixRow:
     section_reference: str
     section_type: str                            # C, L, M, or attachment ID
     requirement_type: str
+    page_number: str = "UNSPEC"                  # Page number in source document
     
     # Response fields (to be filled by proposal team)
     compliance_status: str = "Not Started"       # Compliant, Partial, Non-Compliant, N/A
     response_text: str = ""
+    proposal_volume: str = ""                    # Which proposal volume (I, II, III, IV)
     proposal_section: str = ""                   # Where addressed in proposal
+    win_theme: str = ""                          # Strategic win theme
+    response_strategy: str = ""                  # How to respond
     assigned_owner: str = ""
-    evidence_required: List[str] = field(default_factory=list)
+    evidence_required: str = ""                  # What evidence is needed
+    proof_points: str = ""                       # Discriminators/proof points
     
     # Traceability
     related_requirements: List[str] = field(default_factory=list)
@@ -262,6 +267,7 @@ class ComplianceMatrixRow:
     # Priority/risk
     priority: str = "Medium"                     # High, Medium, Low
     risk_if_non_compliant: str = ""
+    mandatory_desirable: str = "Mandatory"       # Mandatory or Desirable
     
     notes: str = ""
 
