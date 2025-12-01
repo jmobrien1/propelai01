@@ -4,18 +4,38 @@
 
 ---
 
-## 2-Step Demo (2 Minutes)
+## 🔥 The Killer Feature
 
-### 1️⃣ Upload Your RFP
+**Ask questions about an RFP in the context of YOUR company:**
+- "Do WE have the right experience?"
+- "Can WE meet these requirements?"
+- "What are OUR gaps?"
+
+This is **intelligent proposal analysis**, not generic AI chat.
+
+---
+
+## 3-Step Demo (3 Minutes)
+
+### 1️⃣ Upload YOUR Company Docs (START HERE!)
 - Go to https://propelai01.onrender.com/
-- **Drag & drop** any PDF/DOCX government RFP
-- Wait for upload ⏱️ (automatically processes)
+- Click **"Library"** in sidebar
+- **Drag & drop** your company docs:
+  - Capabilities statements
+  - Past performance summaries
+  - Resumes/CVs
+  - Technical whitepapers
 
-### 2️⃣ Ask Questions via Chat
-- Click **"Chat"** in the sidebar
-- Try: `"What are the key requirements?"`
-- Try: `"What is the page limit?"`
-- Try: `"Summarize the evaluation criteria"`
+### 2️⃣ Upload an RFP
+- Go back to home
+- **Drag & drop** any government RFP (PDF/DOCX)
+- Wait for processing ⏱️
+
+### 3️⃣ Ask THE Question
+- Click **"Chat"** in sidebar
+- Try: `"Do our capabilities match this RFP?"`
+- Try: `"Should we bid on this?"`
+- Try: `"What are we missing?"`
 
 ---
 
