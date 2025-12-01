@@ -4,21 +4,15 @@
 
 ---
 
-## 3-Step Demo (2 Minutes)
+## 2-Step Demo (2 Minutes)
 
-### 1️⃣ Create RFP Project
-- Click **"New RFP"**
-- Name: "Demo Project"
-- Click **"Create"**
+### 1️⃣ Upload Your RFP
+- Go to https://propelai01.onrender.com/
+- **Drag & drop** any PDF/DOCX government RFP
+- Wait for upload ⏱️ (automatically processes)
 
-### 2️⃣ Upload Document
-- Click **"Upload Files"**
-- Drop any PDF/DOCX government RFP
-- Click **"Process RFP"**
-- Wait 60 seconds ⏱️
-
-### 3️⃣ Ask Questions
-- Go to **"Chat"** tab
+### 2️⃣ Ask Questions via Chat
+- Click **"Chat"** in the sidebar
 - Try: `"What are the key requirements?"`
 - Try: `"What is the page limit?"`
 - Try: `"Summarize the evaluation criteria"`
