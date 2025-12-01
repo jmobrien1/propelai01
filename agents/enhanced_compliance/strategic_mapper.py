@@ -217,10 +217,10 @@ class StrategicMapper:
             else:
                 return "Explain technical approach with architecture, implementation plan, and risk mitigation. Provide relevant examples."
         
-        elif req_type == RequirementType.PAST_PERFORMANCE:
+        elif req_type == RequirementType.QUALIFICATION:
             return "Provide 3-5 relevant contract references with similar scope, size, and complexity. Include metrics and client contact info."
         
-        elif req_type == RequirementType.STAFFING or req_type == RequirementType.LABOR_REQUIREMENT:
+        elif req_type == RequirementType.LABOR_REQUIREMENT:
             return "Present team structure, key personnel resumes, and labor mix. Highlight relevant certifications and experience."
         
         elif req_type == RequirementType.MANAGEMENT:
