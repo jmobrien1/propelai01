@@ -632,6 +632,46 @@ async def get_bundle_info(rfp_id: str):
     }
 
 
+
+@app.get("/api/rfp/{rfp_id}/letter")
+async def get_rfp_letter_data(rfp_id: str):
+    """
+    Get RFP letter extraction data (Phase 4.1 Sprint 2)
+    
+    Returns submission instructions extracted from RFP letter documents:
+    - Volume structure and page limits
+    - Formatting requirements
+    - Critical compliance flags
+    - Due dates and metadata
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+    
+    # Check if RFP letter data exists
+    if "rfp_letter_data" not in rfp or not rfp["rfp_letter_data"]:
+        # Check if this is a bundle with an RFP letter
+        if rfp.get("is_bundle"):
+            bundle_info = rfp.get("bundle_info", {})
+            if bundle_info.get("rfp_letter"):
+                return {
+                    "status": "not_extracted",
+                    "message": "RFP letter detected but not yet extracted. Process the RFP first.",
+                    "rfp_letter_file": bundle_info.get("rfp_letter", {}).get("filename")
+                }
+        
+        return {
+            "status": "not_available",
+            "message": "No RFP letter data available for this RFP"
+        }
+    
+    return {
+        "status": "available",
+        "rfp_id": rfp_id,
+        "data": rfp["rfp_letter_data"]
+    }
+
+
 # ============== Processing ==============
 
 def process_rfp_background(rfp_id: str):
