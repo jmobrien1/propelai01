@@ -24,21 +24,18 @@ PropelAI helps government contractors:
 
 ### Step 1: Upload Your First RFP Document (1 minute)
 
-**Option A - Use Our Sample:**
-1. Download this sample RFP: https://github.com/GSA/sam-api-examples/raw/master/sample-rfp.pdf
-2. In your RFP project, click **"Upload Files"**
-3. Drag and drop the PDF
-4. Click **"Upload"**
+1. Go to https://propelai01.onrender.com/
+2. You'll see **"Upload RFP Documents"** screen
+3. **Option A:** Download sample RFP: https://github.com/GSA/sam-api-examples/raw/master/sample-rfp.pdf
+4. **Option B:** Use your own government RFP (PDF, DOCX, Excel)
+5. **Drag and drop** the file into the upload area
+6. Wait for upload to complete
 
-**Option B - Use Your Own:**
-- Upload any government RFP (PDF, DOCX)
-- Works with: FAR-based solicitations, GSA schedules, State RFPs
-
-✅ **Result:** File uploads and processes
+✅ **Result:** File uploads and you'll see it in the workspace
 
 ---
 
-### Step 3: Extract Requirements - The Magic (2 minutes)
+### Step 2: Process & Extract Requirements - The Magic (2 minutes)
 
 1. After upload completes, click **"Process RFP"** button
 2. Select: **"Best Practices Extraction"** (recommended)
