@@ -27,22 +27,52 @@ This is true **proposal intelligence** - not just document Q&A.
 
 ---
 
-## 🎬 Quick Demo (5 Minutes)
+## 🎬 The "Wow Moment" Demo (5 Minutes)
 
-### Step 1: Upload Your First RFP Document (1 minute)
+### Step 1: Upload YOUR Company Documents First (1 minute)
+
+**This is the game-changer - start here:**
 
 1. Go to https://propelai01.onrender.com/
-2. You'll see **"Upload RFP Documents"** screen
-3. **Option A:** Download sample RFP: https://github.com/GSA/sam-api-examples/raw/master/sample-rfp.pdf
-4. **Option B:** Use your own government RFP (PDF, DOCX, Excel)
-5. **Drag and drop** the file into the upload area
-6. Wait for upload to complete
+2. Click **"Library"** in the left sidebar
+3. You'll see **"Company Library v4.0"**
+4. Click the **"Upload"** tab
+5. **Drag and drop** your company documents:
+   - ✅ Capabilities statement or company brochure
+   - ✅ Past performance summaries
+   - ✅ Resumes/CVs of key staff
+   - ✅ Technical whitepapers
+   - ✅ Case studies or project descriptions
 
-✅ **Result:** File uploads and you'll see it in the workspace
+6. For each file, select a **category** from dropdown:
+   - Capabilities
+   - Past Performance
+   - Resume
+   - Technical Approach
+   - Context/RFI
+
+7. Click **"Upload [N] Files"** button
+
+✅ **Result:** Your company's knowledge base is now loaded into AI memory
+
+**💡 Pro Tip:** The more docs you upload, the better the match analysis!
 
 ---
 
-### Step 2: Process & Extract Requirements - The Magic (2 minutes)
+### Step 2: Upload an RFP Document (1 minute)
+
+1. Click **"Upload RFP"** or go back to home
+2. You'll see **"Upload RFP Documents"** screen
+3. **Download sample RFP:** https://github.com/GSA/sam-api-examples/raw/master/sample-rfp.pdf
+4. **Or use your own:** Any government RFP (PDF, DOCX, Excel)
+5. **Drag and drop** the RFP file
+6. Wait for upload to complete (~10 seconds)
+
+✅ **Result:** RFP is uploaded and ready for analysis
+
+---
+
+### Step 3: Process & Extract Requirements (1 minute)
 
 1. After upload completes, look in the left sidebar
 2. Click **"Compliance Matrix"** or **"Upload RFP"** depending on what you see
