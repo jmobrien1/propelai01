@@ -320,6 +320,9 @@ class EnhancedComplianceAgent:
             key=lambda r: (r.source.section_id if r.source else "ZZZ", r.id)
         )
         
+        # Get strategic mapper
+        strategic_mapper = get_strategic_mapper()
+        
         for req in sorted_reqs:
             # Determine priority based on requirement type and confidence
             priority = self._determine_priority(req)
@@ -331,17 +334,33 @@ class EnhancedComplianceAgent:
                 if eval_req:
                     eval_factor = self._extract_factor_name(eval_req.text)
             
+            # Get strategic mapping (proposal volume, win theme, evidence, etc.)
+            strategic_mapping = strategic_mapper.map_requirement(req)
+            
+            # Determine if mandatory or desirable
+            mandatory_desirable = "Mandatory" if any(word in req.text.lower() for word in ['shall', 'must', 'will']) else "Desirable"
+            
+            # Get page number from source
+            page_number = str(req.source.page_number) if req.source and hasattr(req.source, 'page_number') and req.source.page_number else "UNSPEC"
+            
             row = ComplianceMatrixRow(
                 requirement_id=req.id,
                 requirement_text=req.text[:500],  # Truncate for matrix
                 section_reference=req.source.section_id if req.source else "",
                 section_type=req.source.document_type.value if req.source else "",
                 requirement_type=req.requirement_type.value,
+                page_number=page_number,
+                proposal_volume=strategic_mapping['proposal_volume'],
+                proposal_section=strategic_mapping['proposal_section'],
+                win_theme=strategic_mapping['win_theme'],
+                response_strategy=strategic_mapping['response_strategy'],
+                evidence_required=strategic_mapping['evidence_required'],
+                proof_points=strategic_mapping['proof_points'],
                 related_requirements=req.references_to[:5],
                 evaluation_factor=eval_factor,
-                evidence_required=self._identify_evidence(req),
                 priority=priority,
                 risk_if_non_compliant=self._assess_risk(req),
+                mandatory_desirable=mandatory_desirable,
             )
             matrix.append(row)
         
