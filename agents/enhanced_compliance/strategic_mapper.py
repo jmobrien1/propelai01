@@ -223,8 +223,8 @@ class StrategicMapper:
         elif req_type == RequirementType.LABOR_REQUIREMENT:
             return "Present team structure, key personnel resumes, and labor mix. Highlight relevant certifications and experience."
         
-        elif req_type == RequirementType.MANAGEMENT:
-            return "Outline management approach, quality processes, and governance structure. Show proven methodologies."
+        elif req_type == RequirementType.EVALUATION_CRITERION:
+            return "Understand evaluation factors and tailor response to scoring criteria. Provide quantifiable evidence."
         
         elif req_type == RequirementType.QUALIFICATION:
             return "Provide certifications, qualifications, and documentation. Include copies of certificates and credentials."
