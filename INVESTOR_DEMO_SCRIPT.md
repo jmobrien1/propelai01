@@ -22,21 +22,7 @@ PropelAI helps government contractors:
 
 ## 🎬 Quick Demo (5 Minutes)
 
-### Step 1: Create Your First RFP (30 seconds)
-
-1. Go to https://propelai01.onrender.com/
-2. Click **"New RFP"** button (top right)
-3. Fill in:
-   - **Name:** "Coast Guard Intelligence Support Demo"
-   - **Solicitation #:** "DEMO-2024-001"
-   - **Agency:** "US Coast Guard"
-4. Click **"Create"**
-
-✅ **Result:** You'll see your RFP project created
-
----
-
-### Step 2: Upload a Sample RFP Document (1 minute)
+### Step 1: Upload Your First RFP Document (1 minute)
 
 **Option A - Use Our Sample:**
 1. Download this sample RFP: https://github.com/GSA/sam-api-examples/raw/master/sample-rfp.pdf
