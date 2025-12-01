@@ -651,6 +651,41 @@ def process_rfp_background(rfp_id: str):
             store.update(rfp_id, {"status": "error"})
             return
         
+        # Phase 4.1 Sprint 2: Extract RFP Letter data if bundle detected
+        rfp_letter_data = None
+        if RFP_LETTER_EXTRACTION_AVAILABLE and rfp.get("is_bundle"):
+            bundle_info = rfp.get("bundle_info", {})
+            rfp_letter_doc = bundle_info.get("rfp_letter")
+            
+            if rfp_letter_doc:
+                store.set_status(rfp_id, "processing", 15, "Extracting RFP letter instructions...")
+                print(f"[RFP_LETTER] Found RFP letter in bundle: {rfp_letter_doc.get('filename')}")
+                
+                try:
+                    # Get the file path for RFP letter
+                    rfp_letter_path = rfp_letter_doc.get("file_path")
+                    
+                    if rfp_letter_path and Path(rfp_letter_path).exists():
+                        # Extract text from RFP letter (will need document parser)
+                        # For now, we'll use a placeholder that reads PDF/DOCX
+                        from agents.enhanced_compliance.parser import DocumentParser
+                        parser = DocumentParser()
+                        parsed_doc = parser.parse_file(rfp_letter_path)
+                        letter_text = parsed_doc.text
+                        
+                        # Extract submission instructions
+                        rfp_letter_data = extract_rfp_letter(letter_text, rfp_letter_doc.get("filename"))
+                        
+                        print(f"[RFP_LETTER] Extracted {rfp_letter_data['summary']['total_volumes']} volumes, "
+                              f"{rfp_letter_data['summary']['total_compliance_flags']} compliance flags")
+                        
+                        # Store in RFP data
+                        store.update(rfp_id, {"rfp_letter_data": rfp_letter_data})
+                    
+                except Exception as e:
+                    print(f"[RFP_LETTER] Extraction failed: {e}")
+                    # Continue processing even if letter extraction fails
+        
         # Process with Enhanced Compliance Agent
         store.set_status(rfp_id, "processing", 30, "Extracting requirements...")
         
