@@ -267,6 +267,28 @@ class BundleDetector:
         
         return metadata
     
+    def detect_from_files(self, file_paths: List[str]) -> DocumentBundle:
+        """
+        Convenience method: Detect bundle from file paths.
+        
+        Args:
+            file_paths: List of file path strings
+        
+        Returns:
+            DocumentBundle with all classified documents
+        """
+        # Convert file paths to file info dicts
+        files = []
+        for file_path in file_paths:
+            filename = Path(file_path).name
+            files.append({
+                'filename': filename,
+                'file_path': file_path,
+                'content_preview': None
+            })
+        
+        return self.detect_bundle(files)
+    
     def detect_bundle(self, files: List[Dict]) -> DocumentBundle:
         """
         Classify all files in bundle and organize.
