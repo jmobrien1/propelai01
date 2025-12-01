@@ -302,6 +302,8 @@ class RFPLetterExtractor:
     
     def _extract_formatting_rules(self, text: str):
         """Extract formatting requirements"""
+        seen_rules = set()  # Track unique rules to avoid duplicates
+        
         # Font family and size
         for pattern in self.FONT_PATTERNS:
             matches = re.finditer(pattern, text, re.IGNORECASE)
@@ -312,20 +314,26 @@ class RFPLetterExtractor:
                     family_match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', match.group(0))
                     
                     if size_match:
-                        rule = FormattingRule(
-                            rule_type=FormattingConstraint.FONT_SIZE,
-                            value=f"{size_match.group(1)} pt",
-                            source_text=match.group(0)
-                        )
-                        self.formatting_rules.append(rule)
+                        rule_key = ('font_size', f"{size_match.group(1)} pt")
+                        if rule_key not in seen_rules:
+                            rule = FormattingRule(
+                                rule_type=FormattingConstraint.FONT_SIZE,
+                                value=f"{size_match.group(1)} pt",
+                                source_text=match.group(0).strip()
+                            )
+                            self.formatting_rules.append(rule)
+                            seen_rules.add(rule_key)
                     
                     if family_match and family_match.group(1).lower() not in ['point', 'inch']:
-                        rule = FormattingRule(
-                            rule_type=FormattingConstraint.FONT_FAMILY,
-                            value=family_match.group(1),
-                            source_text=match.group(0)
-                        )
-                        self.formatting_rules.append(rule)
+                        rule_key = ('font_family', family_match.group(1))
+                        if rule_key not in seen_rules:
+                            rule = FormattingRule(
+                                rule_type=FormattingConstraint.FONT_FAMILY,
+                                value=family_match.group(1),
+                                source_text=match.group(0).strip()
+                            )
+                            self.formatting_rules.append(rule)
+                            seen_rules.add(rule_key)
         
         # Margins
         for pattern in self.MARGIN_PATTERNS:
