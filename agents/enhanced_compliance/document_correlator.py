@@ -6,9 +6,12 @@ Correlates requirements across multiple documents in an RFP bundle.
 Links base solicitation → amendments → attachments → RFP letter.
 """
 
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, TYPE_CHECKING
 from datetime import datetime
 import re
+
+if TYPE_CHECKING:
+    from .bundle_detector import DocumentBundle
 
 
 class RequirementSource:
