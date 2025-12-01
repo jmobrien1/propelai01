@@ -926,7 +926,8 @@ class RFPChatAgent:
         self,
         question: str,
         context_chunks: List[DocumentChunk],
-        chat_history: Optional[List[ChatMessage]] = None
+        chat_history: Optional[List[ChatMessage]] = None,
+        additional_context: str = ""
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Generate an answer using Claude API based on retrieved context.
@@ -935,11 +936,12 @@ class RFPChatAgent:
             question: User's question
             context_chunks: Retrieved relevant chunks
             chat_history: Previous chat messages for context
+            additional_context: Additional context from Company Library (v4.0)
             
         Returns:
             Tuple of (answer_text, sources_list)
         """
-        if not context_chunks:
+        if not context_chunks and not additional_context:
             return (
                 "I don't have enough information in the uploaded RFP documents to answer that question. "
                 "Could you try rephrasing or asking about a different aspect of the RFP?",
@@ -965,6 +967,10 @@ class RFPChatAgent:
                 "file": chunk.metadata.get("source_file", "Unknown")
             })
             total_length += len(chunk_text)
+        
+        # v4.0: Add Company Library context if available
+        if additional_context:
+            context_parts.append(additional_context)
         
         context = "\n\n".join(context_parts)
         
