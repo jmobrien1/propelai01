@@ -18,8 +18,3 @@ httpx>=0.24.0
 # AI/LLM Integration (v2.12 - Chat feature)
 anthropic>=0.21.0
 pandas>=2.0.0
-
-# Database (Phase 5 - Production Hardening)
-motor>=3.3.0
-dnspython>=2.3.0
-pymongo>=4.3.3

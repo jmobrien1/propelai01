@@ -1,151 +1,186 @@
 """
-MongoDB Database Layer - Singleton Pattern
-Handles all database operations for PropelAI
+Local File-Based JSON Database
+Stable, zero-dependency persistence for PropelAI
 """
 
 import os
-from typing import Optional
-
-try:
-    from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-    MOTOR_AVAILABLE = True
-except ImportError as e:
-    print(f"[DB] WARNING: motor not available: {e}")
-    print("[DB] Please install: pip install motor>=3.3.0 dnspython>=2.3.0 pymongo>=4.3.3")
-    MOTOR_AVAILABLE = False
-    AsyncIOMotorClient = None
-    AsyncIOMotorDatabase = None
+import json
+import threading
+from typing import Dict, List, Any, Optional
+from pathlib import Path
+from datetime import datetime
 
 
-class Database:
+class JSONFileDB:
     """
-    Singleton MongoDB connection manager using AsyncIO Motor.
+    Simple file-based JSON storage with immediate persistence.
     
-    Provides access to collections:
-    - rfps: RFP metadata, requirements, and state
-    - chat_history: Message logs linked by rfp_id
-    - company_library: Document metadata and content
+    Storage:
+    - rfps.json: RFP metadata and requirements
+    - chat_history.json: Chat messages by RFP ID
+    - library.json: Company library metadata
+    
+    All data is loaded into memory on init and written to disk on every change.
+    Thread-safe with simple locking.
     """
     
-    _instance: Optional['Database'] = None
-    _client: Optional[AsyncIOMotorClient] = None
-    _db: Optional[AsyncIOMotorDatabase] = None
-    
-    def __new__(cls):
-        """Singleton pattern - only one instance"""
-        if cls._instance is None:
-            cls._instance = super(Database, cls).__new__(cls)
-        return cls._instance
-    
-    async def connect(self):
-        """Initialize MongoDB connection"""
-        if not MOTOR_AVAILABLE:
-            print("[DB] ERROR: Motor not installed. MongoDB features disabled.")
-            print("[DB] Install with: pip install motor>=3.3.0 dnspython>=2.3.0 pymongo>=4.3.3")
-            return
+    def __init__(self, data_dir: str = "/app/outputs/data"):
+        """Initialize JSON file database"""
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
         
-        if self._client is None:
-            mongo_url = os.getenv("MONGO_URL")
-            if not mongo_url:
-                print("[DB] WARNING: MONGO_URL not set. Using default: mongodb://localhost:27017/propelai")
-                mongo_url = "mongodb://localhost:27017/propelai"
-            
+        # File paths
+        self.rfps_file = self.data_dir / "rfps.json"
+        self.chat_history_file = self.data_dir / "chat_history.json"
+        self.library_file = self.data_dir / "library.json"
+        
+        # Thread locks for write safety
+        self._rfps_lock = threading.Lock()
+        self._chat_lock = threading.Lock()
+        self._library_lock = threading.Lock()
+        
+        # Load data into memory
+        self._rfps_data = self._load_json(self.rfps_file, {})
+        self._chat_history_data = self._load_json(self.chat_history_file, {})
+        self._library_data = self._load_json(self.library_file, {})
+        
+        print(f"[DB] JSONFileDB initialized at {self.data_dir}")
+        print(f"[DB] Loaded {len(self._rfps_data)} RFPs, {len(self._chat_history_data)} chat histories")
+    
+    def _load_json(self, file_path: Path, default: Any) -> Any:
+        """Load JSON file or return default if not exists"""
+        if file_path.exists():
             try:
-                self._client = AsyncIOMotorClient(mongo_url)
-                # Get database name from URL or default to 'propelai'
-                db_name = mongo_url.split('/')[-1].split('?')[0] if '/' in mongo_url else 'propelai'
-                self._db = self._client[db_name]
-                
-                print(f"[DB] Connected to MongoDB: {db_name}")
+                with open(file_path, 'r') as f:
+                    return json.load(f)
             except Exception as e:
-                print(f"[DB] ERROR: Failed to connect to MongoDB: {e}")
-                print("[DB] Application will continue but database features may be limited")
+                print(f"[DB] Warning: Could not load {file_path.name}: {e}")
+                return default
+        return default
     
-    async def close(self):
-        """Close MongoDB connection"""
-        if self._client:
-            self._client.close()
-            self._client = None
-            self._db = None
-            print("[DB] MongoDB connection closed")
+    def _save_json(self, file_path: Path, data: Any):
+        """Save data to JSON file with atomic write"""
+        temp_file = file_path.with_suffix('.tmp')
+        try:
+            with open(temp_file, 'w') as f:
+                json.dump(data, f, indent=2, default=str)
+            temp_file.replace(file_path)  # Atomic rename
+        except Exception as e:
+            print(f"[DB] Error saving {file_path.name}: {e}")
+            if temp_file.exists():
+                temp_file.unlink()
     
-    @property
-    def rfps(self):
-        """RFP collection - stores RFP metadata, requirements, state"""
-        if self._db is None:
-            # More helpful error message
-            raise RuntimeError(
-                "Database not connected. This usually means:\n"
-                "1. FastAPI startup event hasn't completed yet\n"
-                "2. MongoDB connection failed during startup\n"
-                "Check logs for '[DB] Connected to MongoDB' message"
-            )
-        return self._db.rfps
+    # ============== RFPs Collection ==============
     
-    @property
-    def chat_history(self):
-        """Chat history collection - stores message logs by rfp_id"""
-        if self._db is None:
-            raise RuntimeError(
-                "Database not connected. This usually means:\n"
-                "1. FastAPI startup event hasn't completed yet\n"
-                "2. MongoDB connection failed during startup\n"
-                "Check logs for '[DB] Connected to MongoDB' message"
-            )
-        return self._db.chat_history
-    
-    @property
-    def company_library(self):
-        """Company library collection - stores document metadata"""
-        if self._db is None:
-            raise RuntimeError(
-                "Database not connected. This usually means:\n"
-                "1. FastAPI startup event hasn't completed yet\n"
-                "2. MongoDB connection failed during startup\n"
-                "Check logs for '[DB] Connected to MongoDB' message"
-            )
-        return self._db.company_library
-    
-    @staticmethod
-    def serialize_doc(doc: dict) -> dict:
-        """
-        Convert MongoDB document to Pydantic-compatible format.
-        Converts ObjectId '_id' to string 'id' and removes '_id'.
-        
-        Args:
-            doc: MongoDB document dict
+    def rfps_insert_one(self, document: Dict) -> Dict:
+        """Insert RFP document"""
+        with self._rfps_lock:
+            rfp_id = document.get('id')
+            if not rfp_id:
+                raise ValueError("RFP document must have 'id' field")
             
-        Returns:
-            Serialized dict with 'id' field
-        """
-        if doc is None:
-            return None
-        
-        # Make a copy to avoid modifying original
-        result = dict(doc)
-        
-        # Convert ObjectId to string if present
-        if '_id' in result:
-            if not result.get('id'):
-                # Use _id as id if id doesn't exist
-                result['id'] = str(result['_id'])
-            del result['_id']
-        
-        return result
+            self._rfps_data[rfp_id] = document
+            self._save_json(self.rfps_file, self._rfps_data)
+            return document
     
-    @staticmethod
-    def serialize_docs(docs: list) -> list:
-        """
-        Serialize a list of MongoDB documents.
-        
-        Args:
-            docs: List of MongoDB documents
+    def rfps_find_one(self, query: Dict) -> Optional[Dict]:
+        """Find one RFP by query"""
+        rfp_id = query.get('id')
+        if rfp_id:
+            return self._rfps_data.get(rfp_id)
+        return None
+    
+    def rfps_find(self, query: Dict = None) -> List[Dict]:
+        """Find all RFPs matching query"""
+        return list(self._rfps_data.values())
+    
+    def rfps_update_one(self, query: Dict, update: Dict) -> Dict:
+        """Update one RFP"""
+        with self._rfps_lock:
+            rfp_id = query.get('id')
+            if not rfp_id or rfp_id not in self._rfps_data:
+                return {'matched_count': 0, 'modified_count': 0}
             
-        Returns:
-            List of serialized documents
-        """
-        return [Database.serialize_doc(doc) for doc in docs]
+            # Apply $set updates
+            if '$set' in update:
+                self._rfps_data[rfp_id].update(update['$set'])
+            else:
+                self._rfps_data[rfp_id].update(update)
+            
+            self._save_json(self.rfps_file, self._rfps_data)
+            return {'matched_count': 1, 'modified_count': 1}
+    
+    def rfps_delete_one(self, query: Dict) -> Dict:
+        """Delete one RFP"""
+        with self._rfps_lock:
+            rfp_id = query.get('id')
+            if rfp_id and rfp_id in self._rfps_data:
+                del self._rfps_data[rfp_id]
+                self._save_json(self.rfps_file, self._rfps_data)
+                return {'deleted_count': 1}
+            return {'deleted_count': 0}
+    
+    # ============== Chat History Collection ==============
+    
+    def chat_history_insert_one(self, document: Dict) -> Dict:
+        """Insert chat message"""
+        with self._chat_lock:
+            rfp_id = document.get('rfp_id')
+            if not rfp_id:
+                raise ValueError("Chat document must have 'rfp_id' field")
+            
+            if rfp_id not in self._chat_history_data:
+                self._chat_history_data[rfp_id] = []
+            
+            self._chat_history_data[rfp_id].append(document)
+            self._save_json(self.chat_history_file, self._chat_history_data)
+            return document
+    
+    def chat_history_find(self, query: Dict) -> List[Dict]:
+        """Find chat messages for an RFP"""
+        rfp_id = query.get('rfp_id')
+        if rfp_id:
+            return self._chat_history_data.get(rfp_id, [])
+        return []
+    
+    # ============== Company Library Collection ==============
+    
+    def library_insert_one(self, document: Dict) -> Dict:
+        """Insert library document"""
+        with self._library_lock:
+            doc_id = document.get('id')
+            if not doc_id:
+                raise ValueError("Library document must have 'id' field")
+            
+            self._library_data[doc_id] = document
+            self._save_json(self.library_file, self._library_data)
+            return document
+    
+    def library_find(self, query: Dict = None) -> List[Dict]:
+        """Find all library documents"""
+        return list(self._library_data.values())
+    
+    def library_delete_one(self, query: Dict) -> Dict:
+        """Delete library document"""
+        with self._library_lock:
+            doc_id = query.get('id')
+            if doc_id and doc_id in self._library_data:
+                del self._library_data[doc_id]
+                self._save_json(self.library_file, self._library_data)
+                return {'deleted_count': 1}
+            return {'deleted_count': 0}
+    
+    # ============== Utility Methods ==============
+    
+    def get_stats(self) -> Dict:
+        """Get database statistics"""
+        return {
+            'rfps_count': len(self._rfps_data),
+            'chat_histories_count': len(self._chat_history_data),
+            'library_docs_count': len(self._library_data),
+            'storage_path': str(self.data_dir)
+        }
 
 
-# Global instance
-db = Database()
+# Global instance - available immediately at import time
+db = JSONFileDB()
