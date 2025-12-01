@@ -335,31 +335,58 @@ class ExcelExporter:
             # RFP Source
             section_ref = getattr(matrix_row, 'section_reference', '') or ''
             ws.cell(row=valid_row_idx, column=3, value=section_ref)
-            ws.cell(row=valid_row_idx, column=4, value="")  # Page - to be filled
-            ws.cell(row=valid_row_idx, column=5, value="")  # Source doc
+            
+            # Page number from strategic enhancement
+            page_num = getattr(matrix_row, 'page_number', 'UNSPEC') or 'UNSPEC'
+            ws.cell(row=valid_row_idx, column=4, value=page_num)
+            
+            # Source doc
+            source_doc = getattr(matrix_row, 'section_type', '') or ''
+            ws.cell(row=valid_row_idx, column=5, value=source_doc)
             
             # Classification
             req_type = getattr(matrix_row, 'requirement_type', 'performance') or 'performance'
             ws.cell(row=valid_row_idx, column=6, value=req_type.replace('_', ' ').title())
             
-            # Mandatory vs Desirable based on keywords in text
-            mandatory = self._is_mandatory(req_text)
-            ws.cell(row=valid_row_idx, column=7, value="Mandatory" if mandatory else "Desirable")
+            # Mandatory vs Desirable from strategic enhancement
+            mandatory_desirable = getattr(matrix_row, 'mandatory_desirable', 'Mandatory') or 'Mandatory'
+            ws.cell(row=valid_row_idx, column=7, value=mandatory_desirable)
+            mandatory = (mandatory_desirable == "Mandatory")
             
             priority = getattr(matrix_row, 'priority', 'Medium') or 'Medium'
             ws.cell(row=valid_row_idx, column=8, value=priority)
             
-            # Response Planning
-            ws.cell(row=valid_row_idx, column=9, value=getattr(matrix_row, 'proposal_section', '') or '')
-            ws.cell(row=valid_row_idx, column=10, value=getattr(matrix_row, 'compliance_status', 'Not Started') or 'Not Started')
-            ws.cell(row=valid_row_idx, column=11, value=getattr(matrix_row, 'response_text', '') or '')
+            # Response Planning - now populated with strategic data
+            proposal_section = getattr(matrix_row, 'proposal_section', '') or ''
+            # Combine volume and section for clarity
+            proposal_volume = getattr(matrix_row, 'proposal_volume', '') or ''
+            if proposal_volume and proposal_section:
+                full_proposal_ref = f"{proposal_volume} > {proposal_section}"
+            elif proposal_volume:
+                full_proposal_ref = proposal_volume
+            else:
+                full_proposal_ref = proposal_section
+            ws.cell(row=valid_row_idx, column=9, value=full_proposal_ref)
             
-            # Strategic columns (empty for team to fill)
-            ws.cell(row=valid_row_idx, column=12, value="")  # Win Theme
-            ws.cell(row=valid_row_idx, column=13, value="")  # Discriminator
-            ws.cell(row=valid_row_idx, column=14, value="")  # Proof Point
-            evidence = getattr(matrix_row, 'evidence_required', []) or []
-            ws.cell(row=valid_row_idx, column=15, value=", ".join(evidence) if isinstance(evidence, list) else str(evidence))
+            ws.cell(row=valid_row_idx, column=10, value=getattr(matrix_row, 'compliance_status', 'Not Started') or 'Not Started')
+            
+            # Response strategy from strategic mapper
+            response_strategy = getattr(matrix_row, 'response_strategy', '') or ''
+            ws.cell(row=valid_row_idx, column=11, value=response_strategy)
+            
+            # Strategic columns - NOW POPULATED
+            win_theme = getattr(matrix_row, 'win_theme', '') or ''
+            ws.cell(row=valid_row_idx, column=12, value=win_theme)
+            
+            ws.cell(row=valid_row_idx, column=13, value="")  # Discriminator - team to customize
+            
+            # Proof points from strategic mapper
+            proof_points = getattr(matrix_row, 'proof_points', '') or ''
+            ws.cell(row=valid_row_idx, column=14, value=proof_points)
+            
+            # Evidence required from strategic mapper
+            evidence = getattr(matrix_row, 'evidence_required', '') or ''
+            ws.cell(row=valid_row_idx, column=15, value=evidence)
             
             # Lifecycle
             ws.cell(row=valid_row_idx, column=16, value=getattr(matrix_row, 'assigned_owner', '') or '')
