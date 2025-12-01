@@ -85,7 +85,18 @@ Agent: E1 (Forked from previous session)
 
 ## Known Issues & Limitations
 
-### Issue 1: Document Parser Dependency
+### Issue 1: BundleDetector Missing Method (FIXED ✅)
+**Description:** `BundleDetector` class was missing the `detect_from_files` method that's called by `EnhancedComplianceAgent`
+
+**Impact:** HIGH - Processing RFP bundles would fail with AttributeError
+
+**Fix Applied:** Added `detect_from_files` method to BundleDetector class that converts file paths to the format expected by `detect_bundle`
+
+**Status:** ✅ FIXED (December 1, 2025)
+
+**Testing:** Verified locally, ready for deployment
+
+### Issue 2: Document Parser Dependency  
 **Description:** The API integration code references `DocumentParser` for extracting text from PDF/DOCX files, but this may not extract text if the parser isn't set up correctly.
 
 **Impact:** Medium - Letter extraction will fail silently if file parsing fails
