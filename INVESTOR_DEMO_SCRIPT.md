@@ -89,17 +89,18 @@ PropelAI helps government contractors:
 
 ---
 
-### Step 5: Company Library - Match Capabilities (30 seconds)
+### Step 4: Company Library - Match Capabilities (30 seconds)
 
-1. Click **"Library"** in sidebar
-2. Click **"Upload"** tab
-3. Try uploading:
-   - A capability statement
-   - Past performance summary
-   - Resume/CV
-   - Technical whitepaper
+1. Click **"Library"** in the left sidebar
+2. You'll see the Company Library v4.0 interface
+3. Click **"Upload"** tab at the top
+4. Drag and drop documents:
+   - Capability statements
+   - Past performance summaries
+   - Resumes/CVs
+   - Technical whitepapers
 
-4. Go back to **"Chat"** and ask:
+5. Go back to **"Chat"** and ask:
 ```
 "Do we have experience with similar intelligence support contracts?"
 ```
@@ -111,7 +112,7 @@ PropelAI helps government contractors:
 
 ---
 
-### Step 6: Export Compliance Matrix (Bonus - 30 seconds)
+### Step 5: Export Compliance Matrix (Bonus - 30 seconds)
 
 1. Go to **"Artifacts"** tab
 2. Click **"Generate Compliance Matrix"**
