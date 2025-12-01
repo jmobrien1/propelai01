@@ -60,19 +60,13 @@ class StrategicMapper:
     # Map requirement types to win themes
     REQUIREMENT_TO_WIN_THEME = {
         RequirementType.PERFORMANCE: WinTheme.TECHNICAL_EXCELLENCE,
-        RequirementType.TECHNICAL: WinTheme.TECHNICAL_EXCELLENCE,
-        RequirementType.SECURITY: WinTheme.SECURITY_COMPLIANCE,
         RequirementType.DELIVERABLE: WinTheme.AGILE_DELIVERY,
-        RequirementType.QUALITY: WinTheme.SUPERIOR_MANAGEMENT,
+        RequirementType.PERFORMANCE_METRIC: WinTheme.TECHNICAL_EXCELLENCE,
         RequirementType.LABOR_REQUIREMENT: WinTheme.QUALIFIED_PERSONNEL,
-        RequirementType.MANAGEMENT: WinTheme.SUPERIOR_MANAGEMENT,
-        RequirementType.STAFFING: WinTheme.QUALIFIED_PERSONNEL,
-        RequirementType.PAST_PERFORMANCE: WinTheme.PROVEN_PERFORMANCE,
         RequirementType.QUALIFICATION: WinTheme.QUALIFIED_PERSONNEL,
-        RequirementType.PRICING: WinTheme.COST_EFFECTIVENESS,
-        RequirementType.PAYMENT: WinTheme.COST_EFFECTIVENESS,
         RequirementType.COMPLIANCE: WinTheme.SECURITY_COMPLIANCE,
         RequirementType.EVALUATION_CRITERION: WinTheme.TECHNICAL_EXCELLENCE,
+        RequirementType.PROHIBITION: WinTheme.SECURITY_COMPLIANCE,
     }
     
     def __init__(self):
