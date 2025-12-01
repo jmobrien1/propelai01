@@ -255,14 +255,14 @@ class StrategicMapper:
         if 'clearance' in text_lower or 'security clearance' in text_lower:
             evidence_list.append("Security clearance documentation")
         
-        # Past performance
-        if req_type == RequirementType.PAST_PERFORMANCE:
+        # Past performance / qualifications
+        if req_type == RequirementType.QUALIFICATION:
             evidence_list.append("3-5 relevant contract references")
             evidence_list.append("Client contact information")
             evidence_list.append("Performance metrics and outcomes")
         
         # Staffing/personnel
-        if req_type == RequirementType.STAFFING or 'resume' in text_lower or 'key personnel' in text_lower:
+        if req_type == RequirementType.LABOR_REQUIREMENT or 'resume' in text_lower or 'key personnel' in text_lower:
             evidence_list.append("Resumes of key personnel")
             evidence_list.append("Professional certifications")
             evidence_list.append("Org chart")
