@@ -384,6 +384,8 @@ async def health_check():
             "semantic_ctm_export": "ready" if semantic_ctm_exporter else "not available",
             "best_practices_extractor": "ready" if best_practices_extractor else "not available",
             "best_practices_ctm_export": "ready" if best_practices_exporter else "not available",
+            "bundle_detection": "ready" if BUNDLE_DETECTION_AVAILABLE else "not available",
+            "document_correlation": "ready" if BUNDLE_DETECTION_AVAILABLE else "not available",
         }
     }
 
