@@ -798,7 +798,7 @@ def process_rfp_semantic_background(rfp_id: str):
 
 
 @app.post("/api/rfp/{rfp_id}/process-semantic")
-async def process_rfp_semantic(rfp_id: str):
+async def process_rfp_semantic(rfp_id: str, background_tasks: BackgroundTasks):
     """
     Start semantic processing of RFP documents (v2.8)
     
@@ -809,8 +809,6 @@ async def process_rfp_semantic(rfp_id: str):
     - Action verb and actor extraction
     - Cross-reference detection
     """
-    import asyncio
-    
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
@@ -826,7 +824,7 @@ async def process_rfp_semantic(rfp_id: str):
     
     # Start background processing
     store.set_status(rfp_id, "starting", 0, "Starting semantic processing...")
-    asyncio.create_task(process_rfp_semantic_background(rfp_id))
+    background_tasks.add_task(process_rfp_semantic_background, rfp_id)
     
     return {
         "status": "processing_started",
