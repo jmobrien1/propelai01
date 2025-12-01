@@ -215,14 +215,22 @@ class RFPLetterExtractor:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
                 if len(match.groups()) == 2:
-                    vol_id = match.group(1).upper()
+                    vol_id = match.group(1).upper().strip()
                     vol_name = match.group(2).strip()
                     
                     # Normalize volume ID (1 -> I, 2 -> II, etc.)
                     vol_id = self._normalize_volume_id(vol_id)
                     
+                    # Validate: Volume ID must be a valid Roman numeral or number
+                    if vol_id not in ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']:
+                        continue
+                    
                     # Clean volume name
                     vol_name = self._clean_volume_name(vol_name)
+                    
+                    # Skip if volume name is too short (likely a false positive)
+                    if len(vol_name) < 3:
+                        continue
                     
                     # Check if already exists
                     if not any(v.volume_id == vol_id for v in self.volumes):
