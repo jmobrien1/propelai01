@@ -44,6 +44,18 @@ from agents.enhanced_compliance import (
     export_to_excel
 )
 
+# Phase 4.1: Import bundle detection and correlation
+try:
+    from agents.enhanced_compliance.bundle_detector import BundleDetector, DocumentBundle
+    from agents.enhanced_compliance.document_correlator import DocumentCorrelator
+    BUNDLE_DETECTION_AVAILABLE = True
+    print("[STARTUP] Bundle detection available")
+except ImportError as e:
+    print(f"[STARTUP] Bundle detection not available: {e}")
+    BUNDLE_DETECTION_AVAILABLE = False
+    BundleDetector = None
+    DocumentCorrelator = None
+
 # v2.8: Import semantic extractor
 try:
     from agents.enhanced_compliance import (
