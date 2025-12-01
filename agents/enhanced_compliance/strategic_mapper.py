@@ -46,22 +46,15 @@ class StrategicMapper:
     # Map requirement types to proposal volumes
     REQUIREMENT_TO_VOLUME = {
         RequirementType.PERFORMANCE: ProposalVolume.VOLUME_1_TECHNICAL,
-        RequirementType.TECHNICAL: ProposalVolume.VOLUME_1_TECHNICAL,
-        RequirementType.SECURITY: ProposalVolume.VOLUME_1_TECHNICAL,
         RequirementType.DELIVERABLE: ProposalVolume.VOLUME_1_TECHNICAL,
-        RequirementType.DATA_REQUIREMENT: ProposalVolume.VOLUME_1_TECHNICAL,
-        RequirementType.QUALITY: ProposalVolume.VOLUME_2_MANAGEMENT,
+        RequirementType.PERFORMANCE_METRIC: ProposalVolume.VOLUME_1_TECHNICAL,
         RequirementType.LABOR_REQUIREMENT: ProposalVolume.VOLUME_2_MANAGEMENT,
-        RequirementType.MANAGEMENT: ProposalVolume.VOLUME_2_MANAGEMENT,
-        RequirementType.STAFFING: ProposalVolume.VOLUME_2_MANAGEMENT,
-        RequirementType.PAST_PERFORMANCE: ProposalVolume.VOLUME_3_PAST_PERFORMANCE,
         RequirementType.QUALIFICATION: ProposalVolume.VOLUME_3_PAST_PERFORMANCE,
-        RequirementType.PRICING: ProposalVolume.VOLUME_4_COST_PRICE,
-        RequirementType.PAYMENT: ProposalVolume.VOLUME_4_COST_PRICE,
         RequirementType.PROPOSAL_INSTRUCTION: ProposalVolume.VOLUME_5_ADMIN,
         RequirementType.FORMAT: ProposalVolume.VOLUME_5_ADMIN,
         RequirementType.COMPLIANCE: ProposalVolume.VOLUME_5_ADMIN,
         RequirementType.EVALUATION_CRITERION: ProposalVolume.VOLUME_1_TECHNICAL,
+        RequirementType.PROHIBITION: ProposalVolume.VOLUME_5_ADMIN,
     }
     
     # Map requirement types to win themes
