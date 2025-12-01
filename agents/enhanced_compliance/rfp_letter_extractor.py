@@ -354,29 +354,36 @@ class RFPLetterExtractor:
                         seen_rules.add(rule_key)
         
         # Line spacing
-        if re.search(r'single[-\s]spac', text, re.I):
+        single_match = re.search(r'single[-\s]spac', text, re.I)
+        if single_match and ('line_spacing', 'single') not in seen_rules:
             rule = FormattingRule(
                 rule_type=FormattingConstraint.LINE_SPACING,
                 value="single",
                 source_text="single-spaced"
             )
             self.formatting_rules.append(rule)
-        elif re.search(r'double[-\s]spac', text, re.I):
+            seen_rules.add(('line_spacing', 'single'))
+        
+        double_match = re.search(r'double[-\s]spac', text, re.I)
+        if double_match and ('line_spacing', 'double') not in seen_rules:
             rule = FormattingRule(
                 rule_type=FormattingConstraint.LINE_SPACING,
                 value="double",
                 source_text="double-spaced"
             )
             self.formatting_rules.append(rule)
+            seen_rules.add(('line_spacing', 'double'))
         
         # Page size
-        if re.search(r'8\.5\s*x\s*11', text, re.I) or re.search(r'8-1/2\s*x\s*11', text, re.I):
+        page_size_match = re.search(r'8\.5\s*x\s*11', text, re.I) or re.search(r'8-1/2\s*x\s*11', text, re.I)
+        if page_size_match and ('page_size', '8.5 x 11 inches') not in seen_rules:
             rule = FormattingRule(
                 rule_type=FormattingConstraint.PAGE_SIZE,
                 value="8.5 x 11 inches",
                 source_text="8.5 x 11 inch paper"
             )
             self.formatting_rules.append(rule)
+            seen_rules.add(('page_size', '8.5 x 11 inches'))
     
     def _detect_compliance_flags(self, text: str, filename: str):
         """Detect critical compliance rules"""
