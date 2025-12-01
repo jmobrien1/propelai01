@@ -1,16 +1,23 @@
 # 🚀 PropelAI - 5-Minute Investor Demo
 
-**Welcome!** This is a quick walkthrough to experience PropelAI's AI-powered proposal intelligence platform.
+**Welcome!** This walkthrough shows PropelAI's game-changing capability: **asking questions about an RFP in the context of YOUR company's capabilities and experience.**
 
 ---
 
-## 🎯 What You'll See
+## 🎯 What Makes This Different?
 
-PropelAI helps government contractors:
-1. **Extract requirements** from complex RFPs automatically
-2. **Chat with RFP documents** like you're talking to an expert
-3. **Generate compliance matrices** in seconds (not weeks)
-4. **Match capabilities** to opportunities using AI
+**Generic AI (ChatGPT/Claude):**
+- Only knows what's in the RFP
+- Can't tell you if YOU can win it
+
+**PropelAI:**
+- Uploads YOUR company docs (capabilities, past performance, resumes)
+- Uploads the RFP
+- **Answers: "Do WE have the right experience?"**
+- **Answers: "Can WE meet these requirements?"**
+- **Provides: Gap analysis specific to YOUR company**
+
+This is true **proposal intelligence** - not just document Q&A.
 
 ---
 
