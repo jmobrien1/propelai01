@@ -6,6 +6,13 @@ Agent: E1 (Forked from previous session)
 
 ---
 
+## 🔥 Critical Fix Applied (Dec 1, 2025)
+**Issue:** User reported deployment error: `'BundleDetector' object has no attribute 'detect_from_files'`  
+**Fix:** Added missing `detect_from_files` method to BundleDetector class  
+**Status:** ✅ Fixed and tested locally - Ready for redeployment to Render
+
+---
+
 ## Current Sprint: Phase 4.1 - Sprint 2 (RFP Letter Extraction)
 
 ### Testing Protocol
