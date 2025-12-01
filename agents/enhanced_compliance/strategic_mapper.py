@@ -207,7 +207,7 @@ class StrategicMapper:
         is_mandatory = any(word in text_lower for word in ['shall', 'must', 'required'])
         
         # Generate strategy based on requirement type
-        if req_type == RequirementType.TECHNICAL or req_type == RequirementType.PERFORMANCE:
+        if req_type == RequirementType.PERFORMANCE or req_type == RequirementType.PERFORMANCE_METRIC:
             if 'security' in text_lower:
                 return "Demonstrate security certifications and compliance framework. Provide security architecture diagrams."
             elif 'migration' in text_lower or 'transition' in text_lower:
