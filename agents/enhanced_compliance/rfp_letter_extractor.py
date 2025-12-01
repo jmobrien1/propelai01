@@ -343,12 +343,15 @@ class RFPLetterExtractor:
                 size_match = re.search(r'(\d+|one)', match.group(0), re.I)
                 if size_match:
                     size = '1' if size_match.group(1).lower() == 'one' else size_match.group(1)
-                    rule = FormattingRule(
-                        rule_type=FormattingConstraint.MARGINS,
-                        value=f"{size} inch",
-                        source_text=match.group(0)
-                    )
-                    self.formatting_rules.append(rule)
+                    rule_key = ('margins', f"{size} inch")
+                    if rule_key not in seen_rules:
+                        rule = FormattingRule(
+                            rule_type=FormattingConstraint.MARGINS,
+                            value=f"{size} inch",
+                            source_text=match.group(0).strip()
+                        )
+                        self.formatting_rules.append(rule)
+                        seen_rules.add(rule_key)
         
         # Line spacing
         if re.search(r'single[-\s]spac', text, re.I):
