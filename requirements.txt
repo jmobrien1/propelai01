@@ -20,5 +20,6 @@ anthropic>=0.21.0
 pandas>=2.0.0
 
 # Database (Phase 5 - Production Hardening)
-motor>=3.0.0
-dnspython>=2.0.0
+motor>=3.3.0
+dnspython>=2.3.0
+pymongo>=4.3.3
