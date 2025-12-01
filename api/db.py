@@ -5,7 +5,16 @@ Handles all database operations for PropelAI
 
 import os
 from typing import Optional
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+    MOTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"[DB] WARNING: motor not available: {e}")
+    print("[DB] Please install: pip install motor>=3.3.0 dnspython>=2.3.0 pymongo>=4.3.3")
+    MOTOR_AVAILABLE = False
+    AsyncIOMotorClient = None
+    AsyncIOMotorDatabase = None
 
 
 class Database:
