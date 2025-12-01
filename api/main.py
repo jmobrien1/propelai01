@@ -451,7 +451,7 @@ async def get_rfp(rfp_id: str):
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
-    return {
+    response = {
         "id": rfp["id"],
         "name": rfp["name"],
         "solicitation_number": rfp["solicitation_number"],
@@ -465,6 +465,12 @@ async def get_rfp(rfp_id: str):
         "created_at": rfp["created_at"],
         "updated_at": rfp["updated_at"]
     }
+    
+    # Include RFP letter data if available (Phase 4.1 Sprint 2)
+    if "rfp_letter_data" in rfp and rfp["rfp_letter_data"]:
+        response["rfp_letter_data"] = rfp["rfp_letter_data"]
+    
+    return response
 
 
 @app.delete("/api/rfp/{rfp_id}")
