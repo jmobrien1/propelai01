@@ -168,30 +168,42 @@ This is true **proposal intelligence** - not just document Q&A.
 
 ---
 
-### Step 5: Export Compliance Matrix (Bonus - 30 seconds)
+### Step 5: Also Try These "Basic" Questions (Still Useful!)
+
+**About the RFP itself:**
+```
+"What are the evaluation factors and their weights?"
+"What is the page limit for the technical volume?"
+"What certifications are required?"
+"What's the submission deadline?"
+"Summarize Section L instructions"
+```
+
+✅ AI answers with source citations and page numbers
+
+---
+
+### Step 6: Export Compliance Matrix (Bonus - 30 seconds)
 
 1. Look for **"Compliance Matrix"** or **"Artifacts"** in the sidebar
-2. Click to view the generated matrix
+2. Click to view the auto-generated matrix
 3. Look for **"Export"** or **"Download"** button
 4. Choose format: **Excel** or **CSV**
 
-✅ **Result:** Get a production-ready Excel file with:
-- Section L Compliance Matrix
-- Section M Evaluation Alignment
-- Technical Requirements (Section C/PWS)
-- Cross-reference mapping
+✅ **Result:** Production-ready Excel with L-M-C matrices
 
 ---
 
 ## 💡 Key Features You Just Experienced
 
-| Feature | Old Way | PropelAI Way |
-|---------|---------|--------------|
-| **Requirements Extraction** | 2-3 days manually | 60 seconds with AI |
-| **Compliance Matrix** | 1-2 weeks | Download in 30 seconds |
-| **RFP Analysis** | Read 500 pages yourself | Ask questions in chat |
-| **Capability Matching** | Manual cross-check | AI searches library |
-| **Amendment Tracking** | Hope you caught it | Auto-detect conflicts |
+| Feature | Generic AI | PropelAI |
+|---------|-----------|----------|
+| **RFP Q&A** | Answers from RFP only | ✅ Answers from RFP |
+| **Company Context** | ❌ No company knowledge | ✅ **Searches YOUR docs** |
+| **Gap Analysis** | ❌ Can't do it | ✅ **Shows what you're missing** |
+| **Capability Match** | ❌ Manual work | ✅ **Auto-matches RFP ↔ Library** |
+| **Bid/No-Go** | ❌ You decide alone | ✅ **AI recommends with evidence** |
+| **Win Themes** | ❌ Generic advice | ✅ **Based on YOUR strengths** |
 
 ---
 
