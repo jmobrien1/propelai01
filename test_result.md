@@ -6,10 +6,25 @@ Agent: E1 (Forked from previous session)
 
 ---
 
-## 🔥 Critical Fix Applied (Dec 1, 2025)
-**Issue:** User reported deployment error: `'BundleDetector' object has no attribute 'detect_from_files'`  
+## 🔥 Critical Fixes Applied (Dec 1, 2025)
+
+### Fix 1: Missing detect_from_files Method
+**Issue:** `'BundleDetector' object has no attribute 'detect_from_files'`  
 **Fix:** Added missing `detect_from_files` method to BundleDetector class  
-**Status:** ✅ Fixed and tested locally - Ready for redeployment to Render
+**Status:** ✅ Fixed
+
+### Fix 2: DocumentBundle Incompatibility
+**Issue:** `'DocumentBundle' object has no attribute 'main_document'`  
+**Root Cause:** Two incompatible data structures:
+- `DocumentBundle` from `bundle_detector.py` (new, uses `main_solicitation` dict)
+- `RFPBundle` from `models.py` (legacy, uses `main_document` string)
+
+**Fixes Applied:**
+1. Updated `parser.parse_bundle()` to handle both bundle formats
+2. Updated `agent.process_folder()` to extract file paths from dict format
+3. Mapped bundle_detector DocumentType enum to models DocumentType enum
+
+**Status:** ✅ Fixed and tested - Ready for redeployment to Render
 
 ---
 
