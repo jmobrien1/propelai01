@@ -24,7 +24,53 @@ Agent: E1 (Forked from previous session)
 2. Updated `agent.process_folder()` to extract file paths from dict format
 3. Mapped bundle_detector DocumentType enum to models DocumentType enum
 
-**Status:** ✅ Fixed and tested - Ready for redeployment to Render
+**Status:** ✅ Fixed
+
+### Fix 3: Missing solicitation_number attribute
+**Issue:** `'DocumentBundle' object has no attribute 'solicitation_number'`  
+**Fix:** Added safe fallback logic to check multiple sources for solicitation number
+**Status:** ✅ Fixed
+
+---
+
+## 🚀 Sprint 1: Foundation Enhancements (Dec 1, 2025)
+
+### Enhancement 1: HTML Entity Decoding ✅
+**Problem:** Excel files contained HTML entities (`&#8220;`, `&#8217;`) instead of proper quotes
+**Solution:** 
+- Created `text_cleaner.py` module with comprehensive text cleaning
+- Decodes all HTML entities (named and numeric)
+- Replaces Unicode special characters
+- Normalizes whitespace
+- Integrated into requirement extraction pipeline
+
+**Testing:** ✅ Verified - HTML entities now properly converted to readable text
+**Files:** `/app/agents/enhanced_compliance/text_cleaner.py`
+
+### Enhancement 2: VisibleThread-Style Dictionary ✅
+**Problem:** Missing 50%+ of actual requirements due to limited keyword patterns
+**Solution:**
+- Created `requirement_dictionary.py` with 60+ requirement keywords
+- 3-tier severity system (Mandatory/Strong/Possible) matching professional standards
+- Wildcard support (provid*, ensure*, commit*)
+- Integrated into RequirementExtractor
+
+**Keywords Added:**
+- Mandatory: shall, will, must
+- Strong: should, submit, describe, include*, ensure*, provide*, require*, etc.
+- Possible: may, might, can, could
+
+**Testing:** ✅ Verified - Dictionary correctly identifies requirements at all severity levels
+**Files:** `/app/agents/enhanced_compliance/requirement_dictionary.py`
+
+### Enhancement 3: Improved Text Quality
+**Changes:**
+- All extracted text now cleaned before processing
+- Requirement text cleaned again before storage
+- Section text cleaned for better parsing
+- Context text preserved but cleaned
+
+**Status:** ✅ Implemented and tested - Ready for deployment
 
 ---
 
