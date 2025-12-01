@@ -635,10 +635,8 @@ def process_rfp_background(rfp_id: str):
 
 
 @app.post("/api/rfp/{rfp_id}/process")
-async def process_rfp(rfp_id: str):
+async def process_rfp(rfp_id: str, background_tasks: BackgroundTasks):
     """Start processing RFP documents"""
-    import asyncio
-    
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
@@ -648,7 +646,7 @@ async def process_rfp(rfp_id: str):
     
     # Start background processing
     store.set_status(rfp_id, "starting", 0, "Starting processing...")
-    asyncio.create_task(process_rfp_background(rfp_id))
+    background_tasks.add_task(process_rfp_background, rfp_id)
     
     return {
         "status": "processing_started",
