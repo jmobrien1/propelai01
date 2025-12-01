@@ -25,6 +25,7 @@ from .bundle_detector import BundleDetector
 from .parser import MultiFormatParser
 from .extractor import RequirementExtractor
 from .resolver import CrossReferenceResolver
+from .strategic_mapper import get_strategic_mapper
 
 # Import base state for compatibility with orchestrator
 try:
