@@ -476,7 +476,14 @@ async def upload_files(
     rfp_id: str,
     files: List[UploadFile] = File(...)
 ):
-    """Upload RFP documents"""
+    """
+    Upload RFP documents (Phase 4.1: Multi-file bundle support)
+    
+    Handles:
+    - Multiple files simultaneously
+    - Bundle detection and classification
+    - Document hierarchy creation
+    """
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
@@ -488,6 +495,7 @@ async def upload_files(
     uploaded = []
     file_paths = list(rfp["file_paths"])
     file_names = list(rfp["files"])
+    file_info_list = []  # For bundle detection
     
     for file in files:
         # Validate file type
@@ -509,19 +517,64 @@ async def upload_files(
             "size": len(content),
             "type": ext[1:].upper()
         })
+        
+        # Collect file info for bundle detection
+        file_info_list.append({
+            "filename": file.filename,
+            "file_path": str(file_path),
+            "content_preview": None  # TODO: Extract preview in future
+        })
+    
+    # Phase 4.1: Detect and classify bundle
+    bundle_info = None
+    if BUNDLE_DETECTION_AVAILABLE and len(files) > 1:
+        try:
+            detector = BundleDetector()
+            bundle = detector.detect_bundle(file_info_list)
+            bundle_info = bundle.to_dict()
+            print(f"[BUNDLE] Detected {bundle_info['total_documents']} documents")
+            print(f"[BUNDLE] Format: {bundle.metadata.get('format', 'unknown')}")
+        except Exception as e:
+            print(f"[BUNDLE] Detection failed: {e}")
+            bundle_info = None
     
     # Update store
-    store.update(rfp_id, {
+    update_data = {
         "files": file_names,
         "file_paths": file_paths,
         "status": "files_uploaded"
-    })
+    }
     
-    return {
+    # Add bundle info if detected
+    if bundle_info:
+        update_data["bundle_info"] = bundle_info
+        update_data["is_bundle"] = True
+        update_data["bundle_format"] = bundle.metadata.get('format', 'unknown')
+    else:
+        update_data["is_bundle"] = False
+    
+    store.update(rfp_id, update_data)
+    
+    response = {
         "status": "uploaded",
         "files": uploaded,
         "total_files": len(file_names)
     }
+    
+    # Include bundle classification in response
+    if bundle_info:
+        response["bundle_detected"] = True
+        response["bundle_info"] = {
+            "total_documents": bundle_info['total_documents'],
+            "main_solicitation": bundle_info.get('main_solicitation', {}).get('filename') if bundle_info.get('main_solicitation') else None,
+            "rfp_letter": bundle_info.get('rfp_letter', {}).get('filename') if bundle_info.get('rfp_letter') else None,
+            "amendments_count": bundle_info['amendments_count'],
+            "attachments_count": bundle_info['attachments_count'],
+            "format": bundle.metadata.get('format'),
+            "validation": bundle.metadata.get('validation', {})
+        }
+    
+    return response
 
 
 # ============== Processing ==============
