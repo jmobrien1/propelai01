@@ -3,6 +3,8 @@ PropelAI Cycle 5: Requirement Extractor
 Multi-pattern extraction with semantic classification
 
 Extracts requirements from ALL sections, not just Section C
+
+v3.0: Enhanced with VisibleThread-style dictionary and text cleaning
 """
 
 import re
@@ -13,6 +15,8 @@ from .models import (
     RequirementNode, RequirementType, ConfidenceLevel, 
     RequirementStatus, SourceLocation, ParsedDocument, DocumentType
 )
+from .requirement_dictionary import get_requirement_dictionary, RequirementSeverity
+from .text_cleaner import clean_text, clean_requirement_text
 
 
 class RequirementExtractor:
