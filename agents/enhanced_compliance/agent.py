@@ -182,7 +182,14 @@ class EnhancedComplianceAgent:
         stats = self.resolver.get_graph_statistics(requirements_graph)
         stats["documents_processed"] = len(parsed_docs)
         stats["total_pages"] = sum(doc.page_count for doc in parsed_docs.values())
-        stats["solicitation_number"] = bundle.solicitation_number
+        
+        # Handle solicitation number from either bundle type
+        if hasattr(bundle, 'solicitation_number'):
+            stats["solicitation_number"] = bundle.solicitation_number
+        elif hasattr(bundle, 'metadata') and isinstance(bundle.metadata, dict):
+            stats["solicitation_number"] = bundle.metadata.get('solicitation_number', 'Unknown')
+        else:
+            stats["solicitation_number"] = "Unknown"
         
         # Calculate estimated coverage
         coverage = self._estimate_coverage(requirements_graph, parsed_docs)
