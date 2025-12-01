@@ -267,14 +267,13 @@ class StrategicMapper:
             evidence_list.append("Professional certifications")
             evidence_list.append("Org chart")
         
-        # Technical capabilities
-        if req_type == RequirementType.TECHNICAL:
-            evidence_list.append("Architecture diagrams")
+        # Technical capabilities / performance
+        if req_type == RequirementType.PERFORMANCE or req_type == RequirementType.DELIVERABLE:
             evidence_list.append("Technical approach documentation")
             evidence_list.append("Sample deliverables")
         
         # Security requirements
-        if 'security' in text_lower or req_type == RequirementType.SECURITY:
+        if 'security' in text_lower or 'fisma' in text_lower or 'fedramp' in text_lower:
             evidence_list.append("Security plan")
             evidence_list.append("FedRAMP/FISMA compliance docs")
             evidence_list.append("Security controls matrix")
