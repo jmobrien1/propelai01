@@ -24,10 +24,35 @@ class JSONFileDB:
     Thread-safe with simple locking.
     """
     
-    def __init__(self, data_dir: str = "/app/outputs/data"):
-        """Initialize JSON file database"""
-        self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, data_dir: Optional[str] = None):
+        """Initialize JSON file database with smart path resolution"""
+        
+        if data_dir is None:
+            # Get project root (parent of 'api' directory)
+            BASE_DIR = Path(__file__).parent.parent
+            primary_path = BASE_DIR / "outputs" / "data"
+            
+            # Try to create primary path
+            try:
+                primary_path.mkdir(parents=True, exist_ok=True)
+                # Test write permission
+                test_file = primary_path / ".write_test"
+                test_file.touch()
+                test_file.unlink()
+                self.data_dir = primary_path
+                print(f"[DB] Using primary storage: {self.data_dir}")
+            except (PermissionError, OSError) as e:
+                # Fallback to /tmp which is always writable
+                fallback_path = Path("/tmp/propelai_data")
+                fallback_path.mkdir(parents=True, exist_ok=True)
+                self.data_dir = fallback_path
+                print(f"[DB] WARNING: Could not write to {primary_path}: {e}")
+                print(f"[DB] Using fallback storage: {self.data_dir}")
+                print(f"[DB] Data will NOT persist across container restarts!")
+        else:
+            # Use provided path (for testing)
+            self.data_dir = Path(data_dir)
+            self.data_dir.mkdir(parents=True, exist_ok=True)
         
         # File paths
         self.rfps_file = self.data_dir / "rfps.json"
