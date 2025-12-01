@@ -207,22 +207,48 @@ This is true **proposal intelligence** - not just document Q&A.
 
 ---
 
-## 🎯 Use Cases This Demo Covers
+## 🎯 Real-World Use Cases
 
-### For Capture Managers:
-- ✅ Quick bid/no-bid analysis
-- ✅ Requirement extraction
-- ✅ Gap analysis (what we're missing)
+### Scenario 1: "Should We Bid?" (Capture Manager)
+**Old Way:** Read 500-page RFP, manually cross-check capabilities, hope you didn't miss something  
+**PropelAI Way:**
+1. Upload company docs once
+2. Upload new RFP
+3. Ask: "Should we bid? What are our gaps?"
+4. Get instant bid/no-bid recommendation with evidence
+5. **Time saved:** 2 days → 5 minutes
 
-### For Proposal Managers:
-- ✅ Compliance matrix generation
-- ✅ Section L instruction parsing
-- ✅ Page limit extraction
+### Scenario 2: "Who Do We Team With?" (BD Lead)
+**Old Way:** Manually identify missing capabilities, search for teaming partners  
+**PropelAI Way:**
+1. Ask: "What capabilities are we missing for this RFP?"
+2. Get specific list of gaps
+3. Use that to target teaming partners
+4. **Clarity:** Know exactly what you need in a partner
 
-### For Business Development:
-- ✅ Company capability matching
-- ✅ Past performance search
-- ✅ Win theme identification
+### Scenario 3: "What's Our Win Theme?" (Capture/Proposal)
+**Old Way:** Brainstorm based on memory of past wins  
+**PropelAI Way:**
+1. Ask: "What are our competitive advantages for this opportunity?"
+2. AI scans RFP requirements vs. your capabilities
+3. Highlights your unique differentiators
+4. Suggests win themes based on YOUR actual strengths
+
+### Scenario 4: "Do We Have the Right People?" (HR/Recruiting)
+**Old Way:** Manually read RFP, extract labor categories, search resume database  
+**PropelAI Way:**
+1. Upload resumes to library
+2. Ask: "Do we have staff meeting the labor category requirements?"
+3. Get list of qualified personnel with matching skills
+4. Identify hiring needs before bid decision
+
+### Scenario 5: "What Changed in Amendment 3?" (Proposal Manager)
+**Old Way:** Read base RFP and all amendments, hope you caught conflicts  
+**PropelAI Way:**
+1. Upload base + all amendments
+2. Ask: "What did Amendment 3 change?"
+3. AI flags all modifications and conflicts
+4. **Risk reduction:** Never miss a critical change
 
 ---
 
