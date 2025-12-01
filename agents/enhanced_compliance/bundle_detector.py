@@ -1,371 +1,359 @@
 """
-PropelAI Cycle 5: Bundle Detector
-Auto-detect and classify RFP document bundles
+RFP Document Bundle Detector
+Phase 4.1 - Sprint 1
 
-Handles NIH, DoD, GSA, and generic federal RFP patterns
+Detects and classifies multiple documents in an RFP solicitation bundle.
+Handles non-standard formats where critical requirements are spread across 10+ files.
 """
 
-import os
 import re
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from pathlib import Path
+from enum import Enum
 
-from .models import RFPBundle, DocumentType
+
+class DocumentType(Enum):
+    """Document classification types"""
+    MAIN_SOLICITATION = "main_solicitation"      # Base RFP/RFQ document
+    RFP_LETTER = "rfp_letter"                    # Submission instructions/transmittal
+    AMENDMENT = "amendment"                      # Modifications to base
+    ATTACHMENT = "attachment"                    # J.1, J.2, J.3 style attachments
+    REQUIREMENTS_DOC = "requirements_doc"        # Detailed technical requirements
+    PRICING_TEMPLATE = "pricing_template"        # Excel pricing sheets
+    QUESTIONNAIRE = "questionnaire"              # Q&A Excel files
+    CLAUSE = "clause"                           # Contract clauses
+    UNKNOWN = "unknown"
+
+
+class DocumentPriority(Enum):
+    """Priority for processing order"""
+    CRITICAL = 1   # Must process first (RFP Letter, Main Solicitation)
+    HIGH = 2       # Important context (Requirements, Amendments)
+    MEDIUM = 3     # Supporting docs (Attachments)
+    LOW = 4        # Reference only (Clauses)
+
+
+class DocumentBundle:
+    """Represents a classified bundle of RFP documents"""
+    
+    def __init__(self):
+        self.documents: List[Dict] = []
+        self.main_solicitation: Optional[Dict] = None
+        self.rfp_letter: Optional[Dict] = None
+        self.amendments: List[Dict] = []
+        self.attachments: List[Dict] = []
+        self.metadata: Dict = {}
+    
+    def add_document(self, doc: Dict):
+        """Add classified document to bundle"""
+        self.documents.append(doc)
+        
+        # Organize by type
+        doc_type = doc.get('type')
+        if doc_type == DocumentType.MAIN_SOLICITATION.value:
+            self.main_solicitation = doc
+        elif doc_type == DocumentType.RFP_LETTER.value:
+            self.rfp_letter = doc
+        elif doc_type == DocumentType.AMENDMENT.value:
+            self.amendments.append(doc)
+        elif doc_type == DocumentType.ATTACHMENT.value:
+            self.attachments.append(doc)
+    
+    def get_processing_order(self) -> List[Dict]:
+        """Return documents in optimal processing order"""
+        return sorted(self.documents, key=lambda d: d.get('priority', 4))
+    
+    def to_dict(self) -> Dict:
+        """Serialize bundle to dict"""
+        return {
+            'total_documents': len(self.documents),
+            'main_solicitation': self.main_solicitation,
+            'rfp_letter': self.rfp_letter,
+            'amendments_count': len(self.amendments),
+            'attachments_count': len(self.attachments),
+            'documents': self.documents,
+            'metadata': self.metadata
+        }
 
 
 class BundleDetector:
     """
-    Auto-detect RFP bundle structure from files
+    Detects and classifies RFP document bundles.
     
-    Classifies documents by filename patterns and content analysis
+    Uses:
+    - Filename pattern matching
+    - Content-based classification
+    - Keyword detection
+    - Structural analysis
     """
     
-    # Filename patterns for document classification
+    # Filename patterns for classification
     FILENAME_PATTERNS = {
-        DocumentType.MAIN_SOLICITATION: [
-            r"SF[-_]?33",
-            r"SF[-_]?1449", 
-            r"RFP[-_]?\d+",
-            r"solicitation",
-            r"^RFP[_\s]",
-            r"Request\s*for\s*Proposal",
-        ],
-        DocumentType.STATEMENT_OF_WORK: [
-            r"SOW",
-            r"PWS",
-            r"Statement\s*of\s*Work",
-            r"Performance\s*Work\s*Statement",
-            r"Scope\s*of\s*Work",
-            r"ATTACHMENT[-_]?2",  # NIH pattern: SOW is often Attachment 2
-        ],
         DocumentType.AMENDMENT: [
-            r"Amendment[-_]?\d*",
-            r"Modification[-_]?\d*",
-            r"AMEND[-_]?\d*",
-            r"MOD[-_]?\d*",
+            r'amendment',
+            r'amnd',
+            r'amend',
+            r'/\d{4}',  # e.g., "/0004"
+            r'mod\s*\d+',
+            r'modification'
         ],
-        DocumentType.CDRL: [
-            r"CDRL",
-            r"DD[-_]?1423",
-            r"Contract\s*Data\s*Requirements",
-            r"Exhibit[-_]?A",
-        ],
-        DocumentType.RESEARCH_OUTLINE: [
-            r"Research[-_]?Outline",
-            r"RO[-_]?[IVX]+",
-            r"RO[-_]?\d+",
-        ],
-        DocumentType.BUDGET_TEMPLATE: [
-            r"Budget",
-            r"Cost[-_]?Template",
-            r"Pricing[-_]?Template",
-            r"ATTACHMENT[-_]?11",  # NIH pattern
-            r"\.xlsx?$",
-        ],
-        DocumentType.SECURITY: [
-            r"DD[-_]?254",
-            r"Security\s*Classification",
-            r"Clearance",
-        ],
-        DocumentType.QA_RESPONSE: [
-            r"Q[-_]?&[-_]?A",
-            r"Questions?\s*and\s*Answers?",
-            r"QA[-_]?Response",
+        DocumentType.RFP_LETTER: [
+            r'rfp.*letter',
+            r'rfi.*letter',
+            r'rfq.*letter',
+            r'transmittal',
+            r'cover.*letter',
+            r'submission.*instructions',
+            r'instructions.*letter'
         ],
         DocumentType.ATTACHMENT: [
-            r"Attachment[-_]?[A-Z0-9]+",
-            r"Exhibit[-_]?[A-Z0-9]+",
-            r"Appendix[-_]?[A-Z0-9]+",
-            r"J[-_]?\d+",  # DoD J-series attachments
+            r'attachment.*j[.\s]*\d+',
+            r'attach.*\d+',
+            r'exhibit.*[a-z]',
+            r'appendix.*[a-z]'
         ],
+        DocumentType.QUESTIONNAIRE: [
+            r'questionnaire',
+            r'requirements.*questionnaire',
+            r'compliance.*matrix.*xlsx?',
+            r'q&a',
+            r'questions'
+        ],
+        DocumentType.PRICING_TEMPLATE: [
+            r'pricing.*sheet',
+            r'price.*schedule',
+            r'cost.*template',
+            r'j[.\s]*3.*pricing'
+        ]
     }
     
-    # Content patterns for validation/detection
-    CONTENT_PATTERNS = {
-        DocumentType.MAIN_SOLICITATION: [
-            r"SECTION\s*[ABCLM]",
-            r"FAR\s*\d+\.\d+",
-            r"PART\s*I.*SCHEDULE",
-            r"Contracting\s*Officer",
-        ],
-        DocumentType.STATEMENT_OF_WORK: [
-            r"Statement\s*of\s*Work",
-            r"Scope\s*of\s*Work",
-            r"(?:Contractor|Vendor)\s*shall",
-            r"Performance\s*Requirements",
-            r"Deliverables",
+    # Content keywords for classification
+    CONTENT_KEYWORDS = {
+        DocumentType.RFP_LETTER: [
+            'submission instructions',
+            'volume i',
+            'volume ii',
+            'volume iii',
+            'page limit',
+            'proposal shall be submitted',
+            'quote shall be submitted',
+            'due date for submission'
         ],
         DocumentType.AMENDMENT: [
-            r"Amendment\s*(?:No\.?|Number)",
-            r"This\s*amendment\s*modifies",
-            r"The\s*following\s*changes",
-            r"is\s*hereby\s*(?:amended|modified)",
+            'this amendment',
+            'hereby amended',
+            'modifies the solicitation',
+            'replaces the following',
+            'deletes the following',
+            'supersedes'
         ],
-        DocumentType.RESEARCH_OUTLINE: [
-            r"Research\s*Outline",
-            r"Background\s*and\s*Rationale",
-            r"Specific\s*Aims",
-            r"Phase\s*[I1].*Phase\s*[I2]",
-        ],
-    }
-    
-    # NIH-specific patterns
-    NIH_PATTERNS = {
-        "agency_identifiers": [
-            r"NIH",
-            r"National\s*Institutes?\s*of\s*Health",
-            r"NIEHS",
-            r"NCI",
-            r"NIAID",
-            r"NICHD",
-        ],
-        "solicitation_number": r"75N\d{11}",  # NIH solicitation format
-        "research_outline_refs": r"RO\s*[IVX]+\.?\d*|Research\s*Outline\s*[IVX]+",
-    }
-    
-    # DoD-specific patterns
-    DOD_PATTERNS = {
-        "agency_identifiers": [
-            r"DoD",
-            r"Department\s*of\s*Defense",
-            r"Navy|Army|Air\s*Force",
-            r"NAVSEA|NAVAIR",
-        ],
-        "solicitation_number": r"N\d{5}[-]?\d{2}[-]?[RQ][-]?\d+",  # Navy format
-        "dfars_references": r"DFARS\s*\d+\.\d+",
+        DocumentType.MAIN_SOLICITATION: [
+            'request for proposal',
+            'request for quote',
+            'solicitation number',
+            'section l',
+            'section m',
+            'section c',
+            'performance work statement',
+            'statement of work'
+        ]
     }
     
     def __init__(self):
-        self._compiled_patterns = self._compile_patterns()
+        self.bundle = DocumentBundle()
     
-    def _compile_patterns(self) -> Dict[DocumentType, List[re.Pattern]]:
-        """Pre-compile regex patterns for performance"""
-        compiled = {}
-        for doc_type, patterns in self.FILENAME_PATTERNS.items():
-            compiled[doc_type] = [
-                re.compile(p, re.IGNORECASE) for p in patterns
-            ]
-        return compiled
-    
-    def detect_from_files(self, filepaths: List[str]) -> RFPBundle:
+    def classify_document(self, filename: str, file_path: str, content_preview: str = None) -> Dict:
         """
-        Detect bundle structure from a list of file paths
+        Classify a single document.
         
         Args:
-            filepaths: List of paths to RFP documents
-            
-        Returns:
-            RFPBundle with classified documents
-        """
-        bundle = RFPBundle(solicitation_number="UNKNOWN")
-        
-        # Classify each file
-        classifications: List[Tuple[str, DocumentType, float]] = []
-        
-        for filepath in filepaths:
-            doc_type, confidence = self._classify_file(filepath)
-            classifications.append((filepath, doc_type, confidence))
-        
-        # Sort by confidence to handle conflicts
-        classifications.sort(key=lambda x: x[2], reverse=True)
-        
-        # Assign to bundle (highest confidence wins for main/SOW)
-        main_assigned = False
-        sow_assigned = False
-        
-        for filepath, doc_type, confidence in classifications:
-            filename = os.path.basename(filepath)
-            
-            if doc_type == DocumentType.MAIN_SOLICITATION and not main_assigned:
-                bundle.main_document = filepath
-                main_assigned = True
-                # Try to extract solicitation number
-                sol_num = self._extract_solicitation_number(filename)
-                if sol_num:
-                    bundle.solicitation_number = sol_num
-                    
-            elif doc_type == DocumentType.STATEMENT_OF_WORK and not sow_assigned:
-                bundle.sow_document = filepath
-                sow_assigned = True
-                
-            elif doc_type == DocumentType.AMENDMENT:
-                bundle.amendments.append(filepath)
-                
-            elif doc_type == DocumentType.RESEARCH_OUTLINE:
-                ro_id = self._extract_research_outline_id(filename)
-                bundle.research_outlines[ro_id] = filepath
-                
-            elif doc_type == DocumentType.BUDGET_TEMPLATE:
-                bundle.budget_templates.append(filepath)
-                
-            elif doc_type == DocumentType.ATTACHMENT:
-                att_id = self._extract_attachment_id(filename)
-                bundle.attachments[att_id] = filepath
-                
-            else:
-                # Default to attachment
-                att_id = self._extract_attachment_id(filename)
-                bundle.attachments[att_id] = filepath
-        
-        # Sort amendments by number
-        bundle.amendments = self._sort_amendments(bundle.amendments)
-        
-        return bundle
-    
-    def detect_from_folder(self, folder_path: str) -> RFPBundle:
-        """
-        Detect bundle from all files in a folder
-        
-        Args:
-            folder_path: Path to folder containing RFP documents
-            
-        Returns:
-            RFPBundle with classified documents
-        """
-        filepaths = []
-        
-        for root, dirs, files in os.walk(folder_path):
-            for filename in files:
-                # Skip hidden files and non-documents
-                if filename.startswith('.'):
-                    continue
-                ext = os.path.splitext(filename)[1].lower()
-                if ext in ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt']:
-                    filepaths.append(os.path.join(root, filename))
-        
-        return self.detect_from_files(filepaths)
-    
-    def _classify_file(self, filepath: str) -> Tuple[DocumentType, float]:
-        """
-        Classify a single file by its filename
+            filename: Original filename
+            file_path: Full path to file
+            content_preview: Optional first 500 chars for content analysis
         
         Returns:
-            (DocumentType, confidence_score)
+            Dict with classification results
         """
-        filename = os.path.basename(filepath).upper()
+        filename_lower = filename.lower()
         
-        best_match = DocumentType.ATTACHMENT
-        best_confidence = 0.0
+        # Step 1: Filename pattern matching
+        doc_type = self._classify_by_filename(filename_lower)
+        confidence = 0.7 if doc_type != DocumentType.UNKNOWN else 0.3
         
-        for doc_type, patterns in self._compiled_patterns.items():
-            for pattern in patterns:
-                if pattern.search(filename):
-                    # Weight by specificity of pattern
-                    confidence = 0.8
-                    
-                    # Boost confidence for more specific matches
-                    if doc_type == DocumentType.MAIN_SOLICITATION:
-                        if "SF33" in filename or "SF1449" in filename:
-                            confidence = 0.95
-                        elif "RFP" in filename:
-                            confidence = 0.9
-                    elif doc_type == DocumentType.AMENDMENT:
-                        if re.search(r"AMENDMENT[-_]?\d", filename):
-                            confidence = 0.95
-                    elif doc_type == DocumentType.STATEMENT_OF_WORK:
-                        if "SOW" in filename or "PWS" in filename:
-                            confidence = 0.95
-                    
-                    if confidence > best_confidence:
-                        best_match = doc_type
-                        best_confidence = confidence
-                    break
+        # Step 2: Content-based classification (if preview available)
+        if content_preview and doc_type == DocumentType.UNKNOWN:
+            content_type, content_confidence = self._classify_by_content(content_preview)
+            if content_confidence > confidence:
+                doc_type = content_type
+                confidence = content_confidence
         
-        return best_match, best_confidence
-    
-    def _extract_solicitation_number(self, text: str) -> Optional[str]:
-        """Extract solicitation number from filename or text"""
-        # NIH format: 75N96025R00004
-        nih_match = re.search(r"75N\d{11}", text)
-        if nih_match:
-            return nih_match.group()
+        # Step 3: Determine priority
+        priority = self._determine_priority(doc_type)
         
-        # DoD Navy format: N0017826R30020003
-        navy_match = re.search(r"N\d{5}\d{2}[RQ]\d+", text)
-        if navy_match:
-            return navy_match.group()
+        # Step 4: Extract metadata from filename
+        metadata = self._extract_filename_metadata(filename_lower)
         
-        # Generic format
-        generic_match = re.search(r"(?:RFP|SOL)[-_]?(\S+)", text, re.IGNORECASE)
-        if generic_match:
-            return generic_match.group(1)
-        
-        return None
-    
-    def _extract_research_outline_id(self, filename: str) -> str:
-        """Extract Research Outline ID (e.g., 'RO-I', 'RO-III')"""
-        match = re.search(r"RO[-_]?([IVX]+|\d+)", filename, re.IGNORECASE)
-        if match:
-            return f"RO-{match.group(1).upper()}"
-        return f"RO-{len(filename) % 10}"
-    
-    def _extract_attachment_id(self, filename: str) -> str:
-        """Extract attachment ID from filename"""
-        # J-series: J.1, J.2, etc.
-        j_match = re.search(r"J[-_.]?(\d+)", filename, re.IGNORECASE)
-        if j_match:
-            return f"J.{j_match.group(1)}"
-        
-        # Attachment N
-        att_match = re.search(r"Attachment[-_]?(\d+|[A-Z])", filename, re.IGNORECASE)
-        if att_match:
-            return f"ATT-{att_match.group(1).upper()}"
-        
-        # Exhibit
-        exh_match = re.search(r"Exhibit[-_]?([A-Z]|\d+)", filename, re.IGNORECASE)
-        if exh_match:
-            return f"EXH-{exh_match.group(1).upper()}"
-        
-        # Default: use filename hash
-        return f"DOC-{hash(filename) % 1000:03d}"
-    
-    def _sort_amendments(self, amendments: List[str]) -> List[str]:
-        """Sort amendments by number"""
-        def extract_number(filepath: str) -> int:
-            match = re.search(r"(\d+)", os.path.basename(filepath))
-            return int(match.group(1)) if match else 999
-        
-        return sorted(amendments, key=extract_number)
-    
-    def classify_by_content(self, text: str, current_type: DocumentType) -> DocumentType:
-        """
-        Refine classification by analyzing document content
-        
-        Args:
-            text: First few pages of document text
-            current_type: Current classification from filename
-            
-        Returns:
-            Refined DocumentType
-        """
-        # Check for strong content indicators
-        for doc_type, patterns in self.CONTENT_PATTERNS.items():
-            matches = sum(1 for p in patterns if re.search(p, text, re.IGNORECASE))
-            if matches >= 2:  # At least 2 pattern matches
-                return doc_type
-        
-        return current_type
-    
-    def detect_agency(self, text: str) -> Optional[str]:
-        """Detect issuing agency from document text"""
-        for pattern in self.NIH_PATTERNS["agency_identifiers"]:
-            if re.search(pattern, text, re.IGNORECASE):
-                return "NIH"
-        
-        for pattern in self.DOD_PATTERNS["agency_identifiers"]:
-            if re.search(pattern, text, re.IGNORECASE):
-                return "DoD"
-        
-        # Check for other common agencies
-        agency_patterns = {
-            "GSA": r"General\s*Services\s*Administration|GSA",
-            "VA": r"Department\s*of\s*Veterans\s*Affairs|VA\s",
-            "DHS": r"Department\s*of\s*Homeland\s*Security|DHS",
-            "HHS": r"Health\s*and\s*Human\s*Services|HHS",
+        return {
+            'filename': filename,
+            'file_path': file_path,
+            'type': doc_type.value,
+            'priority': priority.value,
+            'confidence': confidence,
+            'metadata': metadata
         }
+    
+    def _classify_by_filename(self, filename: str) -> DocumentType:
+        """Classify based on filename patterns"""
+        for doc_type, patterns in self.FILENAME_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, filename, re.IGNORECASE):
+                    return doc_type
         
-        for agency, pattern in agency_patterns.items():
-            if re.search(pattern, text, re.IGNORECASE):
-                return agency
+        # Default: If contains solicitation number pattern, likely main doc
+        if re.search(r'[a-z]{2,4}\d{2}[a-z]?\d{4,6}', filename):
+            return DocumentType.MAIN_SOLICITATION
         
-        return None
+        return DocumentType.UNKNOWN
+    
+    def _classify_by_content(self, content: str) -> tuple:
+        """Classify based on content keywords"""
+        content_lower = content.lower()
+        
+        best_match = DocumentType.UNKNOWN
+        best_score = 0
+        
+        for doc_type, keywords in self.CONTENT_KEYWORDS.items():
+            score = sum(1 for kw in keywords if kw in content_lower)
+            if score > best_score:
+                best_score = score
+                best_match = doc_type
+        
+        confidence = min(0.9, 0.5 + (best_score * 0.1))
+        return best_match, confidence
+    
+    def _determine_priority(self, doc_type: DocumentType) -> DocumentPriority:
+        """Determine processing priority based on document type"""
+        priority_map = {
+            DocumentType.RFP_LETTER: DocumentPriority.CRITICAL,
+            DocumentType.MAIN_SOLICITATION: DocumentPriority.CRITICAL,
+            DocumentType.AMENDMENT: DocumentPriority.HIGH,
+            DocumentType.REQUIREMENTS_DOC: DocumentPriority.HIGH,
+            DocumentType.ATTACHMENT: DocumentPriority.MEDIUM,
+            DocumentType.QUESTIONNAIRE: DocumentPriority.MEDIUM,
+            DocumentType.PRICING_TEMPLATE: DocumentPriority.MEDIUM,
+            DocumentType.CLAUSE: DocumentPriority.LOW,
+            DocumentType.UNKNOWN: DocumentPriority.LOW
+        }
+        return priority_map.get(doc_type, DocumentPriority.LOW)
+    
+    def _extract_filename_metadata(self, filename: str) -> Dict:
+        """Extract metadata from filename"""
+        metadata = {}
+        
+        # Extract amendment number
+        amend_match = re.search(r'/(\d{4})', filename)
+        if amend_match:
+            metadata['amendment_number'] = amend_match.group(1)
+        
+        # Extract attachment identifier
+        attach_match = re.search(r'j[.\s]*(\d+)', filename, re.IGNORECASE)
+        if attach_match:
+            metadata['attachment_id'] = f"J.{attach_match.group(1)}"
+        
+        # Extract solicitation number
+        sol_match = re.search(r'([a-z]{2,4}\d{2}[a-z]?\d{4,6})', filename, re.IGNORECASE)
+        if sol_match:
+            metadata['solicitation_number'] = sol_match.group(1).upper()
+        
+        return metadata
+    
+    def detect_bundle(self, files: List[Dict]) -> DocumentBundle:
+        """
+        Classify all files in bundle and organize.
+        
+        Args:
+            files: List of dicts with 'filename', 'file_path', and optional 'content_preview'
+        
+        Returns:
+            DocumentBundle with all classified documents
+        """
+        self.bundle = DocumentBundle()
+        
+        # Classify each document
+        for file_info in files:
+            classified = self.classify_document(
+                filename=file_info['filename'],
+                file_path=file_info['file_path'],
+                content_preview=file_info.get('content_preview')
+            )
+            self.bundle.add_document(classified)
+        
+        # Extract bundle-level metadata
+        self._extract_bundle_metadata()
+        
+        # Validate bundle completeness
+        self._validate_bundle()
+        
+        return self.bundle
+    
+    def _extract_bundle_metadata(self):
+        """Extract metadata from the entire bundle"""
+        # Find common solicitation number
+        sol_numbers = []
+        for doc in self.bundle.documents:
+            sol_num = doc.get('metadata', {}).get('solicitation_number')
+            if sol_num:
+                sol_numbers.append(sol_num)
+        
+        if sol_numbers:
+            # Most common solicitation number
+            self.bundle.metadata['solicitation_number'] = max(set(sol_numbers), key=sol_numbers.count)
+        
+        # Count amendments
+        self.bundle.metadata['amendment_count'] = len(self.bundle.amendments)
+        
+        # Identify if non-standard format
+        if self.bundle.rfp_letter and not self.bundle.main_solicitation:
+            self.bundle.metadata['format'] = 'non_standard_rfq'
+        elif self.bundle.main_solicitation:
+            self.bundle.metadata['format'] = 'standard_ucf'
+        else:
+            self.bundle.metadata['format'] = 'unknown'
+    
+    def _validate_bundle(self):
+        """Validate bundle completeness and flag issues"""
+        issues = []
+        warnings = []
+        
+        # Check for main solicitation or RFP letter
+        if not self.bundle.main_solicitation and not self.bundle.rfp_letter:
+            issues.append('No main solicitation or RFP letter detected')
+        
+        # Check for unclassified documents
+        unknown_docs = [d for d in self.bundle.documents if d['type'] == DocumentType.UNKNOWN.value]
+        if unknown_docs:
+            warnings.append(f'{len(unknown_docs)} document(s) could not be classified')
+        
+        # Check for amendments without base
+        if self.bundle.amendments and not self.bundle.main_solicitation:
+            warnings.append('Amendments detected but no base solicitation found')
+        
+        self.bundle.metadata['validation'] = {
+            'issues': issues,
+            'warnings': warnings,
+            'complete': len(issues) == 0
+        }
+
+
+def detect_and_classify(files: List[Dict]) -> DocumentBundle:
+    """
+    Convenience function for bundle detection.
+    
+    Args:
+        files: List of file info dicts
+    
+    Returns:
+        Classified DocumentBundle
+    """
+    detector = BundleDetector()
+    return detector.detect_bundle(files)
