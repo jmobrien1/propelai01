@@ -232,10 +232,7 @@ class StrategicMapper:
         elif req_type == RequirementType.DELIVERABLE:
             return "List all deliverables with format, frequency, and acceptance criteria. Provide sample templates if applicable."
         
-        elif req_type == RequirementType.SECURITY:
-            return "Demonstrate security posture with certifications (FedRAMP, FISMA, etc.), controls, and monitoring approach."
-        
-        elif req_type == RequirementType.COMPLIANCE:
+        elif req_type == RequirementType.COMPLIANCE or req_type == RequirementType.PROHIBITION:
             return "Confirm compliance and provide supporting documentation. Reference specific FAR/DFARS clauses as applicable."
         
         elif req_type == RequirementType.PRICING:
