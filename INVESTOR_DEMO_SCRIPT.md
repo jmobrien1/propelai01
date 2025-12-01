@@ -114,10 +114,10 @@ PropelAI helps government contractors:
 
 ### Step 5: Export Compliance Matrix (Bonus - 30 seconds)
 
-1. Go to **"Artifacts"** tab
-2. Click **"Generate Compliance Matrix"**
-3. Choose format: **"Best Practices (L-M-C)"**
-4. Click **"Download Excel"**
+1. Look for **"Compliance Matrix"** or **"Artifacts"** in the sidebar
+2. Click to view the generated matrix
+3. Look for **"Export"** or **"Download"** button
+4. Choose format: **Excel** or **CSV**
 
 ✅ **Result:** Get a production-ready Excel file with:
 - Section L Compliance Matrix
