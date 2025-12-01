@@ -208,14 +208,38 @@ class EnhancedComplianceAgent:
         
         # Get all file paths from bundle
         file_paths = []
-        if bundle.main_document:
+        
+        # Handle main solicitation (could be dict or string)
+        if bundle.main_solicitation:
+            main_path = bundle.main_solicitation.get('file_path') if isinstance(bundle.main_solicitation, dict) else bundle.main_solicitation
+            if main_path:
+                file_paths.append(main_path)
+        
+        # Handle legacy attributes if they exist
+        if hasattr(bundle, 'main_document') and bundle.main_document:
             file_paths.append(bundle.main_document)
-        if bundle.sow_document:
+        if hasattr(bundle, 'sow_document') and bundle.sow_document:
             file_paths.append(bundle.sow_document)
-        file_paths.extend(bundle.amendments)
-        file_paths.extend(bundle.attachments.values())
-        file_paths.extend(bundle.research_outlines.values())
-        file_paths.extend(bundle.budget_templates)
+        
+        # Handle amendments (could be list of dicts or list of strings)
+        if bundle.amendments:
+            for amendment in bundle.amendments:
+                amend_path = amendment.get('file_path') if isinstance(amendment, dict) else amendment
+                if amend_path:
+                    file_paths.append(amend_path)
+        
+        # Handle attachments (could be list of dicts or dict of strings)
+        if bundle.attachments:
+            for attachment in bundle.attachments:
+                attach_path = attachment.get('file_path') if isinstance(attachment, dict) else attachment
+                if attach_path:
+                    file_paths.append(attach_path)
+        
+        # Legacy attributes
+        if hasattr(bundle, 'research_outlines'):
+            file_paths.extend(bundle.research_outlines.values())
+        if hasattr(bundle, 'budget_templates'):
+            file_paths.extend(bundle.budget_templates)
         
         return self.process_files(file_paths)
     
