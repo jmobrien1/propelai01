@@ -1,0 +1,100 @@
+PropelAI MVP Readiness Evaluation
+Executive Score
+Go with Blockers – The core extraction and compliance-matrix features are largely functional and tested, but key planned functions are missing or incomplete. Critical gaps (letter/bundle endpoints, some data fields, outline coverage) must be resolved before full deployment.
+Blockers
+•	Missing API Features: Endpoints for RFP letter extraction, document bundling, and chat interactions were specified but are not implemented in the deployed app.
+•	Extraction Gaps: A significant portion of requirements are assigned to “UNK” (unknown) section due to incomplete section detection, and no low-priority requirements are flagged, indicating classifier tuning is needed.
+•	Outline Generator Coverage: The proposal outline engine fails to include mandated sections (e.g. mandatory tables, formatting rules) for complex RFP formats (NIH, GSA, etc.).
+•	API Inconsistencies: The library deletion endpoint path does not match the spec (uses /documents/{doc_id} vs /library/{doc_id}).
+•	Security/Policy: CORS is fully open (allow_origins=*), posing a security risk that should be tightened.
+High-Level Findings
+The platform’s core pipeline successfully ingests RFP docs and generates a detailed compliance matrix. Tests indicate the in-memory API works and agents (compliance, strategy, drafting, red-team) function as expected. However, the As-Built design calls for extra capabilities that are not yet live: specifically RFP “letter” extraction, bundling, and chat support. Static review found no hardcoded secrets, but open CORS and outdated dependencies warrant attention. The compliance matrix output lacks some strategic fields (e.g. response formats, factor page limits), and the outline generator needs improvement to handle all RFP structures. Test coverage for agent logic is strong, but there are no automated tests for the REST API or deployment pipeline.
+Recommended Next 14-Day Sprint
+Task
+Owner
+Days
+Rationale
+Implement RFP Letter & Bundle Endpoints: Add API routes and handlers to extract submission instructions (letter) and indicate multi-doc bundle type.
+Dev
+2
+Fulfills planned functionality; needed for Section L compliance.
+Fix Library API Paths: Align delete-document endpoint with spec and ensure file cleanup.
+Dev
+0.5
+Removes inconsistency that could confuse clients.
+Add Missing Chat Endpoints (Stub): Create /api/rfp/{id}/chat and /history routes (even if stubbed) for future integration.
+Dev
+1
+Completes MVP interface and avoids silent failures.
+Refine Extraction Logic: Improve section detection and priority scoring to eliminate “UNK” sections and introduce ‘low’ priority cases.
+Dev
+3
+Increases accuracy of the compliance matrix and data quality.
+Enhance Outline Generator: Update regex/pattern logic to include mandatory tables and apply format rules (font/margins) in outlines.
+Dev
+3
+Ensures outlines cover critical RFP elements (e.g. NIH factors, mandatory sections).
+Extend CTM Fields: Add new metadata (e.g. Mandatory_Response_Format, Factor_Page_Limit) to the compliance output as per PRD.
+Dev
+2
+Addresses known CTM gaps and supports drafting intelligence.
+Develop API Tests & CI: Write unit tests for API endpoints and set up continuous integration (e.g. GitHub Actions).
+Dev
+2
+Improves reliability and speeds future development.
+Security Audit & Hardening: Run static analysis on requirements/Dockerfile, restrict CORS to known domains, and update critical dependencies.
+Dev
+1
+Mitigates potential vulnerabilities and policy issues.
+Documentation & QA Fixes: Update API spec or add warnings for unimplemented features; tighten error handling.
+Dev
+0.5
+Keeps users informed and avoids silent failures.
+Post-MVP Quick Wins
+•	User Interface Polish: Add upload progress indicators, processing spinners, and clear status messages in the web UI.
+•	Containerization: Create a Dockerfile for easier deployment and scaling beyond the current free-tier setup.
+•	LLM Enhancement (optional): Integrate the Claude API for improved extraction and answer generation (per architecture notes).
+•	Additional Format Support: Extend document parser to better handle scanned PDFs (OCR) and unusual RFP formats (state/local variations).
+•	Monitoring and Logging: Integrate basic analytics or logging (e.g. Sentry) to track usage and errors in production.
+•	Expand Test Coverage: Add tests for new modules (Strategic Mapper, Letter Extractor, Outline) and integration tests for the REST API.
+Risk Log
+Risk
+Likelihood
+Impact
+Mitigation
+Undetected Requirements: Extraction agents may miss or mis-classify requirements (due to formatting or keyword variations).
+High
+High
+Continue refining parsers (text cleaning, dictionaries); use a fallback manual review flag.
+API Stability: Unimplemented or inconsistent endpoints could break expected workflows for early users.
+Medium
+High
+Prioritize completing endpoints; document current limitations clearly.
+Open CORS: Allowing any origin may expose APIs to unauthorized use or data leakage.
+High
+Medium
+Restrict allow_origins to trusted domains; implement token-based access if needed.
+Single Developer Dependency: With a solo developer, maintainability and future support may lag.
+Medium
+High
+Use AI tools for code generation/review, document design decisions, and consider pairing.
+Outdated Dependencies: Some libraries (e.g. PDF parsers) may have known vulnerabilities.
+Medium
+Medium
+Run pip-audit, update libraries regularly, and isolate file processing safely.
+Data Loss (No Persistence): In-memory storage means all data is lost on restart, risking user work.
+Medium
+Medium
+Plan to integrate a database or persistent storage; warn users of volatility.
+Feature Drift: New demands (per AO1 analysis) could outpace development, causing scope creep.
+Low
+Medium
+Strictly prioritize MVP features; capture extra ideas in backlog for later sprints.
+Updated PRD (Compliance + Outline Enhancements)
+•	Compliance Matrix Fields: Add new metadata columns for Mandatory_Response_Format (e.g. checkbox type), Evidence_Reference (page/section), and Factor_Page_Limit. Distinguish strictly mandatory items (Pass/Fail) from scored items with separate handling. Extract any listed point values or weightings into the CTM so drafting agents can prioritize high-scoring requirements.
+•	Section Linking: Ensure all requirements are correctly tagged with the RFP’s section IDs. Eliminate “UNK” classifications by improving section boundary detection (especially for non-standard formats).
+•	Key Personnel Requirements: Capture mandatory personnel or capability requirements (e.g. required certifications or years of experience) into the matrix for company-library matching.
+•	Proposal Outline Generator: Recognize and include placeholders for required tables and appendices (e.g. mandatory plan attachments). Use extracted page limits (from CTM fields) to adjust section lengths. In factor-based RFPs (like NIH), enforce each factor’s page cap and separate technical vs. evaluation volumes.
+•	Formatting & Submission Info: Extract submission rules (font, margins, due dates) and propagate them so the outline enforces formatting. Generate the outline sections guided by evaluation weights: allocate more content for higher-point items.
+•	Mandatory Content: Add outline sections for mandatory deliverables (e.g. work plan, table of contents) as dictated by RFP. Reflect instructions like “include biosketch appendix” in the outline structure. These fixes ensure the outline covers all compliance directives discovered in the requirements.
+
