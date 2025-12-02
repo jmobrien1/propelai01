@@ -326,18 +326,14 @@ class StrategicMapper:
             proof_points.append("Average X years of experience per team member")
             proof_points.append("Relevant certifications (PMP, AWS, CISSP, etc.)")
         
-        # Cost effectiveness
-        if req_type == RequirementType.PRICING:
-            proof_points.append("Competitive rates with demonstrated value")
-        
         # Default based on requirement type
         if not proof_points:
-            if req_type in [RequirementType.TECHNICAL, RequirementType.PERFORMANCE]:
+            if req_type in [RequirementType.PERFORMANCE, RequirementType.DELIVERABLE]:
                 proof_points.append("Proven technical solution with successful implementations")
-            elif req_type == RequirementType.PAST_PERFORMANCE:
+            elif req_type == RequirementType.QUALIFICATION:
                 proof_points.append("Excellent past performance ratings")
-            elif req_type == RequirementType.MANAGEMENT:
-                proof_points.append("Mature management processes with ISO/CMMI certification")
+            elif req_type == RequirementType.EVALUATION_CRITERION:
+                proof_points.append("Understanding of evaluation priorities and targeted response")
         
         # Ensure we have at least one proof point
         if not proof_points:
