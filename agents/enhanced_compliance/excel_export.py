@@ -504,25 +504,7 @@ class ExcelExporter:
             if re.search(keyword, text_lower):
                 return True
         return False
-        
-        # Adjust column widths
-        ws.column_dimensions['A'].width = 15
-        ws.column_dimensions['B'].width = 60
-        ws.column_dimensions['C'].width = 12
-        ws.column_dimensions['D'].width = 18
-        ws.column_dimensions['E'].width = 10
-        ws.column_dimensions['F'].width = 15
-        ws.column_dimensions['G'].width = 40
-        ws.column_dimensions['H'].width = 15
-        ws.column_dimensions['I'].width = 15
-        ws.column_dimensions['J'].width = 30
-        ws.column_dimensions['K'].width = 20
-        ws.column_dimensions['L'].width = 30
-        ws.column_dimensions['M'].width = 30
-        
-        # Freeze header row
-        ws.freeze_panes = 'A2'
-    
+
     def _create_priority_sheet(self, wb: Workbook, result: ExtractionResult, priority: str):
         """Create sheet with priority-filtered items"""
         ws = wb.create_sheet(f"{priority} Priority")
