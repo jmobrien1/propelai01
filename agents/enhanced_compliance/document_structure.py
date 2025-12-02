@@ -268,14 +268,30 @@ class RFPStructureParser:
     
     def _extract_solicitation_number(self, text: str) -> str:
         """Extract solicitation/RFP number"""
+        # More specific patterns that require proper solicitation number format
+        # Must contain at least one digit to avoid matching prose like "requires delivery"
         patterns = [
-            r"(?:Solicitation|RFP|RFQ|IFB)\s*(?:No\.?|Number|#)?\s*[:.]?\s*([A-Z0-9]{2,}[-\s]?[A-Z0-9]+)",
-            r"([A-Z]{2,}\d{2}[-]?\d+[-]?\d*)",  # Pattern like 75N96025R00004
+            # NIH format: 75N96025R00004
+            r"75N\d{5}[A-Z]\d{5}",
+            # DoD Navy format: N0017826R30020003
+            r"\b(N\d{5}\d{2}[RQ]\d+)\b",
+            # DoD Air Force/Army format: FA8732-25-R-0001, W912HQ-25-R-0001
+            r"\b([A-Z]{2}\d{4}[-]\d{2}[-][A-Z][-]\d{4,})\b",
+            # GSA format: GS-00F-12345
+            r"\b(GS[-][A-Z0-9]{2,}[-][A-Z0-9]+)\b",
+            # Explicit solicitation number with colon/separator (flexible hyphens)
+            r"(?:Solicitation|RFP|RFQ|IFB)\s*(?:No\.?|Number|#)\s*[:.]?\s*([A-Z0-9]+(?:[-][A-Z0-9]+)*)",
+            # Generic federal format: alphanumeric with hyphens, must have digit
+            r"(?:Solicitation|RFP|RFQ|IFB)\s*[:#]\s*([A-Z0-9]+(?:[-][A-Z0-9]+)*)",
         ]
         for pattern in patterns:
             match = re.search(pattern, text[:5000], re.IGNORECASE)
             if match:
-                return match.group(1).strip()
+                result = match.group(1) if match.lastindex else match.group(0)
+                result = result.strip()
+                # Validate: must contain at least one digit and not be common words
+                if re.search(r'\d', result) and result.lower() not in ['requires', 'delivery', 'the', 'and', 'for']:
+                    return result
         return ""
     
     def _extract_title(self, text: str) -> str:

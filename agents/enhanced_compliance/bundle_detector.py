@@ -119,7 +119,7 @@ class BundleDetector:
             r"NIAID",
             r"NICHD",
         ],
-        "solicitation_number": r"75N\d{11}",  # NIH solicitation format
+        "solicitation_number": r"75N\d{5}[A-Z]\d{5}",  # NIH format: 75N96025R00004
         "research_outline_refs": r"RO\s*[IVX]+\.?\d*|Research\s*Outline\s*[IVX]+",
     }
     
@@ -275,21 +275,25 @@ class BundleDetector:
     
     def _extract_solicitation_number(self, text: str) -> Optional[str]:
         """Extract solicitation number from filename or text"""
-        # NIH format: 75N96025R00004
-        nih_match = re.search(r"75N\d{11}", text)
+        # NIH format: 75N96025R00004 (75N + 5 digits + letter + 5 digits)
+        nih_match = re.search(r"75N\d{5}[A-Z]\d{5}", text, re.IGNORECASE)
         if nih_match:
-            return nih_match.group()
-        
+            return nih_match.group().upper()
+
         # DoD Navy format: N0017826R30020003
-        navy_match = re.search(r"N\d{5}\d{2}[RQ]\d+", text)
+        navy_match = re.search(r"N\d{5}\d{2}[RQ]\d+", text, re.IGNORECASE)
         if navy_match:
-            return navy_match.group()
-        
-        # Generic format
-        generic_match = re.search(r"(?:RFP|SOL)[-_]?(\S+)", text, re.IGNORECASE)
+            return navy_match.group().upper()
+
+        # Generic format: RFP followed by alphanumeric with at least one digit
+        # Use word boundary and require digits to avoid matching prose
+        generic_match = re.search(r"(?:RFP|SOL)[-_\s]?([A-Z0-9]+[-]?[A-Z0-9]*\d+[A-Z0-9]*)", text, re.IGNORECASE)
         if generic_match:
-            return generic_match.group(1)
-        
+            result = generic_match.group(1)
+            # Make sure it's not just common words
+            if re.search(r'\d', result):
+                return result.upper()
+
         return None
     
     def _extract_research_outline_id(self, filename: str) -> str:
