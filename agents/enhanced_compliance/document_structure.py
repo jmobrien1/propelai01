@@ -547,30 +547,48 @@ class RFPStructureParser:
     def _parse_attachments(self, documents: List[Dict], structure: DocumentStructure) -> Dict[str, AttachmentInfo]:
         """Parse attachment information from documents"""
         attachments = {}
-        
+        attachment_counter = 1  # For auto-numbering unidentified attachments
+
         for doc in documents:
             filename = doc.get('filename', '').lower()
+            original_filename = doc.get('filename', '')
             text = doc.get('text', '')
             pages = doc.get('pages', [])
-            
+
+            # Skip main RFP document (identified by having sections L, M, C)
+            if self._is_main_solicitation(text):
+                continue
+
             # Detect attachment type from filename
             att_id = None
             doc_type = "General"
-            
+
+            # Handle various attachment naming patterns
             if 'attachment' in filename:
+                # Try specific attachment number first
                 match = re.search(r'attachment\s*(\d+|[a-z])', filename, re.IGNORECASE)
                 if match:
                     att_id = f"Attachment {match.group(1).upper()}"
+                else:
+                    # Handle "ATTACHMENTS" plural or bundle files
+                    # e.g., "ATTACHMENTS RFP 75N96025R00004 less Attach 11 Excel File.pdf"
+                    if 'attachments' in filename or not re.search(r'attachment\s*\d', filename):
+                        att_id = f"Attachments Bundle {attachment_counter}"
+                        attachment_counter += 1
             elif 'exhibit' in filename:
                 match = re.search(r'exhibit\s*(\d+|[a-z])', filename, re.IGNORECASE)
                 if match:
                     att_id = f"Exhibit {match.group(1).upper()}"
-            
-            # Classify document type
+
+            # Classify document type based on filename
             if 'sow' in filename or 'statement of work' in filename.replace('_', ' '):
                 doc_type = "SOW"
+                if not att_id:
+                    att_id = "SOW"
             elif 'pws' in filename or 'performance work' in filename.replace('_', ' '):
                 doc_type = "PWS"
+                if not att_id:
+                    att_id = "PWS"
             elif 'budget' in filename or 'cost' in filename or 'pricing' in filename:
                 doc_type = "Budget Template"
             elif 'experience' in filename or 'past performance' in filename.replace('_', ' '):
@@ -579,29 +597,63 @@ class RFPStructureParser:
                 doc_type = "Personnel"
             elif 'amendment' in filename:
                 doc_type = "Amendment"
-                # Try to get amendment number
                 match = re.search(r'amendment\s*(\d+)', filename, re.IGNORECASE)
                 if match:
                     att_id = f"Amendment {match.group(1)}"
-            
+
             # Check content for requirements
             has_requirements = bool(re.search(
                 r'\b(?:shall|must|will\s+be\s+required|is\s+required)\b',
                 text[:20000], re.IGNORECASE
             ))
-            
+
+            # Detect SOW/PWS from content if not identified from filename
+            if doc_type == "General" and has_requirements:
+                if re.search(r'\b(?:statement\s+of\s+work|scope\s+of\s+work)\b', text[:10000], re.IGNORECASE):
+                    doc_type = "SOW"
+                    if not att_id:
+                        att_id = "SOW"
+                elif re.search(r'\bperformance\s+work\s+statement\b', text[:10000], re.IGNORECASE):
+                    doc_type = "PWS"
+                    if not att_id:
+                        att_id = "PWS"
+                elif re.search(r'\bcontractor\s+shall\b.*\bcontractor\s+shall\b', text[:30000], re.IGNORECASE | re.DOTALL):
+                    # Multiple "contractor shall" statements suggest technical requirements
+                    doc_type = "Technical Attachment"
+                    if not att_id:
+                        att_id = f"Technical Attachment {attachment_counter}"
+                        attachment_counter += 1
+
+            # If document has requirements but no att_id yet, assign one
+            if has_requirements and not att_id:
+                att_id = f"Supplemental Doc {attachment_counter}"
+                attachment_counter += 1
+
             if att_id:
                 attachments[att_id] = AttachmentInfo(
                     id=att_id,
-                    title=doc.get('filename', ''),
-                    filename=doc.get('filename'),
+                    title=original_filename,
+                    filename=original_filename,
                     content=text,
                     page_count=len(pages) if pages else 1,
                     document_type=doc_type,
                     contains_requirements=has_requirements
                 )
-        
+
         return attachments
+
+    def _is_main_solicitation(self, text: str) -> bool:
+        """Check if document is the main RFP (has UCF sections L, M, C structure)"""
+        # Look for clear UCF section markers
+        section_patterns = [
+            r'\bSECTION\s+L\b.*\bINSTRUCTIONS',
+            r'\bSECTION\s+M\b.*\bEVALUATION',
+            r'\bSECTION\s+C\b.*\bDESCRIPTION',
+            r'\bPART\s+I+\s*[-–—]\s*THE\s+SCHEDULE',
+        ]
+
+        matches = sum(1 for p in section_patterns if re.search(p, text[:50000], re.IGNORECASE))
+        return matches >= 2  # At least 2 UCF section patterns
     
     def get_section_content(self, structure: DocumentStructure, section: UCFSection) -> Optional[str]:
         """Get the full content of a specific section"""
