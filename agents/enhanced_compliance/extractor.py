@@ -732,6 +732,16 @@ class RequirementExtractor:
 
         return "INFORMATIONAL"
     
+    # ============================================================================
+    # CONFIDENCE THRESHOLDS FOR REVIEW FLAGGING
+    # Per accuracy.txt: Flag borderline items for human review
+    # ============================================================================
+
+    # Confidence score thresholds
+    HIGH_CONFIDENCE_THRESHOLD = 0.8      # Above this = high confidence, no review
+    REVIEW_THRESHOLD = 0.6               # Below this = needs review
+    LOW_CONFIDENCE_THRESHOLD = 0.4       # Below this = low confidence
+
     def _create_requirement_node(
         self,
         sentence: str,
@@ -741,41 +751,53 @@ class RequirementExtractor:
         req_type: RequirementType,
         keyword_match: str,
     ) -> RequirementNode:
-        """Create a RequirementNode from a sentence"""
+        """Create a RequirementNode from a sentence with confidence scoring."""
         self._req_counter += 1
-        
+
         # Generate ID based on document type
         type_prefix = doc.document_type.value[:3].upper()
         req_id = f"REQ-{type_prefix}-{self._req_counter:04d}"
-        
+
         # Get context
         context_before = ""
         context_after = ""
-        
+
         if self.include_context:
             if sentence_index > 0:
                 context_before = sentences[sentence_index - 1][-self.context_chars:]
             if sentence_index < len(sentences) - 1:
                 context_after = sentences[sentence_index + 1][:self.context_chars]
-        
+
         # Find page number
         page_num = self._find_page_number(sentence, doc)
-        
+
         # Find section reference
         section_id = self._extract_section_ref(sentence, doc)
-        
+
         # Extract keywords
         keywords = self._extract_keywords(sentence)
-        
+
         # Extract entities (CLINs, dates, references)
         entities = self._extract_entities(sentence)
-        
+
         # Extract cross-references
         references = self._extract_cross_references(sentence)
-        
-        # Determine confidence
-        confidence = self._assess_confidence(sentence, keyword_match, doc)
-        
+
+        # Calculate confidence score (numeric)
+        confidence_score = self._calculate_confidence_score(sentence, keyword_match, section_id, doc)
+
+        # Determine confidence level from score
+        confidence = self._score_to_confidence_level(confidence_score)
+
+        # Determine if review is needed and why
+        needs_review, review_reason = self._determine_review_needed(
+            sentence, keyword_match, confidence_score, section_id, req_type
+        )
+
+        # Get binding level and category
+        binding_level = self.get_binding_level(sentence)
+        category = self.get_requirement_category(sentence) or ""
+
         # Create source location
         source = SourceLocation(
             document_name=doc.filename,
@@ -783,12 +805,17 @@ class RequirementExtractor:
             page_number=page_num,
             section_id=section_id,
         )
-        
+
         return RequirementNode(
             id=req_id,
             text=sentence.strip(),
             requirement_type=req_type,
             confidence=confidence,
+            confidence_score=confidence_score,
+            needs_review=needs_review,
+            review_reason=review_reason,
+            binding_level=binding_level,
+            category=category,
             source=source,
             context_before=context_before,
             context_after=context_after,
@@ -797,6 +824,156 @@ class RequirementExtractor:
             references_to=references,
             extraction_method="regex",
         )
+
+    def _calculate_confidence_score(
+        self,
+        sentence: str,
+        keyword_match: str,
+        section_id: str,
+        doc: ParsedDocument
+    ) -> float:
+        """
+        Calculate a numeric confidence score (0.0-1.0) for the requirement.
+
+        Factors considered:
+        - Keyword strength (shall > must > should > may)
+        - Actor presence (contractor, offeror, government)
+        - Section context (appropriate section for requirement type)
+        - Document type (main solicitation vs attachment)
+        - Pattern match quality
+        """
+        score = 0.5  # Base score
+
+        sentence_lower = sentence.lower()
+
+        # Factor 1: Keyword strength
+        keyword_scores = {
+            "contractor_shall": 0.35,
+            "contractor_must": 0.35,
+            "offeror_shall": 0.35,
+            "offeror_must": 0.35,
+            "government_will": 0.35,
+            "shall_passive": 0.30,
+            "must_passive": 0.30,
+            "shall_verb": 0.25,
+            "must_verb": 0.25,
+            "shall": 0.20,
+            "must": 0.20,
+            "required": 0.20,
+            "mandatory": 0.20,
+            "responsible": 0.15,
+            "should_verb": 0.10,
+            "should": 0.08,
+            "recommended": 0.05,
+            "encouraged": 0.05,
+            "may_verb": 0.0,
+            "may": -0.05,
+            "optional": -0.05,
+        }
+        score += keyword_scores.get(keyword_match, 0.0)
+
+        # Factor 2: Actor presence
+        if self._has_actor(sentence):
+            score += 0.15
+
+        # Factor 3: Section appropriateness
+        section_upper = section_id.upper() if section_id else ""
+        if section_upper in ["L", "M", "C", "PWS", "SOW"]:
+            score += 0.10  # Known section adds confidence
+        elif section_upper in ["UNSPEC", "UNK", "UNKNOWN", ""]:
+            score -= 0.10  # Unknown section reduces confidence
+
+        # Factor 4: Document type
+        if doc.document_type in [DocumentType.MAIN_SOLICITATION, DocumentType.STATEMENT_OF_WORK]:
+            score += 0.05
+        elif doc.document_type == DocumentType.AMENDMENT:
+            score += 0.0  # Neutral
+        elif doc.document_type == DocumentType.ATTACHMENT:
+            score -= 0.05
+
+        # Factor 5: Content quality indicators
+        # Longer, more detailed requirements are often more confident
+        word_count = len(sentence.split())
+        if word_count >= 20:
+            score += 0.05
+        elif word_count < 10:
+            score -= 0.05
+
+        # Presence of specific action verbs adds confidence
+        if re.search(r'\b(?:provide|perform|deliver|submit|maintain|ensure|develop|implement)\b', sentence_lower):
+            score += 0.05
+
+        # Normalize to 0.0-1.0 range
+        return max(0.0, min(1.0, score))
+
+    def _score_to_confidence_level(self, score: float) -> ConfidenceLevel:
+        """Convert numeric score to ConfidenceLevel enum."""
+        if score >= self.HIGH_CONFIDENCE_THRESHOLD:
+            return ConfidenceLevel.HIGH
+        elif score >= self.REVIEW_THRESHOLD:
+            return ConfidenceLevel.MEDIUM
+        else:
+            return ConfidenceLevel.LOW
+
+    def _determine_review_needed(
+        self,
+        sentence: str,
+        keyword_match: str,
+        confidence_score: float,
+        section_id: str,
+        req_type: RequirementType
+    ) -> Tuple[bool, str]:
+        """
+        Determine if a requirement needs human review.
+
+        Returns:
+            (needs_review: bool, reason: str)
+        """
+        reasons = []
+
+        # Reason 1: Low confidence score
+        if confidence_score < self.REVIEW_THRESHOLD:
+            reasons.append(f"Low confidence score ({confidence_score:.2f})")
+
+        # Reason 2: Conditional/optional keywords without clear context
+        if keyword_match in ["should", "may", "can", "recommended", "encouraged", "optional"]:
+            if not self._has_actor(sentence):
+                reasons.append("Optional/conditional keyword without clear actor")
+
+        # Reason 3: Unknown or unspecified section
+        section_upper = section_id.upper() if section_id else ""
+        if section_upper in ["UNSPEC", "UNK", "UNKNOWN", ""]:
+            reasons.append("Section could not be determined")
+
+        # Reason 4: Potential ambiguity in requirement type
+        sentence_lower = sentence.lower()
+        # Check for mixed signals (e.g., both "shall" and "may" in same sentence)
+        has_mandatory = bool(re.search(r'\b(?:shall|must)\b', sentence_lower))
+        has_optional = bool(re.search(r'\b(?:may|should|can)\b', sentence_lower))
+        if has_mandatory and has_optional:
+            reasons.append("Mixed mandatory/optional language")
+
+        # Reason 5: Very short requirement text
+        if len(sentence.split()) < 8:
+            reasons.append("Very short requirement text")
+
+        # Reason 6: Complex sentence structure (multiple clauses)
+        clause_indicators = len(re.findall(r'\b(?:and|or|but|however|unless|except|provided that)\b', sentence_lower))
+        if clause_indicators >= 3:
+            reasons.append("Complex sentence with multiple clauses")
+
+        # Reason 7: Reference to external document without context
+        if re.search(r'\b(?:see|refer to|per|as specified in)\b', sentence_lower):
+            if len(sentence) < 150:  # Short sentence that's mostly a reference
+                reasons.append("Reference to external document - may need verification")
+
+        # Determine if review is needed
+        needs_review = len(reasons) > 0
+
+        # Create review reason string
+        review_reason = "; ".join(reasons) if reasons else ""
+
+        return needs_review, review_reason
     
     def _extract_from_section(
         self, 

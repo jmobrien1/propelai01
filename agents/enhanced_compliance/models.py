@@ -92,47 +92,54 @@ class SourceLocation:
 class RequirementNode:
     """
     A node in the Requirements Graph
-    
+
     Core entity for tracking requirements with cross-document relationships
     """
     # Identity
     id: str                                      # REQ-001, REQ-C-001, etc.
     text: str                                    # Full requirement text
     text_hash: str = ""                          # For duplicate detection
-    
+
     # Classification
     requirement_type: RequirementType = RequirementType.PERFORMANCE
     confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
     status: RequirementStatus = RequirementStatus.ACTIVE
-    
+
+    # Confidence scoring (numeric for threshold-based decisions)
+    confidence_score: float = 0.5               # 0.0-1.0 confidence score
+    needs_review: bool = False                   # Flag for human review
+    review_reason: str = ""                      # Why review is needed
+    binding_level: str = "MANDATORY"             # MANDATORY, HIGHLY_DESIRABLE, DESIRABLE, OPTIONAL, INFORMATIONAL
+    category: str = ""                           # Requirement category for grouping
+
     # Source tracking
     source: Optional[SourceLocation] = None
     context_before: str = ""                     # Surrounding text for context
     context_after: str = ""
-    
+
     # Extracted attributes
     keywords: List[str] = field(default_factory=list)
     entities: List[str] = field(default_factory=list)  # Named entities
-    
+
     # Graph edges (relationships)
     references_to: List[str] = field(default_factory=list)      # This req references these
     referenced_by: List[str] = field(default_factory=list)      # These reference this req
     parent_requirement: Optional[str] = None                     # Hierarchical parent
     child_requirements: List[str] = field(default_factory=list)  # Sub-requirements
-    
+
     # Cross-document links
     evaluated_by: List[str] = field(default_factory=list)       # Section M factors
     instructed_by: List[str] = field(default_factory=list)      # Section L instructions
     deliverable_for: Optional[str] = None                        # CDRL/DID reference
     research_outline: Optional[str] = None                       # NIH-specific: RO link
     clin_reference: Optional[str] = None                         # Section B CLIN
-    
+
     # Amendment tracking
     version: int = 1
     modified_by_amendment: Optional[str] = None
     previous_text: Optional[str] = None
     modification_reason: Optional[str] = None
-    
+
     # Metadata
     extracted_at: str = field(default_factory=lambda: datetime.now().isoformat())
     extraction_method: str = "regex"             # "regex", "llm", "hybrid"
@@ -149,6 +156,11 @@ class RequirementNode:
             "text_hash": self.text_hash,
             "requirement_type": self.requirement_type.value,
             "confidence": self.confidence.value,
+            "confidence_score": self.confidence_score,
+            "needs_review": self.needs_review,
+            "review_reason": self.review_reason,
+            "binding_level": self.binding_level,
+            "category": self.category,
             "status": self.status.value,
             "source": {
                 "document_name": self.source.document_name if self.source else None,
