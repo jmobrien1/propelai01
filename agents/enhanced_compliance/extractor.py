@@ -194,6 +194,321 @@ class RequirementExtractor:
         },
     }
 
+    # ============================================================================
+    # SECTION-SPECIFIC EXTRACTION RULES v1.0
+    # Per accuracy.txt: Different extraction behaviors per section
+    # ============================================================================
+
+    SECTION_EXTRACTION_CONFIG = {
+        # Section B: Supplies/Services and Prices
+        "B": {
+            "description": "Supplies/Services and Prices/Costs",
+            "primary_types": [RequirementType.LABOR_REQUIREMENT, RequirementType.DELIVERABLE],
+            "secondary_types": [RequirementType.PERFORMANCE],
+            "default_type": RequirementType.LABOR_REQUIREMENT,
+            "confidence_boost": 0.1,  # Known section adds confidence
+            "min_sentence_length": 80,  # Allow shorter CLIN descriptions
+            "expected_actors": ["contractor", "vendor", "offeror"],
+            "key_patterns": [
+                r"\bCLIN\s*\d+",
+                r"\bline\s+item\s*\d*",
+                r"\bunit\s+price\b",
+                r"\b(?:FFP|T&M|CPFF|CPIF|CPAF)\b",  # Contract types
+                r"\blabor\s+(?:hour|category|rate)",
+                r"\b(?:option\s+(?:year|period)|base\s+(?:year|period))\b",
+            ],
+            "entity_focus": ["clin", "price", "labor_category", "contract_type"],
+            "noise_patterns": [
+                r"^CLIN\s*$",  # Bare CLIN without details
+                r"^\$[\d,]+\s*$",  # Just a price
+            ],
+        },
+
+        # Section C: Statement of Work / Description
+        "C": {
+            "description": "Description/Specifications/Statement of Work",
+            "primary_types": [RequirementType.PERFORMANCE, RequirementType.PERFORMANCE_METRIC],
+            "secondary_types": [RequirementType.DELIVERABLE, RequirementType.QUALIFICATION],
+            "default_type": RequirementType.PERFORMANCE,
+            "confidence_boost": 0.15,  # SOW is high-value for requirements
+            "min_sentence_length": 100,
+            "expected_actors": ["contractor", "vendor", "government"],
+            "key_patterns": [
+                r"\bcontractor\s+(?:shall|must|will)\s+(?:provide|perform|maintain|ensure|develop)",
+                r"\bthe\s+work\s+(?:shall|will)\s+(?:include|consist|encompass)",
+                r"\bservices?\s+(?:shall|will)\s+(?:include|be\s+provided)",
+                r"\b(?:task|subtask)\s+\d+",
+                r"\bperformance\s+(?:standard|requirement|objective)",
+                r"\bquality\s+(?:assurance|control|level)",
+            ],
+            "entity_focus": ["task", "deliverable", "metric", "standard"],
+            "noise_patterns": [
+                r"^\d+\.\d+\s+[A-Z][A-Z\s]+$",  # Section headers like "3.1 SCOPE"
+            ],
+        },
+
+        # Section D: Packaging and Marking
+        "D": {
+            "description": "Packaging and Marking",
+            "primary_types": [RequirementType.COMPLIANCE, RequirementType.PERFORMANCE],
+            "secondary_types": [RequirementType.DELIVERABLE],
+            "default_type": RequirementType.COMPLIANCE,
+            "confidence_boost": 0.05,
+            "min_sentence_length": 80,
+            "expected_actors": ["contractor", "vendor"],
+            "key_patterns": [
+                r"\bpackag(?:e|ing)\s+(?:shall|must|will)",
+                r"\bmark(?:ed|ing)\s+(?:shall|must|will|with)",
+                r"\blabel(?:ed|ing)\s+(?:shall|must|will)",
+                r"\bMIL[-\s]?STD",
+            ],
+            "entity_focus": ["standard", "specification"],
+            "noise_patterns": [],
+        },
+
+        # Section E: Inspection and Acceptance
+        "E": {
+            "description": "Inspection and Acceptance",
+            "primary_types": [RequirementType.PERFORMANCE_METRIC, RequirementType.COMPLIANCE],
+            "secondary_types": [RequirementType.PERFORMANCE],
+            "default_type": RequirementType.PERFORMANCE_METRIC,
+            "confidence_boost": 0.1,
+            "min_sentence_length": 80,
+            "expected_actors": ["contractor", "government", "COR", "contracting officer"],
+            "key_patterns": [
+                r"\binspection\s+(?:shall|will)\s+be",
+                r"\bacceptance\s+(?:criteria|shall|will)",
+                r"\bquality\s+(?:assurance|control)\s+(?:shall|must)",
+                r"\b(?:reject|rejection|defect|deficiency)",
+                r"\b(?:AQL|acceptable\s+quality\s+level)",
+            ],
+            "entity_focus": ["quality_metric", "inspection_point", "acceptance_criteria"],
+            "noise_patterns": [],
+        },
+
+        # Section F: Deliveries or Performance
+        "F": {
+            "description": "Deliveries or Performance",
+            "primary_types": [RequirementType.DELIVERABLE, RequirementType.PERFORMANCE],
+            "secondary_types": [RequirementType.PERFORMANCE_METRIC],
+            "default_type": RequirementType.DELIVERABLE,
+            "confidence_boost": 0.1,
+            "min_sentence_length": 80,
+            "expected_actors": ["contractor", "vendor"],
+            "key_patterns": [
+                r"\b(?:deliver|delivery)\s+(?:shall|will|date|schedule)",
+                r"\b(?:due|deadline)\s+(?:date|within|by)",
+                r"\bperiod\s+of\s+performance",
+                r"\b(?:POP|PoP)\b",
+                r"\b(?:option\s+period|base\s+period)",
+                r"\b(?:no\s+later\s+than|NLT)\b",
+            ],
+            "entity_focus": ["date", "schedule", "milestone", "deliverable"],
+            "noise_patterns": [
+                r"^F\.O\.B\.\s*",  # FOB headers
+            ],
+        },
+
+        # Section G: Contract Administration Data
+        "G": {
+            "description": "Contract Administration Data",
+            "primary_types": [RequirementType.COMPLIANCE, RequirementType.PERFORMANCE],
+            "secondary_types": [],
+            "default_type": RequirementType.COMPLIANCE,
+            "confidence_boost": 0.05,
+            "min_sentence_length": 80,
+            "expected_actors": ["contractor", "COR", "contracting officer", "CO", "ACO"],
+            "key_patterns": [
+                r"\b(?:invoice|payment)\s+(?:shall|must|will)",
+                r"\b(?:COR|contracting\s+officer)\s+(?:shall|will|is)",
+                r"\b(?:submit|submission)\s+(?:to|through)",
+                r"\belectronic\s+(?:invoicing|payment)",
+            ],
+            "entity_focus": ["contact", "invoice_instruction", "submission_point"],
+            "noise_patterns": [],
+        },
+
+        # Section H: Special Contract Requirements
+        "H": {
+            "description": "Special Contract Requirements",
+            "primary_types": [RequirementType.COMPLIANCE, RequirementType.QUALIFICATION],
+            "secondary_types": [RequirementType.PERFORMANCE],
+            "default_type": RequirementType.COMPLIANCE,
+            "confidence_boost": 0.1,
+            "min_sentence_length": 100,
+            "expected_actors": ["contractor", "vendor", "offeror"],
+            "key_patterns": [
+                r"\b(?:security|clearance)\s+(?:shall|must|requirement)",
+                r"\b(?:insurance|bonding)\s+(?:shall|must|requirement)",
+                r"\b(?:key\s+personnel|staffing)\s+(?:shall|must)",
+                r"\b(?:OCONUS|overseas|travel)\b",
+                r"\b(?:organizational\s+conflict\s+of\s+interest|OCI)\b",
+                r"\b(?:subcontract|teaming)\s+(?:shall|must)",
+            ],
+            "entity_focus": ["clearance", "certification", "special_requirement"],
+            "noise_patterns": [],
+        },
+
+        # Section I: Contract Clauses
+        "I": {
+            "description": "Contract Clauses",
+            "primary_types": [RequirementType.COMPLIANCE],
+            "secondary_types": [],
+            "default_type": RequirementType.COMPLIANCE,
+            "confidence_boost": -0.05,  # Mostly boilerplate FAR clauses
+            "min_sentence_length": 120,  # Require longer text for clauses
+            "expected_actors": ["contractor", "government"],
+            "key_patterns": [
+                r"\bFAR\s+\d+\.\d+",
+                r"\bDFARS\s+\d+\.\d+",
+                r"\bHHSAR\s+\d+\.\d+",
+                r"\b52\.\d{3}-\d+",
+            ],
+            "entity_focus": ["far_clause", "regulation"],
+            "noise_patterns": [
+                r"^52\.\d{3}-\d+\s+[A-Z][A-Za-z\s]+$",  # Just clause number and title
+                r"^\(.*\)$",  # Just a date in parentheses
+            ],
+        },
+
+        # Section J: Attachments/Exhibits
+        "J": {
+            "description": "Attachments/Exhibits",
+            "primary_types": [RequirementType.DELIVERABLE, RequirementType.PERFORMANCE],
+            "secondary_types": [RequirementType.FORMAT],
+            "default_type": RequirementType.DELIVERABLE,
+            "confidence_boost": 0.05,
+            "min_sentence_length": 80,
+            "expected_actors": ["contractor", "offeror"],
+            "key_patterns": [
+                r"\b(?:attachment|exhibit)\s+\d+",
+                r"\b(?:appendix|annex)\s+[A-Z\d]",
+                r"\b(?:use|complete|fill)\s+(?:this|the)\s+(?:form|template)",
+            ],
+            "entity_focus": ["attachment", "form", "template"],
+            "noise_patterns": [
+                r"^(?:Attachment|Exhibit|Appendix)\s+[A-Z\d]+\s*$",  # Just attachment label
+            ],
+        },
+
+        # Section K: Representations and Certifications
+        "K": {
+            "description": "Representations and Certifications",
+            "primary_types": [RequirementType.QUALIFICATION, RequirementType.COMPLIANCE],
+            "secondary_types": [],
+            "default_type": RequirementType.QUALIFICATION,
+            "confidence_boost": 0.05,
+            "min_sentence_length": 100,
+            "expected_actors": ["offeror", "contractor"],
+            "key_patterns": [
+                r"\b(?:represent|certif(?:y|ies|ication))\s+(?:that|the)",
+                r"\b(?:small\s+business|8\(a\)|HUBZone|SDVOSB|WOSB)\b",
+                r"\b(?:ownership|control|affiliation)\b",
+                r"\b(?:debarred|suspended|ineligible)\b",
+            ],
+            "entity_focus": ["certification", "representation", "business_status"],
+            "noise_patterns": [
+                r"^\[\s*\]\s*(?:Yes|No)",  # Checkbox items alone
+            ],
+        },
+
+        # Section L: Instructions, Conditions, Notices
+        "L": {
+            "description": "Instructions, Conditions, and Notices to Offerors",
+            "primary_types": [RequirementType.PROPOSAL_INSTRUCTION, RequirementType.FORMAT],
+            "secondary_types": [RequirementType.QUALIFICATION],
+            "default_type": RequirementType.PROPOSAL_INSTRUCTION,
+            "confidence_boost": 0.15,  # Section L is critical for proposals
+            "min_sentence_length": 80,
+            "expected_actors": ["offeror", "proposer", "vendor"],
+            "key_patterns": [
+                r"\bofferor\s+(?:shall|must|should)\s+(?:submit|provide|include|describe|demonstrate|address)",
+                r"\bproposal\s+(?:shall|must|should)\s+(?:include|contain|address|describe|demonstrate)",
+                r"\b(?:page\s+limit|font\s+size|margin|format)\b",
+                r"\bvolume\s+\d*\s*(?:shall|must|should)",
+                r"\b(?:technical|management|past\s+performance|cost|price)\s+(?:proposal|volume)",
+                r"\b(?:oral\s+presentation|demonstration|site\s+visit)\b",
+            ],
+            "entity_focus": ["page_limit", "format_requirement", "submission_deadline", "volume"],
+            "noise_patterns": [
+                r"^L\.\d+\s+[A-Z][A-Z\s]+$",  # Just section numbers
+            ],
+        },
+
+        # Section M: Evaluation Factors
+        "M": {
+            "description": "Evaluation Factors for Award",
+            "primary_types": [RequirementType.EVALUATION_CRITERION],
+            "secondary_types": [RequirementType.PERFORMANCE_METRIC],
+            "default_type": RequirementType.EVALUATION_CRITERION,
+            "confidence_boost": 0.15,  # Section M is critical for understanding award
+            "min_sentence_length": 80,
+            "expected_actors": ["government", "agency", "offeror"],
+            "key_patterns": [
+                r"\b(?:will|shall)\s+be\s+evaluated",
+                r"\bevaluation\s+(?:factor|criteria|subfactor)",
+                r"\b(?:technical|management|past\s+performance|cost|price)\s+(?:factor|volume|proposal)",
+                r"\b(?:adjectival|color|rating|score)\s+(?:rating|scale|criteria)",
+                r"\b(?:strength|weakness|deficiency|significant|acceptable|unacceptable)\b",
+                r"\b(?:more|less|equally)\s+important\s+than\b",
+                r"\b(?:tradeoff|best\s+value|LPTA|lowest\s+price)\b",
+            ],
+            "entity_focus": ["evaluation_factor", "weight", "rating", "award_methodology"],
+            "noise_patterns": [],
+        },
+
+        # PWS: Performance Work Statement
+        "PWS": {
+            "description": "Performance Work Statement",
+            "primary_types": [RequirementType.PERFORMANCE, RequirementType.PERFORMANCE_METRIC],
+            "secondary_types": [RequirementType.DELIVERABLE, RequirementType.QUALIFICATION],
+            "default_type": RequirementType.PERFORMANCE,
+            "confidence_boost": 0.15,
+            "min_sentence_length": 100,
+            "expected_actors": ["contractor", "vendor"],
+            "key_patterns": [
+                r"\bcontractor\s+(?:shall|must|will)",
+                r"\bperformance\s+(?:standard|requirement|objective|metric)",
+                r"\b(?:task|subtask|work\s+area)\s+\d+",
+                r"\bdeliverable\s+(?:shall|must|include)",
+            ],
+            "entity_focus": ["task", "deliverable", "metric", "standard"],
+            "noise_patterns": [],
+        },
+
+        # SOW: Statement of Work
+        "SOW": {
+            "description": "Statement of Work",
+            "primary_types": [RequirementType.PERFORMANCE, RequirementType.DELIVERABLE],
+            "secondary_types": [RequirementType.PERFORMANCE_METRIC, RequirementType.QUALIFICATION],
+            "default_type": RequirementType.PERFORMANCE,
+            "confidence_boost": 0.15,
+            "min_sentence_length": 100,
+            "expected_actors": ["contractor", "vendor"],
+            "key_patterns": [
+                r"\bcontractor\s+(?:shall|must|will)",
+                r"\bthe\s+work\s+(?:shall|will)",
+                r"\b(?:task|subtask)\s+\d+",
+            ],
+            "entity_focus": ["task", "deliverable", "requirement"],
+            "noise_patterns": [],
+        },
+
+        # Default/Unknown sections
+        "UNKNOWN": {
+            "description": "Unknown or Unspecified Section",
+            "primary_types": [RequirementType.PERFORMANCE],
+            "secondary_types": [],
+            "default_type": RequirementType.PERFORMANCE,
+            "confidence_boost": -0.1,  # Unknown section reduces confidence
+            "min_sentence_length": 100,
+            "expected_actors": ["contractor", "offeror", "government"],
+            "key_patterns": [],
+            "entity_focus": [],
+            "noise_patterns": [],
+        },
+    }
+
     # Hierarchical requirement categories
     # Maps category names to related keywords for grouping
     REQUIREMENT_CATEGORIES = {
@@ -839,6 +1154,7 @@ class RequirementExtractor:
         - Keyword strength (shall > must > should > may)
         - Actor presence (contractor, offeror, government)
         - Section context (appropriate section for requirement type)
+        - Section-specific pattern matching
         - Document type (main solicitation vs attachment)
         - Pattern match quality
         """
@@ -872,18 +1188,30 @@ class RequirementExtractor:
         }
         score += keyword_scores.get(keyword_match, 0.0)
 
-        # Factor 2: Actor presence
-        if self._has_actor(sentence):
+        # Factor 2: Actor presence (use section-aware actor check)
+        section_config = self._get_section_config(section_id) if section_id else None
+        if section_config:
+            if self._has_section_actor(sentence, section_config):
+                score += 0.15
+        elif self._has_actor(sentence):
             score += 0.15
 
-        # Factor 3: Section appropriateness
+        # Factor 3: Section appropriateness with section-specific boost
         section_upper = section_id.upper() if section_id else ""
-        if section_upper in ["L", "M", "C", "PWS", "SOW"]:
+        if section_config:
+            # Apply section-specific confidence boost from config
+            section_boost = section_config.get("confidence_boost", 0.0)
+            score += section_boost
+        elif section_upper in ["L", "M", "C", "PWS", "SOW"]:
             score += 0.10  # Known section adds confidence
         elif section_upper in ["UNSPEC", "UNK", "UNKNOWN", ""]:
             score -= 0.10  # Unknown section reduces confidence
 
-        # Factor 4: Document type
+        # Factor 4: Section-specific pattern matching
+        if section_config and self._matches_section_patterns(sentence, section_config):
+            score += 0.10  # Bonus for matching section-specific patterns
+
+        # Factor 5: Document type
         if doc.document_type in [DocumentType.MAIN_SOLICITATION, DocumentType.STATEMENT_OF_WORK]:
             score += 0.05
         elif doc.document_type == DocumentType.AMENDMENT:
@@ -891,7 +1219,7 @@ class RequirementExtractor:
         elif doc.document_type == DocumentType.ATTACHMENT:
             score -= 0.05
 
-        # Factor 5: Content quality indicators
+        # Factor 6: Content quality indicators
         # Longer, more detailed requirements are often more confident
         word_count = len(sentence.split())
         if word_count >= 20:
@@ -975,49 +1303,205 @@ class RequirementExtractor:
 
         return needs_review, review_reason
     
+    def _get_section_config(self, section_id: str) -> Dict[str, Any]:
+        """
+        Get the section-specific extraction configuration.
+
+        Args:
+            section_id: Section identifier (e.g., "L", "M", "C", "PWS")
+
+        Returns:
+            Configuration dictionary for the section
+        """
+        # Normalize section ID
+        section_key = section_id.replace("section_", "").upper().strip()
+
+        # Handle special cases
+        if section_key in ["UNSPEC", "UNK", ""]:
+            section_key = "UNKNOWN"
+
+        # Look up first letter for UCF sections like "L.4.B"
+        if len(section_key) > 1 and section_key[0].isalpha() and section_key[1] == ".":
+            section_key = section_key[0]
+
+        return self.SECTION_EXTRACTION_CONFIG.get(
+            section_key,
+            self.SECTION_EXTRACTION_CONFIG["UNKNOWN"]
+        )
+
+    def _is_section_noise(self, sentence: str, section_config: Dict[str, Any]) -> bool:
+        """
+        Check if sentence is noise according to section-specific rules.
+
+        Args:
+            sentence: The text to check
+            section_config: Section-specific configuration
+
+        Returns:
+            True if sentence should be filtered out
+        """
+        # First apply general noise check
+        if self._is_noise(sentence):
+            return True
+
+        # Apply section-specific noise patterns
+        sentence_stripped = sentence.strip()
+        for pattern in section_config.get("noise_patterns", []):
+            if re.search(pattern, sentence_stripped, re.IGNORECASE):
+                return True
+
+        # Check against section-specific minimum length
+        min_length = section_config.get("min_sentence_length", self.MIN_SENTENCE_LENGTH)
+        if len(sentence_stripped) < min_length:
+            return True
+
+        return False
+
+    def _has_section_actor(self, sentence: str, section_config: Dict[str, Any]) -> bool:
+        """
+        Check if sentence has an actor expected for this section.
+
+        Args:
+            sentence: The text to check
+            section_config: Section-specific configuration
+
+        Returns:
+            True if sentence contains expected actor
+        """
+        sentence_lower = sentence.lower()
+        expected_actors = section_config.get("expected_actors", [])
+
+        for actor in expected_actors:
+            # Build flexible pattern for actor
+            actor_pattern = rf'\b{re.escape(actor)}\b'
+            if re.search(actor_pattern, sentence_lower):
+                return True
+
+        # Fall back to general actor check
+        return self._has_actor(sentence)
+
+    def _matches_section_patterns(self, sentence: str, section_config: Dict[str, Any]) -> bool:
+        """
+        Check if sentence matches any section-specific key patterns.
+
+        Args:
+            sentence: The text to check
+            section_config: Section-specific configuration
+
+        Returns:
+            True if sentence matches section patterns
+        """
+        sentence_lower = sentence.lower()
+        for pattern in section_config.get("key_patterns", []):
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                return True
+        return False
+
+    def _determine_section_requirement_type(
+        self,
+        sentence: str,
+        detected_type: RequirementType,
+        section_config: Dict[str, Any]
+    ) -> RequirementType:
+        """
+        Determine the most appropriate requirement type for this section.
+
+        Uses section context to refine generic types.
+
+        Args:
+            sentence: The requirement text
+            detected_type: Type detected from keyword/semantic patterns
+            section_config: Section-specific configuration
+
+        Returns:
+            Refined requirement type
+        """
+        primary_types = section_config.get("primary_types", [])
+        secondary_types = section_config.get("secondary_types", [])
+        default_type = section_config.get("default_type", RequirementType.PERFORMANCE)
+
+        # If detected type is a primary type for this section, keep it
+        if detected_type in primary_types:
+            return detected_type
+
+        # If detected type is a secondary type, keep it
+        if detected_type in secondary_types:
+            return detected_type
+
+        # For generic PERFORMANCE type, use section default
+        if detected_type == RequirementType.PERFORMANCE:
+            return default_type
+
+        # Check sentence content against key patterns to determine type
+        sentence_lower = sentence.lower()
+
+        # Map patterns to types
+        type_indicators = [
+            (r'\b(?:deliverable|report|submit.*report|documentation)\b', RequirementType.DELIVERABLE),
+            (r'\b(?:metric|threshold|target|acceptable\s+quality)\b', RequirementType.PERFORMANCE_METRIC),
+            (r'\b(?:proposal|offeror|volume)\s+(?:shall|must|should)', RequirementType.PROPOSAL_INSTRUCTION),
+            (r'\b(?:evaluate|evaluation|rating|scoring)\b', RequirementType.EVALUATION_CRITERION),
+            (r'\b(?:clearance|qualification|certification|experience|years)\b', RequirementType.QUALIFICATION),
+            (r'\b(?:FAR|DFARS|comply|compliance|in\s+accordance)\b', RequirementType.COMPLIANCE),
+            (r'\b(?:labor|FTE|staff|personnel|hour)\b', RequirementType.LABOR_REQUIREMENT),
+            (r'\b(?:page|font|margin|format|limit)\b', RequirementType.FORMAT),
+        ]
+
+        for pattern, req_type in type_indicators:
+            if re.search(pattern, sentence_lower):
+                if req_type in primary_types or req_type in secondary_types:
+                    return req_type
+
+        # Default to section default type
+        return default_type
+
     def _extract_from_section(
-        self, 
-        section_id: str, 
-        section_text: str, 
+        self,
+        section_id: str,
+        section_text: str,
         doc: ParsedDocument
     ) -> List[RequirementNode]:
-        """Extract requirements with section context"""
+        """
+        Extract requirements with section-specific context and rules.
+
+        Uses SECTION_EXTRACTION_CONFIG for section-aware extraction.
+        """
         requirements = []
-        
-        # Determine expected requirement type based on section
+
+        # Get section-specific configuration
         section_letter = section_id.replace("section_", "").upper()
-        
-        default_type = {
-            "C": RequirementType.PERFORMANCE,
-            "L": RequirementType.PROPOSAL_INSTRUCTION,
-            "M": RequirementType.EVALUATION_CRITERION,
-            "B": RequirementType.LABOR_REQUIREMENT,
-            "F": RequirementType.DELIVERABLE,
-        }.get(section_letter, RequirementType.PERFORMANCE)
-        
+        section_config = self._get_section_config(section_letter)
+
         sentences = self._split_into_sentences(section_text)
-        
+
         for i, sentence in enumerate(sentences):
-            # Apply quality filters
+            # Apply section-specific quality filters
             if self.strict_mode:
-                if self._is_noise(sentence):
+                if self._is_section_noise(sentence, section_config):
                     continue
             else:
-                if len(sentence.strip()) < 20:
+                min_len = section_config.get("min_sentence_length", 20)
+                if len(sentence.strip()) < min_len:
                     continue
-            
-            req_type, keyword = self._classify_sentence(sentence)
-            
+
+            # Classify sentence with section context
+            req_type, keyword = self._classify_sentence(sentence, section_letter)
+
             if req_type:
-                # Use section-specific default if generic
-                if req_type == RequirementType.PERFORMANCE:
-                    req_type = default_type
-                
-                # In strict mode, skip conditionals without actors
+                # Refine type based on section rules
+                req_type = self._determine_section_requirement_type(
+                    sentence, req_type, section_config
+                )
+
+                # Check for section-appropriate actor
+                has_actor = self._has_section_actor(sentence, section_config)
+
+                # In strict mode, handle conditionals
                 if self.strict_mode and keyword in ["should", "may", "can"]:
-                    if not self._has_actor(sentence):
+                    # Skip conditionals without actors unless they match section patterns
+                    if not has_actor and not self._matches_section_patterns(sentence, section_config):
                         continue
-                
+
                 req = self._create_requirement_node(
                     sentence=sentence,
                     sentence_index=i,
@@ -1026,13 +1510,27 @@ class RequirementExtractor:
                     req_type=req_type,
                     keyword_match=keyword or "",
                 )
-                
+
+                # Apply section-specific confidence boost
+                if req.confidence_score:
+                    boost = section_config.get("confidence_boost", 0.0)
+                    req.confidence_score = max(0.0, min(1.0, req.confidence_score + boost))
+
+                    # Recalculate confidence level
+                    req.confidence = self._score_to_confidence_level(req.confidence_score)
+
+                # Add section pattern match bonus
+                if self._matches_section_patterns(sentence, section_config):
+                    req.confidence_score = min(1.0, req.confidence_score + 0.05)
+                    if has_actor:
+                        req.confidence_score = min(1.0, req.confidence_score + 0.05)
+
                 # Override section ID with section context
                 if req.source:
                     req.source.section_id = section_letter
-                
+
                 requirements.append(req)
-        
+
         return requirements
     
     def _split_into_sentences(self, text: str) -> List[str]:
