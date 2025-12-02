@@ -67,6 +67,170 @@ class RequirementExtractor:
         r"^\s*[ivx]+\.\s*$",                              # Roman numeral lists
     ]
     
+    # ============================================================================
+    # ENHANCED KEYWORD DICTIONARY v2.0
+    # Per accuracy.txt: Broader coverage, contextual patterns, category labels
+    # ============================================================================
+
+    # Requirement verb synonyms - expanded from base forms
+    REQUIREMENT_VERBS = {
+        # Primary action verbs with synonyms
+        "provide": ["provide", "furnish", "supply", "deliver", "give", "offer"],
+        "perform": ["perform", "execute", "conduct", "carry out", "accomplish", "complete"],
+        "maintain": ["maintain", "sustain", "preserve", "keep", "uphold", "continue"],
+        "ensure": ["ensure", "guarantee", "assure", "verify", "confirm", "certify"],
+        "support": ["support", "assist", "aid", "help", "facilitate", "enable"],
+        "develop": ["develop", "create", "design", "build", "construct", "establish"],
+        "submit": ["submit", "present", "deliver", "provide", "furnish", "send"],
+        "include": ["include", "contain", "incorporate", "comprise", "encompass"],
+        "describe": ["describe", "explain", "detail", "outline", "specify", "document"],
+        "demonstrate": ["demonstrate", "show", "prove", "establish", "evidence", "illustrate"],
+        "comply": ["comply", "adhere", "conform", "follow", "observe", "meet"],
+        "implement": ["implement", "deploy", "execute", "install", "establish", "put in place"],
+        "manage": ["manage", "oversee", "supervise", "direct", "coordinate", "administer"],
+        "report": ["report", "document", "record", "log", "notify", "inform"],
+        "train": ["train", "educate", "instruct", "teach", "prepare", "qualify"],
+    }
+
+    # Contextual patterns with confidence weights
+    # Higher weight = stronger requirement indicator
+    # Format: (pattern, keyword_label, confidence_weight, binding_level)
+    CONTEXTUAL_MANDATORY_PATTERNS = [
+        # Strongest indicators (weight 1.0) - explicit actor + shall/must
+        (r"\bcontractor\s+shall\s+(?:provide|perform|maintain|ensure|support|develop|deliver|implement|manage)", "contractor_shall", 1.0, "MANDATORY"),
+        (r"\bcontractor\s+must\s+(?:provide|perform|maintain|ensure|support|develop|deliver|implement|manage)", "contractor_must", 1.0, "MANDATORY"),
+        (r"\bofferor\s+shall\s+(?:submit|provide|include|describe|demonstrate|address|explain)", "offeror_shall", 1.0, "MANDATORY"),
+        (r"\bofferor\s+must\s+(?:submit|provide|include|describe|demonstrate|address|explain)", "offeror_must", 1.0, "MANDATORY"),
+        (r"\bgovernment\s+(?:will|shall)\s+(?:evaluate|assess|review|consider|rate|score)", "government_will", 1.0, "EVALUATION"),
+
+        # Strong indicators (weight 0.9) - shall/must with context
+        (r"\bshall\s+(?:be\s+)?(?:provided|performed|maintained|delivered|submitted|included)", "shall_passive", 0.9, "MANDATORY"),
+        (r"\bmust\s+(?:be\s+)?(?:provided|performed|maintained|delivered|submitted|included)", "must_passive", 0.9, "MANDATORY"),
+        (r"\bis\s+(?:required|mandatory)\s+(?:to|that)", "is_required", 0.9, "MANDATORY"),
+        (r"\bare\s+(?:required|mandatory)\s+(?:to|that)", "are_required", 0.9, "MANDATORY"),
+
+        # Medium-strong indicators (weight 0.8) - shall/must alone
+        (r"\bshall\s+(?:provide|perform|submit|include|deliver|maintain|ensure|develop)", "shall_verb", 0.8, "MANDATORY"),
+        (r"\bmust\s+(?:provide|perform|submit|include|deliver|maintain|ensure|develop)", "must_verb", 0.8, "MANDATORY"),
+        (r"\bwill\s+be\s+required\s+to\b", "will_be_required", 0.8, "MANDATORY"),
+
+        # Standard mandatory (weight 0.7)
+        (r"\bshall\b", "shall", 0.7, "MANDATORY"),
+        (r"\bmust\b", "must", 0.7, "MANDATORY"),
+        (r"\brequired\s+to\b", "required_to", 0.7, "MANDATORY"),
+        (r"\bmandatory\b", "mandatory", 0.7, "MANDATORY"),
+        (r"\bresponsible\s+for\b", "responsible_for", 0.7, "MANDATORY"),
+
+        # Prohibition patterns (weight 0.9)
+        (r"\bshall\s+not\b", "shall_not", 0.9, "PROHIBITION"),
+        (r"\bmust\s+not\b", "must_not", 0.9, "PROHIBITION"),
+        (r"\bwill\s+not\s+(?:be\s+)?(?:allowed|permitted|accepted)", "will_not", 0.9, "PROHIBITION"),
+        (r"\bprohibited\b", "prohibited", 0.9, "PROHIBITION"),
+        (r"\bforbidden\b", "forbidden", 0.9, "PROHIBITION"),
+        (r"\bnot\s+(?:permitted|allowed|acceptable)\b", "not_permitted", 0.9, "PROHIBITION"),
+        (r"\bunder\s+no\s+circumstances\b", "no_circumstances", 0.9, "PROHIBITION"),
+    ]
+
+    CONTEXTUAL_CONDITIONAL_PATTERNS = [
+        # Highly desirable (weight 0.6)
+        (r"\bshould\s+(?:provide|perform|submit|include|deliver|describe)", "should_verb", 0.6, "HIGHLY_DESIRABLE"),
+        (r"\bofferor\s+should\b", "offeror_should", 0.6, "HIGHLY_DESIRABLE"),
+        (r"\bcontractor\s+should\b", "contractor_should", 0.6, "HIGHLY_DESIRABLE"),
+        (r"\bstrongly\s+(?:recommended|encouraged|suggested)", "strongly_recommended", 0.6, "HIGHLY_DESIRABLE"),
+        (r"\bhighly\s+(?:recommended|desirable|preferred)", "highly_recommended", 0.6, "HIGHLY_DESIRABLE"),
+
+        # Desirable (weight 0.5)
+        (r"\bshould\b", "should", 0.5, "DESIRABLE"),
+        (r"\brecommended\b", "recommended", 0.5, "DESIRABLE"),
+        (r"\bencouraged\b", "encouraged", 0.5, "DESIRABLE"),
+        (r"\bpreferred\b", "preferred", 0.5, "DESIRABLE"),
+        (r"\bdesirable\b", "desirable", 0.5, "DESIRABLE"),
+
+        # Optional (weight 0.4)
+        (r"\bmay\s+(?:provide|submit|include|choose|elect)", "may_verb", 0.4, "OPTIONAL"),
+        (r"\bcan\s+(?:provide|submit|include|choose|opt)", "can_verb", 0.4, "OPTIONAL"),
+        (r"\bmay\b", "may", 0.4, "OPTIONAL"),
+        (r"\boptional\b", "optional", 0.4, "OPTIONAL"),
+        (r"\bat\s+(?:the\s+)?(?:offeror'?s?|contractor'?s?)\s+discretion", "discretion", 0.4, "OPTIONAL"),
+    ]
+
+    # Section-specific pattern adjustments
+    # Some words have different meanings in different sections
+    SECTION_PATTERN_ADJUSTMENTS = {
+        "L": {
+            # In Section L, these are proposal instructions, not contract requirements
+            "boost_patterns": [
+                r"\bproposal\s+(?:shall|must|should)",
+                r"\bvolume\s+(?:shall|must|should)",
+                r"\bofferor\s+(?:shall|must|should)",
+                r"\bpage\s+limit",
+                r"\bformat\s+(?:shall|must|should)",
+            ],
+            "reduce_patterns": [
+                # "submit" in Section L is about the proposal, not a deliverable
+                r"\bsubmit\s+(?:to|by|before)",
+            ],
+        },
+        "M": {
+            # In Section M, these indicate evaluation criteria
+            "boost_patterns": [
+                r"\b(?:will|shall)\s+be\s+evaluated",
+                r"\bevaluation\s+(?:factor|criteria)",
+                r"\bscoring\b",
+                r"\b(?:strengths?|weaknesses?|deficienc)",
+                r"\b(?:more|less|equally)\s+important",
+            ],
+            "reduce_patterns": [],
+        },
+        "C": {
+            # In Section C, focus on contractor performance requirements
+            "boost_patterns": [
+                r"\bcontractor\s+(?:shall|must|will)",
+                r"\bthe\s+work\s+(?:shall|will)",
+                r"\bservices?\s+(?:shall|will)",
+                r"\bdeliverable",
+            ],
+            "reduce_patterns": [],
+        },
+    }
+
+    # Hierarchical requirement categories
+    # Maps category names to related keywords for grouping
+    REQUIREMENT_CATEGORIES = {
+        "DOCUMENTATION": {
+            "keywords": ["manual", "report", "documentation", "guide", "procedure", "plan", "document", "record"],
+            "patterns": [r"\b(?:monthly|weekly|quarterly|annual|final)\s+report", r"\bdocumentation\s+(?:shall|must)"],
+        },
+        "PERSONNEL": {
+            "keywords": ["personnel", "staff", "team", "employee", "worker", "resource", "FTE"],
+            "patterns": [r"\bkey\s+personnel", r"\blabor\s+(?:category|hour)", r"\bstaffing\s+(?:plan|level)"],
+        },
+        "SECURITY": {
+            "keywords": ["security", "clearance", "classified", "cybersecurity", "FISMA", "FedRAMP"],
+            "patterns": [r"\b(?:secret|top\s+secret|ts/sci)\s+clearance", r"\bsecurity\s+(?:requirement|control)"],
+        },
+        "QUALITY": {
+            "keywords": ["quality", "QA", "QC", "assurance", "control", "inspection", "testing"],
+            "patterns": [r"\bquality\s+(?:assurance|control)", r"\binspection\s+(?:and\s+)?acceptance"],
+        },
+        "SCHEDULE": {
+            "keywords": ["schedule", "timeline", "milestone", "deadline", "delivery", "date", "period"],
+            "patterns": [r"\bperiod\s+of\s+performance", r"\bdelivery\s+(?:date|schedule)", r"\bno\s+later\s+than"],
+        },
+        "COST": {
+            "keywords": ["cost", "price", "budget", "funding", "invoice", "payment", "rate"],
+            "patterns": [r"\bcost\s+(?:proposal|estimate)", r"\bpricing\s+(?:structure|schedule)"],
+        },
+        "COMPLIANCE": {
+            "keywords": ["FAR", "DFARS", "compliance", "regulation", "clause", "provision", "statute"],
+            "patterns": [r"\bFAR\s+\d+\.\d+", r"\bDFARS\s+\d+\.\d+", r"\bin\s+accordance\s+with"],
+        },
+        "TECHNICAL": {
+            "keywords": ["technical", "system", "software", "hardware", "technology", "solution", "architecture"],
+            "patterns": [r"\btechnical\s+(?:approach|solution|requirement)", r"\bsystem\s+(?:design|architecture)"],
+        },
+    }
+
     # Boilerplate phrases that indicate non-requirement text
     BOILERPLATE_PATTERNS = [
         r"this\s+page\s+intentionally\s+left\s+blank",
@@ -82,8 +246,9 @@ class RequirementExtractor:
         r"clause\s+is\s+incorporated",
         r"the\s+following\s+(?:clauses?|provisions?)\s+(?:are|is)\s+incorporated",
     ]
-    
-    # Mandatory requirement patterns
+
+    # Legacy patterns for backward compatibility
+    # (Kept for code that may reference these directly)
     MANDATORY_PATTERNS = [
         (r"\bshall\b", "shall"),
         (r"\bmust\b", "must"),
@@ -94,8 +259,7 @@ class RequirementExtractor:
         (r"\bis\s+responsible\s+for\b", "responsible"),
         (r"\bshall\s+be\s+responsible\b", "responsible"),
     ]
-    
-    # Conditional/optional patterns
+
     CONDITIONAL_PATTERNS = [
         (r"\bshould\b", "should"),
         (r"\bmay\b", "may"),
@@ -104,8 +268,7 @@ class RequirementExtractor:
         (r"\bis\s+recommended\b", "recommended"),
         (r"\boptional\b", "optional"),
     ]
-    
-    # Prohibition patterns
+
     PROHIBITION_PATTERNS = [
         (r"\bshall\s+not\b", "shall_not"),
         (r"\bmust\s+not\b", "must_not"),
@@ -382,15 +545,17 @@ class RequirementExtractor:
         
         return requirements
     
-    def _classify_sentence(self, sentence: str) -> Tuple[Optional[RequirementType], Optional[str]]:
+    def _classify_sentence(self, sentence: str, section_id: str = "") -> Tuple[Optional[RequirementType], Optional[str]]:
         """
-        Classify a sentence and determine if it's a requirement
-        
+        Classify a sentence and determine if it's a requirement.
+
+        Enhanced with contextual patterns and section-aware adjustments.
+
         Returns:
             (RequirementType or None, matched_keyword or None)
         """
         sentence_lower = sentence.lower()
-        
+
         # First check semantic patterns (more specific)
         for req_type, patterns in self.compiled_semantic.items():
             for pattern in patterns:
@@ -400,23 +565,172 @@ class RequirementExtractor:
                         if regex.search(sentence_lower):
                             return req_type, keyword
                     return req_type, "semantic"
-        
+
+        # Check using contextual patterns with confidence weights
+        best_match = self._classify_with_contextual_patterns(sentence_lower, section_id)
+        if best_match:
+            return best_match
+
+        # Fall back to legacy patterns for backward compatibility
         # Check prohibition patterns
         for regex, keyword in self.compiled_prohibition:
             if regex.search(sentence_lower):
                 return RequirementType.PROHIBITION, keyword
-        
+
         # Check mandatory patterns
         for regex, keyword in self.compiled_mandatory:
             if regex.search(sentence_lower):
                 return RequirementType.PERFORMANCE, keyword  # Default type for shall/must
-        
+
         # Check conditional patterns (lower priority)
         for regex, keyword in self.compiled_conditional:
             if regex.search(sentence_lower):
                 return RequirementType.PERFORMANCE, keyword
-        
+
         return None, None
+
+    def _classify_with_contextual_patterns(
+        self,
+        sentence_lower: str,
+        section_id: str = ""
+    ) -> Optional[Tuple[RequirementType, str]]:
+        """
+        Classify using contextual patterns with confidence weights.
+
+        Returns the highest-confidence match, or None if no match.
+        """
+        best_weight = 0.0
+        best_keyword = None
+        best_binding = None
+
+        # Check mandatory contextual patterns
+        for pattern, keyword, weight, binding in self.CONTEXTUAL_MANDATORY_PATTERNS:
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                # Apply section-specific adjustments
+                adjusted_weight = self._apply_section_adjustment(weight, sentence_lower, section_id)
+                if adjusted_weight > best_weight:
+                    best_weight = adjusted_weight
+                    best_keyword = keyword
+                    best_binding = binding
+
+        # Check conditional contextual patterns (only if no mandatory found)
+        if best_weight < 0.7:  # Only consider conditional if no strong mandatory
+            for pattern, keyword, weight, binding in self.CONTEXTUAL_CONDITIONAL_PATTERNS:
+                if re.search(pattern, sentence_lower, re.IGNORECASE):
+                    adjusted_weight = self._apply_section_adjustment(weight, sentence_lower, section_id)
+                    if adjusted_weight > best_weight:
+                        best_weight = adjusted_weight
+                        best_keyword = keyword
+                        best_binding = binding
+
+        if best_keyword and best_weight >= 0.4:  # Minimum threshold
+            # Map binding level to requirement type
+            req_type = self._binding_to_requirement_type(best_binding, sentence_lower)
+            return req_type, best_keyword
+
+        return None
+
+    def _apply_section_adjustment(
+        self,
+        base_weight: float,
+        sentence_lower: str,
+        section_id: str
+    ) -> float:
+        """
+        Apply section-specific weight adjustments.
+
+        Some patterns have different significance in different sections.
+        """
+        if not section_id:
+            return base_weight
+
+        section_upper = section_id.upper().replace("SECTION_", "")
+
+        adjustments = self.SECTION_PATTERN_ADJUSTMENTS.get(section_upper, {})
+
+        # Check boost patterns
+        for pattern in adjustments.get("boost_patterns", []):
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                return min(base_weight + 0.15, 1.0)  # Boost but cap at 1.0
+
+        # Check reduce patterns
+        for pattern in adjustments.get("reduce_patterns", []):
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                return max(base_weight - 0.2, 0.0)  # Reduce but floor at 0.0
+
+        return base_weight
+
+    def _binding_to_requirement_type(self, binding: str, sentence_lower: str) -> RequirementType:
+        """
+        Map binding level to requirement type, considering sentence content.
+        """
+        # Special handling for evaluation language
+        if binding == "EVALUATION":
+            return RequirementType.EVALUATION_CRITERION
+
+        # Special handling for prohibitions
+        if binding == "PROHIBITION":
+            return RequirementType.PROHIBITION
+
+        # Check for specific content indicators
+        if re.search(r'\bproposal\b.*\b(?:shall|must|should)', sentence_lower):
+            return RequirementType.PROPOSAL_INSTRUCTION
+
+        if re.search(r'\b(?:deliverable|report|document)\b', sentence_lower):
+            return RequirementType.DELIVERABLE
+
+        if re.search(r'\b(?:qualification|experience|certification|clearance)\b', sentence_lower):
+            return RequirementType.QUALIFICATION
+
+        if re.search(r'\b(?:FAR|DFARS|comply|compliance)\b', sentence_lower):
+            return RequirementType.COMPLIANCE
+
+        # Default based on binding level
+        if binding in ["MANDATORY", "HIGHLY_DESIRABLE", "DESIRABLE", "OPTIONAL"]:
+            return RequirementType.PERFORMANCE
+
+        return RequirementType.PERFORMANCE
+
+    def get_requirement_category(self, sentence: str) -> Optional[str]:
+        """
+        Determine the category of a requirement for grouping.
+
+        Returns the category name or None if no category matches.
+        """
+        sentence_lower = sentence.lower()
+
+        for category, config in self.REQUIREMENT_CATEGORIES.items():
+            # Check keywords
+            for keyword in config.get("keywords", []):
+                if keyword.lower() in sentence_lower:
+                    return category
+
+            # Check patterns
+            for pattern in config.get("patterns", []):
+                if re.search(pattern, sentence_lower, re.IGNORECASE):
+                    return category
+
+        return None
+
+    def get_binding_level(self, sentence: str) -> str:
+        """
+        Determine the binding level of a requirement.
+
+        Returns: MANDATORY, HIGHLY_DESIRABLE, DESIRABLE, OPTIONAL, or INFORMATIONAL
+        """
+        sentence_lower = sentence.lower()
+
+        # Check mandatory patterns first (highest priority)
+        for pattern, keyword, weight, binding in self.CONTEXTUAL_MANDATORY_PATTERNS:
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                return binding
+
+        # Check conditional patterns
+        for pattern, keyword, weight, binding in self.CONTEXTUAL_CONDITIONAL_PATTERNS:
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                return binding
+
+        return "INFORMATIONAL"
     
     def _create_requirement_node(
         self,
