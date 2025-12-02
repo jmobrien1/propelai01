@@ -278,17 +278,6 @@ class StrategicMapper:
             evidence_list.append("FedRAMP/FISMA compliance docs")
             evidence_list.append("Security controls matrix")
         
-        # Management
-        if req_type == RequirementType.MANAGEMENT:
-            evidence_list.append("Management plan")
-            evidence_list.append("Quality assurance plan")
-            evidence_list.append("Risk management plan")
-        
-        # Financial/pricing
-        if req_type == RequirementType.PRICING:
-            evidence_list.append("Detailed cost breakdown")
-            evidence_list.append("Rate justification")
-        
         # Compliance
         if req_type == RequirementType.COMPLIANCE:
             evidence_list.append("Compliance certification")
