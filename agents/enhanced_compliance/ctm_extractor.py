@@ -727,12 +727,12 @@ class EnhancedCTMExtractor:
             return RequirementType.MANAGEMENT
         
         if rfp_section == RFPSection.SECTION_C:
-            return RequirementType.TECHNICAL
+            return RequirementType.PERFORMANCE
         
         if rfp_section == RFPSection.SECTION_K:
             return RequirementType.ADMINISTRATIVE
         
-        return RequirementType.TECHNICAL
+        return RequirementType.PERFORMANCE
     
     def _calculate_priority(
         self,

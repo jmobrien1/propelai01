@@ -173,7 +173,7 @@ class LegacyRequirementAdapter:
         type_str = str(type_str).lower().strip()
         
         mapping = {
-            'technical': RequirementType.TECHNICAL,
+            'technical': RequirementType.PERFORMANCE,
             'management': RequirementType.MANAGEMENT,
             'past_performance': RequirementType.PAST_PERFORMANCE,
             'past performance': RequirementType.PAST_PERFORMANCE,
