@@ -24,22 +24,50 @@ class MultiFormatParser:
     - markitdown as fallback for complex layouts
     """
     
-    # Section header patterns (federal RFP standard)
+    # Enhanced section header patterns (federal RFP standard + variants)
+    # Each pattern includes primary and alternative detection methods
     SECTION_PATTERNS = {
-        # FAR standard sections
-        "section_a": r"SECTION\s*A[\s:\-–]+|SOLICITATION.*FORM",
-        "section_b": r"SECTION\s*B[\s:\-–]+|SUPPLIES\s*OR\s*SERVICES",
-        "section_c": r"SECTION\s*C[\s:\-–]+|DESCRIPTION.*SPECIFICATIONS|STATEMENT\s*OF\s*WORK",
-        "section_d": r"SECTION\s*D[\s:\-–]+|PACKAGING.*MARKING",
-        "section_e": r"SECTION\s*E[\s:\-–]+|INSPECTION.*ACCEPTANCE",
-        "section_f": r"SECTION\s*F[\s:\-–]+|DELIVERIES.*PERFORMANCE",
-        "section_g": r"SECTION\s*G[\s:\-–]+|CONTRACT\s*ADMINISTRATION",
-        "section_h": r"SECTION\s*H[\s:\-–]+|SPECIAL\s*CONTRACT",
-        "section_i": r"SECTION\s*I[\s:\-–]+|CONTRACT\s*CLAUSES",
-        "section_j": r"SECTION\s*J[\s:\-–]+|ATTACHMENTS",
-        "section_k": r"SECTION\s*K[\s:\-–]+|REPRESENTATIONS",
-        "section_l": r"SECTION\s*L[\s:\-–]+|INSTRUCTIONS.*OFFERORS",
-        "section_m": r"SECTION\s*M[\s:\-–]+|EVALUATION\s*FACTORS",
+        # FAR standard sections with expanded patterns
+        "section_a": r"SECTION\s*A[\s:\-–—]+|SOLICITATION.*FORM|SF[- ]?(?:33|1449)",
+        "section_b": r"SECTION\s*B[\s:\-–—]+|SUPPLIES?\s*(?:OR\s+)?SERVICES?\s*AND\s*PRICES?|CONTRACT\s+LINE\s+ITEMS?|CLIN\s+(?:STRUCTURE|PRICING)",
+        "section_c": r"SECTION\s*C[\s:\-–—]+|DESCRIPTION[/\s]+SPECIFICATIONS?|STATEMENT\s+OF\s+(?:WORK|OBJECTIVES?)|SCOPE\s+OF\s+(?:WORK|CONTRACT)|C\.\d+\s+[-–—]",
+        "section_d": r"SECTION\s*D[\s:\-–—]+|PACKAGING\s+(?:AND\s+)?MARKING",
+        "section_e": r"SECTION\s*E[\s:\-–—]+|INSPECTION\s+(?:AND\s+)?ACCEPTANCE",
+        "section_f": r"SECTION\s*F[\s:\-–—]+|DELIVERIES?\s+(?:OR\s+)?PERFORMANCE|PERIOD\s+OF\s+PERFORMANCE",
+        "section_g": r"SECTION\s*G[\s:\-–—]+|CONTRACT\s+ADMINISTRATION\s+DATA",
+        "section_h": r"SECTION\s*H[\s:\-–—]+|SPECIAL\s+CONTRACT\s+REQUIREMENTS?",
+        "section_i": r"SECTION\s*I[\s:\-–—]+|CONTRACT\s+CLAUSES",
+        "section_j": r"SECTION\s*J[\s:\-–—]+|(?:LIST\s+OF\s+)?ATTACHMENTS?|EXHIBITS?",
+        "section_k": r"SECTION\s*K[\s:\-–—]+|REPRESENTATIONS?\s*(?:,\s*)?(?:AND\s+)?CERTIFICATIONS?",
+        "section_l": r"SECTION\s*L[\s:\-–—]+|INSTRUCTIONS?\s*(?:,\s*CONDITIONS?\s*(?:,\s*)?)?(?:AND\s+)?(?:NOTICES?\s+)?TO\s+OFFERORS?|PROPOSAL\s+(?:SUBMISSION\s+)?(?:REQUIREMENTS?|INSTRUCTIONS?)|L\.\d+\s+[-–—]",
+        "section_m": r"SECTION\s*M[\s:\-–—]+|EVALUATION\s+(?:FACTORS?|CRITERIA)\s*(?:FOR\s+AWARD)?|BASIS\s+(?:FOR\s+)?(?:CONTRACT\s+)?AWARD|SOURCE\s+SELECTION\s+(?:CRITERIA|FACTORS?)|M\.\d+\s+[-–—]",
+        # Additional document types
+        "pws": r"PERFORMANCE\s+WORK\s+STATEMENT|PWS[\s:\-–—]+",
+        "sow": r"STATEMENT\s+OF\s+WORK|SOW[\s:\-–—]+",
+    }
+
+    # Content-based heuristics for section inference when headers aren't found
+    SECTION_CONTENT_HEURISTICS = {
+        "section_l": [
+            r'\b(?:offeror|proposer)s?\s+(?:shall|must|should)\s+(?:submit|provide|include|describe)',
+            r'\b(?:technical|business|cost|price)\s+(?:proposal|volume)',
+            r'\bpage\s+limit(?:ation)?s?\b',
+            r'\bproposal\s+(?:format|organization|structure)',
+            r'\bsubmission\s+(?:requirements?|instructions?)',
+        ],
+        "section_m": [
+            r'\b(?:government|agency)\s+(?:will|shall)\s+(?:evaluate|assess|review)',
+            r'\bevaluation\s+(?:factor|criteria)',
+            r'\b(?:adjectival|color)\s+ratings?\b',
+            r'\b(?:strengths?|weaknesses?|deficienc)',
+            r'\bbest\s+value\b',
+        ],
+        "section_c": [
+            r'\bcontractor\s+(?:shall|must|will)\s+(?:provide|perform|deliver|maintain)',
+            r'\bthe\s+work\s+(?:shall|will)',
+            r'\b(?:scope|objective)s?\s+of\s+(?:work|services?)',
+            r'\bdeliverable(?:s)?\s+(?:shall|will)',
+        ],
     }
     
     # Article patterns within sections
@@ -318,22 +346,50 @@ class MultiFormatParser:
     def _detect_sections(self, text: str) -> Dict[str, str]:
         """
         Detect section boundaries in the document
-        
+
+        Uses a multi-stage approach:
+        1. Find explicit section headers
+        2. Score matches to filter TOC entries vs real headers
+        3. Apply content heuristics for undetected content
+
         Returns:
             Dict mapping section ID to section text
         """
         sections = {}
-        
-        # Find all section headers and their positions
+
+        # Find all section headers and their positions with scoring
         section_positions = []
-        
+
         for section_id, pattern in self.SECTION_PATTERNS.items():
             for match in re.finditer(pattern, text, re.IGNORECASE):
-                section_positions.append((match.start(), section_id, match.group()))
-        
-        # Sort by position
-        section_positions.sort(key=lambda x: x[0])
-        
+                # Get surrounding context
+                line_start = text.rfind('\n', 0, match.start()) + 1
+                line_end = text.find('\n', match.end())
+                if line_end == -1:
+                    line_end = len(text)
+                line = text[line_start:line_end]
+
+                # Score this match to filter out TOC entries
+                score = self._score_section_match(match, line, text)
+
+                if score > 0:  # Only include positive scores
+                    section_positions.append((match.start(), section_id, match.group(), score))
+
+        # Sort by position, then by score (prefer higher scores for same position)
+        section_positions.sort(key=lambda x: (x[0], -x[3]))
+
+        # Remove duplicate positions (keep highest scoring)
+        seen_positions = set()
+        filtered_positions = []
+        for pos, section_id, header, score in section_positions:
+            # Consider positions within 100 chars as duplicates
+            pos_bucket = pos // 100
+            if pos_bucket not in seen_positions:
+                seen_positions.add(pos_bucket)
+                filtered_positions.append((pos, section_id, header))
+
+        section_positions = filtered_positions
+
         # Extract text between sections
         for i, (start_pos, section_id, header) in enumerate(section_positions):
             # Find end position (start of next section or end of doc)
@@ -341,10 +397,102 @@ class MultiFormatParser:
                 end_pos = section_positions[i + 1][0]
             else:
                 end_pos = len(text)
-            
+
             section_text = text[start_pos:end_pos]
             sections[section_id] = section_text
-        
+
+        # Apply content heuristics to identify sections in unassigned content
+        if not sections:
+            # No headers found - try content-based detection
+            sections = self._detect_sections_by_content(text)
+
+        return sections
+
+    def _score_section_match(self, match, line: str, full_text: str) -> int:
+        """
+        Score a potential section header match.
+        Higher scores = more likely to be a real section header.
+        Negative scores = likely a TOC entry or reference.
+        """
+        score = 10  # Base score
+
+        # TOC indicators - strongly negative
+        if '....' in line or re.search(r'\.{3,}\s*\d+\s*$', line):
+            return -100  # Definitely a TOC entry
+
+        # Page number at end of line suggests TOC
+        if re.search(r'\.\s*\d+\s*$', line):
+            return -50
+
+        # Check if this is a cross-reference (not a header)
+        preceding = full_text[max(0, match.start()-100):match.start()].lower()
+        if re.search(r'(?:in|see|per|under|from)\s*$', preceding):
+            return -30
+
+        # Positive indicators
+        following = full_text[match.end():match.end()+500]
+
+        # Real sections have substantial content
+        if len(following.strip()) > 200:
+            score += 20
+
+        # Real sections typically have requirement keywords nearby
+        req_keywords = len(re.findall(r'\b(?:shall|must|will|offeror|contractor|proposal|submit)\b',
+                                       following, re.IGNORECASE))
+        score += min(req_keywords * 5, 30)
+
+        # Headers at start of line
+        if match.start() == 0 or full_text[match.start()-1] in '\n\r':
+            score += 15
+
+        # Document position heuristics
+        doc_position = match.start() / max(len(full_text), 1)
+
+        # Sections L, M typically appear later (past 40% of doc)
+        section_id = line[:20].upper()
+        if 'SECTION L' in section_id or 'SECTION M' in section_id:
+            if doc_position > 0.3:
+                score += 20
+            elif doc_position < 0.1:
+                score -= 30  # Probably TOC
+
+        return score
+
+    def _detect_sections_by_content(self, text: str) -> Dict[str, str]:
+        """
+        Detect sections using content heuristics when headers aren't found.
+        This handles non-standard RFP formats.
+        """
+        sections = {}
+
+        # Split text into chunks for analysis
+        chunk_size = 5000
+        chunks = []
+        for i in range(0, len(text), chunk_size):
+            chunks.append((i, text[i:i + chunk_size]))
+
+        # Score each chunk for section likelihood
+        for start_pos, chunk in chunks:
+            section_scores = {}
+            chunk_lower = chunk.lower()
+
+            for section_id, patterns in self.SECTION_CONTENT_HEURISTICS.items():
+                score = 0
+                for pattern in patterns:
+                    matches = len(re.findall(pattern, chunk_lower, re.IGNORECASE))
+                    score += matches
+                if score > 0:
+                    section_scores[section_id] = score
+
+            # Assign chunk to highest-scoring section
+            if section_scores:
+                best_section = max(section_scores.items(), key=lambda x: x[1])
+                if best_section[1] >= 2:  # At least 2 pattern matches
+                    if best_section[0] not in sections:
+                        sections[best_section[0]] = chunk
+                    else:
+                        sections[best_section[0]] += chunk
+
         return sections
     
     def _extract_table_hints(self, text: str) -> List[Dict[str, Any]]:
@@ -472,12 +620,60 @@ class MultiFormatParser:
         return 0  # Not found
     
     def get_section_for_position(self, doc: ParsedDocument, position: int) -> str:
-        """Determine which section contains the given character position"""
-        current_pos = 0
-        
+        """
+        Determine which section contains the given character position.
+
+        Uses multiple strategies:
+        1. Check if position falls within detected section boundaries
+        2. Extract surrounding context and use content heuristics
+        3. Return best guess rather than UNKNOWN when possible
+        """
+        # Strategy 1: Check detected section boundaries
         for section_id, section_text in doc.sections.items():
             section_start = doc.full_text.find(section_text)
-            if section_start <= position < section_start + len(section_text):
+            if section_start >= 0 and section_start <= position < section_start + len(section_text):
                 return section_id.replace("section_", "").upper()
-        
+
+        # Strategy 2: Use content heuristics on surrounding text
+        context_start = max(0, position - 500)
+        context_end = min(len(doc.full_text), position + 500)
+        context = doc.full_text[context_start:context_end].lower()
+
+        section_scores = {}
+        for section_id, patterns in self.SECTION_CONTENT_HEURISTICS.items():
+            score = 0
+            for pattern in patterns:
+                if re.search(pattern, context, re.IGNORECASE):
+                    score += 1
+            if score > 0:
+                section_scores[section_id] = score
+
+        if section_scores:
+            best = max(section_scores.items(), key=lambda x: x[1])
+            if best[1] >= 1:  # At least one pattern match
+                return best[0].replace("section_", "").upper()
+
+        # Strategy 3: Check for explicit section references in context
+        ref_patterns = [
+            (r'\bSECTION\s+([A-M])\b', lambda m: m.group(1).upper()),
+            (r'\b([A-M])\.\d+', lambda m: m.group(1).upper()),
+            (r'\b(PWS|SOW)\b', lambda m: m.group(1).upper()),
+        ]
+        for pattern, extractor in ref_patterns:
+            match = re.search(pattern, context, re.IGNORECASE)
+            if match:
+                return extractor(match)
+
+        # Strategy 4: Infer from document type
+        if doc.document_type:
+            type_map = {
+                'STATEMENT_OF_WORK': 'SOW',
+                'PERFORMANCE_WORK_STATEMENT': 'PWS',
+                'MAIN_SOLICITATION': 'C',  # Default to C for main doc
+            }
+            doc_type_str = str(doc.document_type.value if hasattr(doc.document_type, 'value') else doc.document_type)
+            for key, section in type_map.items():
+                if key in doc_type_str.upper():
+                    return section
+
         return "UNKNOWN"

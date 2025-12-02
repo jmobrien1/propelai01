@@ -569,14 +569,61 @@ class RequirementExtractor:
         
         return 0
     
+    # Additional patterns for section reference extraction
+    SECTION_REF_EXTENDED_PATTERNS = [
+        r'([A-M])\.(\d+)(?:\.(\d+|[a-z]))?(?:\.(\d+|[a-z]))?',  # L.4.B.2
+        r'(?:PWS|SOW)\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?',          # PWS 2.1.3
+        r'(?:Section|Article|Paragraph)\s+([A-M])(?:\.(\d+))?',  # Section L.4
+        r'(?:SECTION\s+)?([A-M])\s*[-–—]\s*',                     # SECTION L -
+    ]
+
     def _extract_section_ref(self, sentence: str, doc: ParsedDocument) -> str:
-        """Extract section reference from context"""
-        # Look for explicit section references
+        """
+        Extract section reference from sentence and context.
+
+        Uses multiple strategies:
+        1. Look for explicit section references in the sentence
+        2. Check surrounding context for section markers
+        3. Infer from document section if available
+        """
+        # Strategy 1: Look for explicit section references in sentence
         match = re.search(self.SECTION_REF_PATTERN, sentence)
         if match:
             parts = [p for p in match.groups() if p]
             return ".".join(parts)
-        
+
+        # Strategy 2: Try extended patterns
+        for pattern in self.SECTION_REF_EXTENDED_PATTERNS:
+            match = re.search(pattern, sentence, re.IGNORECASE)
+            if match:
+                parts = [p for p in match.groups() if p]
+                if parts:
+                    return ".".join(parts)
+
+        # Strategy 3: Check document sections for position-based assignment
+        if doc and doc.sections:
+            # Find which section this sentence belongs to
+            sentence_pos = doc.full_text.find(sentence[:50])  # Use first 50 chars
+            if sentence_pos >= 0:
+                for section_id, section_text in doc.sections.items():
+                    section_start = doc.full_text.find(section_text)
+                    if section_start >= 0 and section_start <= sentence_pos < section_start + len(section_text):
+                        return section_id.replace("section_", "").upper()
+
+        # Strategy 4: Infer from requirement content
+        sentence_lower = sentence.lower()
+        content_indicators = [
+            (r'\b(?:offeror|proposer)s?\s+(?:shall|must|should)', 'L'),
+            (r'\bproposal\s+(?:shall|must|should)', 'L'),
+            (r'\b(?:government|agency)\s+(?:will|shall)\s+(?:evaluate|assess)', 'M'),
+            (r'\bevaluation\s+(?:factor|criteria)', 'M'),
+            (r'\bcontractor\s+(?:shall|must|will)\s+(?:provide|perform|deliver)', 'C'),
+            (r'\bthe\s+work\s+(?:shall|will)', 'C'),
+        ]
+        for pattern, section in content_indicators:
+            if re.search(pattern, sentence_lower):
+                return section
+
         return "UNSPEC"
     
     def _extract_keywords(self, sentence: str) -> List[str]:

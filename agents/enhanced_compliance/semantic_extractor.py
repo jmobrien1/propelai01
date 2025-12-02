@@ -426,9 +426,138 @@ class SemanticRequirementExtractor:
         
         return ""
     
+    # Section header patterns for enhanced detection
+    SECTION_HEADER_PATTERNS = {
+        RFPSection.SECTION_L: [
+            r'SECTION\s*L[\s:\-–—]+',
+            r'PART\s+(?:IV|4)[\s:\-–—]+.*INSTRUCTION',
+            r'INSTRUCTIONS?\s*(?:,\s*)?(?:CONDITIONS?\s*(?:,\s*)?)?(?:AND\s+)?NOTICES?\s+TO\s+OFFERORS?',
+            r'PROPOSAL\s+(?:SUBMISSION\s+)?(?:REQUIREMENTS?|INSTRUCTIONS?)',
+            r'ARTICLE\s+L\.\d+',
+            r'L\.\d+\s+[-–—]\s*[A-Z]',
+        ],
+        RFPSection.SECTION_M: [
+            r'SECTION\s*M[\s:\-–—]+',
+            r'EVALUATION\s+(?:FACTORS?|CRITERIA)\s+(?:FOR\s+)?(?:AWARD)?',
+            r'BASIS\s+(?:FOR\s+)?(?:CONTRACT\s+)?AWARD',
+            r'SOURCE\s+SELECTION\s+(?:CRITERIA|FACTORS?)',
+            r'ARTICLE\s+M\.\d+',
+            r'M\.\d+\s+[-–—]\s*[A-Z]',
+            # NIH-specific
+            r'REVIEW\s+(?:AND\s+)?SELECTION\s+PROCESS',
+            r'EVALUATION\s+OF\s+(?:TECHNICAL\s+)?PROPOSALS?',
+        ],
+        RFPSection.SECTION_C: [
+            r'SECTION\s*C[\s:\-–—]+',
+            r'DESCRIPTION[/\s]+SPECIFICATIONS?[/\s]+(?:SOW|WORK\s+STATEMENT)',
+            r'STATEMENT\s+OF\s+(?:WORK|OBJECTIVES?)',
+            r'SCOPE\s+OF\s+(?:WORK|CONTRACT)',
+            r'ARTICLE\s+C\.\d+',
+            r'C\.\d+\s+[-–—]\s*[A-Z]',
+            # Task order specific
+            r'TASK\s+(?:ORDER\s+)?REQUIREMENTS?',
+            r'CONTRACT\s+REQUIREMENTS?',
+        ],
+        RFPSection.PWS: [
+            r'PERFORMANCE\s+WORK\s+STATEMENT',
+            r'PWS[\s:\-–—]+',
+            r'ATTACHMENT\s+\d+[\s:\-–—]+.*PWS',
+        ],
+        RFPSection.SOW: [
+            r'STATEMENT\s+OF\s+WORK',
+            r'SOW[\s:\-–—]+',
+            r'ATTACHMENT\s+\d+[\s:\-–—]+.*SOW',
+        ],
+        RFPSection.SECTION_F: [
+            r'SECTION\s*F[\s:\-–—]+',
+            r'DELIVERIES?\s+(?:OR\s+)?PERFORMANCE',
+            r'PERIOD\s+OF\s+PERFORMANCE',
+        ],
+        RFPSection.SECTION_H: [
+            r'SECTION\s*H[\s:\-–—]+',
+            r'SPECIAL\s+CONTRACT\s+REQUIREMENTS?',
+        ],
+        RFPSection.SECTION_J: [
+            r'SECTION\s*J[\s:\-–—]+',
+            r'LIST\s+OF\s+(?:DOCUMENTS?|ATTACHMENTS?|EXHIBITS?)',
+        ],
+        RFPSection.SECTION_B: [
+            r'SECTION\s*B[\s:\-–—]+',
+            r'SUPPLIES?\s+(?:OR\s+)?SERVICES?\s+AND\s+PRICES?',
+            r'CONTRACT\s+LINE\s+ITEMS?',
+            r'CLIN\s+STRUCTURE',
+        ],
+        RFPSection.SECTION_K: [
+            r'SECTION\s*K[\s:\-–—]+',
+            r'REPRESENTATIONS?\s*(?:,\s*)?CERTIFICATIONS?\s*(?:,\s*)?(?:AND\s+)?OTHER',
+        ],
+    }
+
+    # Content-based heuristics for section inference (when no header found)
+    SECTION_CONTENT_PATTERNS = {
+        RFPSection.SECTION_L: [
+            # Proposal instruction indicators
+            (r'\b(?:offeror|proposer)s?\s+(?:shall|must|should)\s+(?:submit|provide|include|describe|address|demonstrate)', 0.8),
+            (r'\b(?:technical|business|cost|price|management)\s+(?:proposal|volume)\s+(?:shall|must|should)', 0.8),
+            (r'\bproposal\s+(?:format|organization|structure|preparation)', 0.7),
+            (r'\bpage\s+limit(?:ation)?s?\b', 0.6),
+            (r'\bfont\s+(?:size|type)|(?:single|double)[- ]?spac(?:ed?|ing)', 0.6),
+            (r'\bsubmission\s+(?:requirements?|instructions?|deadline)', 0.7),
+            (r'\bvolume\s+[IVX]+\b|\bvolume\s+\d+\b', 0.6),
+            # NIH proposal patterns
+            (r'\bresearch\s+(?:strategy|plan|approach)\s+(?:shall|must|should)', 0.7),
+            (r'\bspecific\s+aims?\s+(?:page|section)', 0.7),
+            (r'\bbiosketch(?:es)?\b', 0.6),
+        ],
+        RFPSection.SECTION_M: [
+            # Evaluation indicators
+            (r'\b(?:government|agency)\s+(?:will|shall)\s+(?:evaluate|assess|review|consider)', 0.9),
+            (r'\bevaluation\s+(?:factor|criteria|element)s?\b', 0.8),
+            (r'\b(?:adjectival|color)\s+ratings?\b', 0.7),
+            (r'\b(?:outstanding|excellent|good|acceptable|marginal|unacceptable)\b.*\b(?:rating|score)', 0.7),
+            (r'\bpass[/-]fail\b', 0.7),
+            (r'\b(?:strengths?|weaknesses?|deficienc(?:y|ies)|significant|risk)\b.*\b(?:evaluat|assess)', 0.6),
+            (r'\b(?:more|less|equally)\s+important\s+than\b', 0.8),
+            (r'\bbest\s+value\s+(?:determination|tradeoff)', 0.8),
+            (r'\b(?:technical|management|past\s+performance)\s+(?:is|are)\s+(?:more|less)\s+important', 0.9),
+            # NIH review patterns
+            (r'\boverall\s+impact(?:/priority)?\s+score', 0.8),
+            (r'\b(?:significance|innovation|approach|investigator|environment)\s+(?:score|criterion)', 0.7),
+        ],
+        RFPSection.SECTION_C: [
+            # Performance/SOW indicators
+            (r'\bcontractor\s+(?:shall|must|will)\s+(?:provide|perform|deliver|maintain|support|develop)', 0.8),
+            (r'\bthe\s+work\s+(?:shall|will)\s+(?:include|consist|be\s+performed)', 0.7),
+            (r'\btask(?:s|ing)?\s+(?:shall|will)\s+(?:include|be)', 0.6),
+            (r'\bservices?\s+(?:shall|will)\s+(?:include|be\s+provided)', 0.7),
+            (r'\bdeliverable(?:s)?\s+(?:shall|will)\s+(?:include|be)', 0.7),
+            (r'\b(?:scope|objective)s?\s+of\s+(?:work|services?|contract)', 0.7),
+            (r'\bperformance\s+(?:period|requirements?|objectives?)', 0.6),
+            (r'\bquality\s+(?:assurance|control)\s+(?:surveillance\s+)?plan', 0.6),
+        ],
+        RFPSection.PWS: [
+            (r'\bperformance\s+work\s+statement', 0.9),
+            (r'\bpws\s+(?:section|paragraph|requirement)', 0.8),
+            (r'\bperformance\s+(?:standard|objective|requirement)s?\b', 0.6),
+        ],
+        RFPSection.SOW: [
+            (r'\bstatement\s+of\s+work', 0.9),
+            (r'\bsow\s+(?:section|paragraph|requirement)', 0.8),
+        ],
+    }
+
     def _determine_rfp_section(self, section_ref: str, context: str, filename: str) -> RFPSection:
-        """Determine which RFP section this requirement belongs to"""
-        # Check section reference
+        """
+        Determine which RFP section this requirement belongs to.
+
+        Uses a multi-stage approach:
+        1. Explicit section reference (L.4.B.2, C.3.1)
+        2. Section header patterns in context
+        3. Content-based semantic heuristics
+        4. Filename patterns
+        5. Fallback to UNKNOWN only if all else fails
+        """
+        # Stage 1: Check explicit section reference
         if section_ref:
             first_char = section_ref[0].upper()
             section_map = {
@@ -438,30 +567,65 @@ class SemanticRequirementExtractor:
                 'F': RFPSection.SECTION_F,
                 'H': RFPSection.SECTION_H,
                 'J': RFPSection.SECTION_J,
+                'B': RFPSection.SECTION_B,
+                'K': RFPSection.SECTION_K,
+                'A': RFPSection.SECTION_A,
+                'D': RFPSection.SECTION_D,
+                'E': RFPSection.SECTION_E,
+                'G': RFPSection.SECTION_G,
+                'I': RFPSection.SECTION_I,
             }
             if first_char in section_map:
                 return section_map[first_char]
-        
-        # Check context for section markers
+            # Handle PWS/SOW references
+            if section_ref.upper().startswith('PWS'):
+                return RFPSection.PWS
+            if section_ref.upper().startswith('SOW'):
+                return RFPSection.SOW
+
+        # Stage 2: Check context for section header patterns
+        context_upper = context.upper()
+        for section, patterns in self.SECTION_HEADER_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, context_upper):
+                    return section
+
+        # Stage 3: Content-based semantic heuristics
+        section_scores = {}
         context_lower = context.lower()
-        if 'section l' in context_lower or 'instruction' in context_lower:
-            return RFPSection.SECTION_L
-        if 'section m' in context_lower or 'evaluation' in context_lower:
-            return RFPSection.SECTION_M
-        if 'section c' in context_lower or 'statement of work' in context_lower:
-            return RFPSection.SECTION_C
-        if 'pws' in context_lower or 'performance work statement' in context_lower:
-            return RFPSection.PWS
-        
-        # Check filename
+        for section, patterns in self.SECTION_CONTENT_PATTERNS.items():
+            score = 0.0
+            for pattern, weight in patterns:
+                if re.search(pattern, context_lower, re.IGNORECASE):
+                    score += weight
+            if score > 0:
+                section_scores[section] = score
+
+        # Return section with highest score if above threshold
+        if section_scores:
+            best_section = max(section_scores.items(), key=lambda x: x[1])
+            if best_section[1] >= 0.6:  # Confidence threshold
+                return best_section[0]
+
+        # Stage 4: Check filename patterns
         filename_lower = filename.lower()
-        if 'pws' in filename_lower:
-            return RFPSection.PWS
-        if 'sow' in filename_lower:
-            return RFPSection.SOW
-        if 'attachment' in filename_lower:
-            return RFPSection.ATTACHMENT
-        
+        filename_patterns = [
+            (r'pws|performance.?work.?statement', RFPSection.PWS),
+            (r'sow|statement.?of.?work', RFPSection.SOW),
+            (r'section[_\-\s]?l|instructions?', RFPSection.SECTION_L),
+            (r'section[_\-\s]?m|evaluation', RFPSection.SECTION_M),
+            (r'section[_\-\s]?c|description|specification', RFPSection.SECTION_C),
+            (r'attachment|exhibit|appendix', RFPSection.ATTACHMENT),
+            (r'amendment|modification|mod\d+', RFPSection.ATTACHMENT),  # Amendments often have requirements
+        ]
+        for pattern, section in filename_patterns:
+            if re.search(pattern, filename_lower):
+                return section
+
+        # Stage 5: Last resort - infer from current tracking section
+        if hasattr(self, '_current_section') and self._current_section != RFPSection.UNKNOWN:
+            return self._current_section
+
         return RFPSection.UNKNOWN
     
     def _is_garbage(self, text: str) -> bool:

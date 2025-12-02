@@ -9,7 +9,7 @@ Follows CTM Best Practices:
 - Evaluation engineering integration
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 import os
 import re
@@ -22,6 +22,11 @@ try:
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
+    # Define dummy classes for type hints when openpyxl not available
+    if TYPE_CHECKING:
+        from openpyxl import Workbook
+    else:
+        Workbook = Any  # type: ignore
 
 from .semantic_extractor import (
     ExtractedRequirement, ExtractionResult, 
