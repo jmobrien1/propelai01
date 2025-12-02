@@ -309,7 +309,7 @@ class StrategicMapper:
             proof_points.append("X years of relevant experience in similar environments")
         
         # Quality
-        if 'quality' in text_lower or req_type == RequirementType.QUALITY:
+        if 'quality' in text_lower:
             proof_points.append("Quality certifications (ISO 9001, CMMI Level 3+)")
         
         # Security
