@@ -223,15 +223,15 @@ class SectionAwareExtractor:
         for att_id, att_info in structure.attachments.items():
             if att_info.contains_requirements and att_info.document_type not in ['Amendment', 'Budget Template']:
                 requirements = self._extract_from_attachment(att_info)
-                
+
                 for req in requirements:
                     if req.text_hash not in seen_hashes:
                         seen_hashes.add(req.text_hash)
                         result.all_requirements.append(req)
                         result.attachment_requirements.append(req)
-                        
-                        # Also add to technical if it's SOW/PWS
-                        if att_info.document_type in ['SOW', 'PWS']:
+
+                        # Also add to technical if it's SOW/PWS or Technical Attachment
+                        if att_info.document_type in ['SOW', 'PWS', 'Technical Attachment']:
                             result.technical_requirements.append(req)
         
         # Build stats
