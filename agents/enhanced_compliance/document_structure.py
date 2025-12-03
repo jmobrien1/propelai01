@@ -611,20 +611,28 @@ class RFPStructureParser:
             ))
 
             # Detect SOW/PWS from content if not identified from filename
+            # Search more of the document for bundled files (SOW may be after cover pages)
+            search_range = 50000 if 'attachments' in filename else 10000
             if doc_type == "General" and has_requirements:
-                if re.search(r'\b(?:statement\s+of\s+work|scope\s+of\s+work)\b', text[:10000], re.IGNORECASE):
+                if re.search(r'\b(?:statement\s+of\s+work|scope\s+of\s+work)\b', text[:search_range], re.IGNORECASE):
                     doc_type = "SOW"
                     if not att_id:
                         att_id = "SOW"
-                elif re.search(r'\bperformance\s+work\s+statement\b', text[:10000], re.IGNORECASE):
+                elif re.search(r'\bperformance\s+work\s+statement\b', text[:search_range], re.IGNORECASE):
                     doc_type = "PWS"
                     if not att_id:
                         att_id = "PWS"
-                elif re.search(r'\bcontractor\s+shall\b.*\bcontractor\s+shall\b', text[:30000], re.IGNORECASE | re.DOTALL):
+                elif re.search(r'\bcontractor\s+shall\b.*\bcontractor\s+shall\b', text[:50000], re.IGNORECASE | re.DOTALL):
                     # Multiple "contractor shall" statements suggest technical requirements
                     doc_type = "Technical Attachment"
                     if not att_id:
                         att_id = f"Technical Attachment {attachment_counter}"
+                        attachment_counter += 1
+                elif 'attachments' in filename:
+                    # Bundled attachment files should default to Technical Attachment
+                    doc_type = "Technical Attachment"
+                    if not att_id:
+                        att_id = f"Attachments Bundle {attachment_counter}"
                         attachment_counter += 1
 
             # If document has requirements but no att_id yet, assign one
