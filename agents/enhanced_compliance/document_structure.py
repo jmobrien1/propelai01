@@ -605,14 +605,17 @@ class RFPStructureParser:
                     att_id = f"Amendment {match.group(1)}"
 
             # Check content for requirements
+            # For bundled attachment files, search deeper (SOW may be after cover pages/TOC)
+            is_bundled = 'attachments' in filename
+            req_search_range = 100000 if is_bundled else 20000
             has_requirements = bool(re.search(
                 r'\b(?:shall|must|will\s+be\s+required|is\s+required)\b',
-                text[:20000], re.IGNORECASE
+                text[:req_search_range], re.IGNORECASE
             ))
 
             # Detect SOW/PWS from content if not identified from filename
             # Search more of the document for bundled files (SOW may be after cover pages)
-            search_range = 50000 if 'attachments' in filename else 10000
+            search_range = 100000 if is_bundled else 10000
             if doc_type == "General" and has_requirements:
                 if re.search(r'\b(?:statement\s+of\s+work|scope\s+of\s+work)\b', text[:search_range], re.IGNORECASE):
                     doc_type = "SOW"
@@ -622,18 +625,22 @@ class RFPStructureParser:
                     doc_type = "PWS"
                     if not att_id:
                         att_id = "PWS"
-                elif re.search(r'\bcontractor\s+shall\b.*\bcontractor\s+shall\b', text[:50000], re.IGNORECASE | re.DOTALL):
+                elif re.search(r'\bcontractor\s+shall\b.*\bcontractor\s+shall\b', text[:100000], re.IGNORECASE | re.DOTALL):
                     # Multiple "contractor shall" statements suggest technical requirements
                     doc_type = "Technical Attachment"
                     if not att_id:
                         att_id = f"Technical Attachment {attachment_counter}"
                         attachment_counter += 1
-                elif 'attachments' in filename:
-                    # Bundled attachment files should default to Technical Attachment
-                    doc_type = "Technical Attachment"
-                    if not att_id:
-                        att_id = f"Attachments Bundle {attachment_counter}"
-                        attachment_counter += 1
+
+            # SPECIAL CASE: Bundled attachment files should ALWAYS be processed
+            # even if has_requirements didn't find keywords in first N chars
+            # (the requirements may be deep in the document after cover pages)
+            if is_bundled and doc_type == "General" and not att_id:
+                doc_type = "Technical Attachment"
+                att_id = f"Attachments Bundle {attachment_counter}"
+                attachment_counter += 1
+                # Mark as containing requirements since we KNOW bundled attachment files have them
+                has_requirements = True
 
             # If document has requirements but no att_id yet, assign one
             if has_requirements and not att_id:
