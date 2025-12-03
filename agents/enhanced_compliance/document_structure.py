@@ -556,7 +556,10 @@ class RFPStructureParser:
             pages = doc.get('pages', [])
 
             # Skip main RFP document (identified by having sections L, M, C)
-            if self._is_main_solicitation(text):
+            # BUT: If filename contains 'attachment', always process as attachment
+            # (bundled attachments PDFs may contain UCF section references)
+            is_attachment_file = 'attachment' in filename or 'exhibit' in filename
+            if not is_attachment_file and self._is_main_solicitation(text):
                 continue
 
             # Detect attachment type from filename
