@@ -757,43 +757,62 @@ async def process_rfp_semantic(rfp_id: str, background_tasks: BackgroundTasks):
 def process_rfp_best_practices_background(rfp_id: str):
     """
     Background task to process RFP with Best Practices CTM extraction (v2.9).
-    
+
     Per best practices:
     - Analyzes document structure BEFORE extraction
     - Preserves RFP's own numbering (L.4.B.2, C.3.1)
     - Creates separate L/M/C matrices
     - Extracts complete paragraphs, not sentence fragments
     """
+    import gc
+
     rfp = store.get(rfp_id)
     if not rfp:
         return
-    
+
     if not best_practices_extractor:
         store.set_status(rfp_id, "error", 0, "Best practices extractor not available")
         store.update(rfp_id, {"status": "error"})
         return
-    
+
     try:
         import time
         start_time = time.time()
-        
+
         # Update status
         store.set_status(rfp_id, "processing", 10, "Analyzing document structure...")
         store.update(rfp_id, {"status": "processing"})
-        
+
         # Get file paths
         file_paths = rfp["file_paths"]
         if not file_paths:
             store.set_status(rfp_id, "error", 0, "No files to process")
             store.update(rfp_id, {"status": "error"})
             return
-        
+
+        # Check total file size to prevent memory issues
+        total_size = 0
+        MAX_TOTAL_SIZE = 50 * 1024 * 1024  # 50MB limit for all files combined
+        MAX_SINGLE_FILE = 15 * 1024 * 1024  # 15MB limit per file
+
+        for file_path in file_paths:
+            try:
+                file_size = os.path.getsize(file_path)
+                total_size += file_size
+                if file_size > MAX_SINGLE_FILE:
+                    print(f"Warning: Large file {os.path.basename(file_path)}: {file_size / 1024 / 1024:.1f}MB")
+            except Exception:
+                pass
+
+        if total_size > MAX_TOTAL_SIZE:
+            print(f"Warning: Total file size ({total_size / 1024 / 1024:.1f}MB) exceeds limit. Processing may be slow.")
+
         # Parse documents into text
         store.set_status(rfp_id, "processing", 20, "Parsing documents...")
-        
+
         from agents.enhanced_compliance import MultiFormatParser, DocumentType
         parser = MultiFormatParser()
-        
+
         def infer_doc_type(filename: str) -> DocumentType:
             """Infer document type from filename"""
             fname_lower = filename.lower()
@@ -809,35 +828,75 @@ def process_rfp_best_practices_background(rfp_id: str):
                 return DocumentType.MAIN_SOLICITATION
             else:
                 return DocumentType.ATTACHMENT
-        
+
         documents = []
-        for file_path in file_paths:
+        MAX_TEXT_LENGTH = 2_000_000  # 2M chars per document to prevent memory issues
+
+        for i, file_path in enumerate(file_paths):
             try:
                 import os
                 filename = os.path.basename(file_path)
+                store.set_status(rfp_id, "processing", 20 + (i * 15 // len(file_paths)),
+                               f"Parsing {filename}...")
+
                 doc_type = infer_doc_type(filename)
                 parsed = parser.parse_file(file_path, doc_type)
                 if parsed:
+                    # Truncate very large documents to prevent memory exhaustion
+                    full_text = parsed.full_text
+                    if len(full_text) > MAX_TEXT_LENGTH:
+                        print(f"Warning: Truncating {filename} from {len(full_text)} to {MAX_TEXT_LENGTH} chars")
+                        full_text = full_text[:MAX_TEXT_LENGTH]
+
                     documents.append({
-                        'text': parsed.full_text,
+                        'text': full_text,
                         'filename': parsed.filename,
-                        'pages': parsed.pages if parsed.pages else [parsed.full_text],
+                        'pages': parsed.pages[:200] if parsed.pages else [full_text],  # Limit pages
                     })
+
+                    # Force garbage collection after each large file
+                    if len(full_text) > 500_000:
+                        gc.collect()
+
             except Exception as e:
                 print(f"Warning: Could not parse {file_path}: {e}")
+                import traceback
+                traceback.print_exc()
         
         if not documents:
             store.set_status(rfp_id, "error", 0, "No documents could be parsed")
             store.update(rfp_id, {"status": "error"})
             return
-        
+
+        print(f"Successfully parsed {len(documents)} documents for {rfp_id}")
+
         # Analyze document structure
-        store.set_status(rfp_id, "processing", 40, "Analyzing RFP structure (L/M/C sections)...")
-        structure = analyze_rfp_structure(documents)
-        
+        store.set_status(rfp_id, "processing", 40, f"Analyzing RFP structure ({len(documents)} documents)...")
+        try:
+            structure = analyze_rfp_structure(documents)
+            print(f"Structure analysis complete: {structure.solicitation_number}")
+            gc.collect()  # Free memory after structure analysis
+        except Exception as e:
+            print(f"Error analyzing structure: {e}")
+            import traceback
+            traceback.print_exc()
+            store.set_status(rfp_id, "error", 0, f"Structure analysis failed: {str(e)[:100]}")
+            store.update(rfp_id, {"status": "error"})
+            return
+
         # Extract requirements with structure awareness
         store.set_status(rfp_id, "processing", 60, "Extracting requirements by section...")
-        result = best_practices_extractor.extract(documents, structure)
+        try:
+            result = best_practices_extractor.extract(documents, structure)
+            print(f"Extraction complete: {len(result.all_requirements)} requirements")
+            gc.collect()  # Free memory after extraction
+        except Exception as e:
+            print(f"Error extracting requirements: {e}")
+            import traceback
+            traceback.print_exc()
+            store.set_status(rfp_id, "error", 0, f"Extraction failed: {str(e)[:100]}")
+            store.update(rfp_id, {"status": "error"})
+            return
         
         store.set_status(rfp_id, "processing", 80, "Building compliance matrices...")
         
@@ -1041,20 +1100,99 @@ async def get_requirement(rfp_id: str, req_id: str):
 
 # ============== Export ==============
 
+def _detect_agency_from_solicitation(sol_num: str) -> str:
+    """Detect federal agency from solicitation number format"""
+    if not sol_num:
+        return ""
+
+    sol_upper = sol_num.upper()
+
+    # NIH format: 75N + 5 digits + letter + 5 digits (e.g., 75N96025R00004)
+    if sol_upper.startswith("75N"):
+        return "NIH"
+
+    # Navy format: N + 5 digits + 2 digits + R/Q + digits (e.g., N0017826R30020)
+    if sol_upper.startswith("N") and len(sol_upper) >= 10:
+        import re
+        if re.match(r'^N\d{5}', sol_upper):
+            return "Navy"
+
+    # Army format: W + contract code (e.g., W912HQ-24-R-0001)
+    if sol_upper.startswith("W"):
+        return "Army"
+
+    # Air Force format: FA + digits (e.g., FA8730-24-R-0001)
+    if sol_upper.startswith("FA"):
+        return "AirForce"
+
+    # GSA format: GS- prefix
+    if sol_upper.startswith("GS"):
+        return "GSA"
+
+    # VA format: 36C prefix
+    if sol_upper.startswith("36C"):
+        return "VA"
+
+    # DHS format: 70CDCR prefix or HSCG prefix
+    if sol_upper.startswith("70") or sol_upper.startswith("HSC"):
+        return "DHS"
+
+    # HHS/CMS format: 75
+    if sol_upper.startswith("75"):
+        return "HHS"
+
+    return ""
+
+
+def _build_export_filename(rfp: Dict, rfp_id: str) -> str:
+    """Build a meaningful filename for the compliance matrix export"""
+    # Try to get solicitation number from extraction result
+    sol_num = None
+
+    # Best practices extraction stores it in the result structure
+    if rfp.get("best_practices_result"):
+        result = rfp["best_practices_result"]
+        if hasattr(result, 'structure') and result.structure:
+            sol_num = result.structure.solicitation_number
+
+    # Also check if it was manually set
+    if not sol_num:
+        sol_num = rfp.get("solicitation_number")
+
+    # If still no solicitation number, fall back to rfp_id
+    if not sol_num or sol_num == "UNKNOWN":
+        return f"{rfp_id}_ComplianceMatrix.xlsx"
+
+    # Detect agency
+    agency = _detect_agency_from_solicitation(sol_num)
+
+    # Clean the solicitation number for filename (remove special chars)
+    import re
+    clean_sol = re.sub(r'[^\w\-]', '', sol_num)
+
+    # Build filename
+    if agency:
+        return f"{clean_sol}_{agency}_ComplianceMatrix.xlsx"
+    else:
+        return f"{clean_sol}_ComplianceMatrix.xlsx"
+
+
 @app.get("/api/rfp/{rfp_id}/export")
 async def export_rfp(rfp_id: str, format: str = "xlsx"):
     """Export RFP to Excel"""
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     if not rfp["requirements"]:
         raise HTTPException(status_code=400, detail="No requirements to export")
-    
+
     if format != "xlsx":
         raise HTTPException(status_code=400, detail="Only xlsx format supported")
-    
-    output_path = OUTPUT_DIR / f"{rfp_id}_ComplianceMatrix.xlsx"
+
+    # Build meaningful filename from solicitation number and agency
+    export_filename = _build_export_filename(rfp, rfp_id)
+    output_path = OUTPUT_DIR / export_filename
     
     # Check extraction mode and use appropriate exporter
     extraction_mode = rfp.get("extraction_mode", "legacy")
@@ -1121,7 +1259,7 @@ async def export_rfp(rfp_id: str, format: str = "xlsx"):
     return FileResponse(
         str(output_path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=f"{rfp_id}_ComplianceMatrix.xlsx"
+        filename=export_filename
     )
 
 
@@ -1464,10 +1602,26 @@ async def export_annotated_outline(rfp_id: str):
     try:
         exporter = AnnotatedOutlineExporter()
         doc_bytes = exporter.export(outline, requirements, outline.get("format_requirements", {}), config)
-        
-        safe_name = "".join(c for c in rfp.get("name", rfp_id) if c.isalnum() or c in " -_")[:50]
-        filename = f"{safe_name}_Annotated_Outline.docx"
-        
+
+        # Build meaningful filename from solicitation number
+        sol_num = config.solicitation_number if config.solicitation_number != "TBD" else None
+        if not sol_num and rfp.get("best_practices_result"):
+            result = rfp["best_practices_result"]
+            if hasattr(result, 'structure') and result.structure:
+                sol_num = result.structure.solicitation_number
+
+        if sol_num and sol_num != "UNKNOWN":
+            import re
+            clean_sol = re.sub(r'[^\w\-]', '', sol_num)
+            agency = _detect_agency_from_solicitation(sol_num)
+            if agency:
+                filename = f"{clean_sol}_{agency}_Annotated_Outline.docx"
+            else:
+                filename = f"{clean_sol}_Annotated_Outline.docx"
+        else:
+            safe_name = "".join(c for c in rfp.get("name", rfp_id) if c.isalnum() or c in " -_")[:50]
+            filename = f"{safe_name}_Annotated_Outline.docx"
+
         return Response(
             content=doc_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
