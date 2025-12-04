@@ -248,6 +248,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# v3.0: Include OASIS+ router
+try:
+    from api.oasis_routes import router as oasis_router
+    app.include_router(oasis_router)
+    OASIS_ROUTES_AVAILABLE = True
+    print("OASIS+ routes loaded successfully")
+except ImportError as e:
+    OASIS_ROUTES_AVAILABLE = False
+    print(f"Warning: OASIS+ routes not available: {e}")
+
 
 # ============== Root Route (Web UI) ==============
 

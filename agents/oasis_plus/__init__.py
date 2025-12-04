@@ -40,6 +40,20 @@ from .pdf_tagger import PDFTagger, TaggedPDF
 
 from .form_generator import JP3FormGenerator
 
+from .orchestrator import (
+    OASISOrchestrator,
+    OASISProposal,
+    OASISProject,
+    ProcessingProgress,
+)
+
+from .symphony_export import (
+    SymphonyBundleGenerator,
+    BundleResult,
+    BundleManifest,
+    generate_symphony_bundle,
+)
+
 __all__ = [
     # Models
     "OASISDomain",
@@ -62,4 +76,14 @@ __all__ = [
     "TaggedPDF",
     # Form Generator
     "JP3FormGenerator",
+    # Orchestrator
+    "OASISOrchestrator",
+    "OASISProposal",
+    "OASISProject",
+    "ProcessingProgress",
+    # Symphony Export
+    "SymphonyBundleGenerator",
+    "BundleResult",
+    "BundleManifest",
+    "generate_symphony_bundle",
 ]
