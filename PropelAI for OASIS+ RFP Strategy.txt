@@ -1,0 +1,132 @@
+﻿Strategic Technical Architecture Report: Adapting PropelAI for GSA OASIS+ Orchestration
+1. Executive Strategy and Market Context
+The federal government contracting landscape is undergoing a profound structural transformation, shifting from narrative-centric proposal evaluations to rigorous, data-driven "self-scoring" methodologies. This paradigm shift is most visibly embodied in the General Services Administration’s (GSA) One Acquisition Solution for Integrated Services Plus (OASIS+) vehicle. For PropelAI, a platform originally architected to deconstruct traditional Request for Proposal (RFP) documents and manage compliance matrices, the OASIS+ solicitation represents not merely a new use case, but a fundamental architectural pivot. The requirement is no longer to simply identify what the government wants (requirement extraction) but to autonomously prove what a contractor has done (evidence verification) against a rigid, mathematical scoring standard.
+The current PropelAI architecture, built on a React frontend and FastAPI backend deployed on Render.com, provides a viable baseline for modern web application delivery. However, the existing reliance on simple document parsing and in-memory storage is insufficient for the complexity of OASIS+. The "Technical Report: AI-Driven Extraction and Automation for Government RFPs" correctly identifies the distributed nature of requirements across Sections C, L, and M of typical RFPs.1 Yet, OASIS+ transcends this by introducing the "Self-Scoring" model via Attachment J.P-1, where the proposal is a quantitative exercise in maximizing points based on historical project data, rather than a qualitative exercise in persuasive writing.2
+To serve clients targeting OASIS+, PropelAI must evolve from a "Shredder" (which breaks documents down) into an "Orchestrator" (which builds evidence lockers up). The system must ingest the complex Excel-based Domain Qualifications Matrix (J.P-1), parse historical contract artifacts (PDFs of SOWs, FPDS reports), and use agentic AI to "hunt" for evidence that substantiates specific scoring claims—such as "Surge Capability" or "OCONUS Performance".4 Furthermore, the system must automate the generation of submission artifacts compatible with the Symphony portal, specifically the rigorous requirement to "tag" evidence within PDF files using highlights and comments to facilitate government validation.6
+This report outlines a comprehensive technical strategy to execute this pivot. It leverages the existing Claude-generated codebase and Render.com infrastructure but mandates significant expansion into Dockerized microservices for Optical Character Recognition (OCR), persistent vector storage for semantic evidence retrieval, and a combinatorial optimization engine to maximize offeror scores. The strategy is designed to be audit-defensible, aligning with the compliance-first rigor required by GAO protest logic and CMMC standards.1
+________________
+2. Deconstructing the OASIS+ Architecture: A Technical Analysis
+Understanding the specific mechanics of the OASIS+ solicitation is a prerequisite for defining the software architecture. Unlike a standard single-award contract, OASIS+ is a multi-domain, multiple-award Indefinite Delivery/Indefinite Quantity (IDIQ) contract with a 10-year period of performance.8 The evaluation methodology is strictly binary and mathematical, driven by the "Highest Technically Rated Offerors with a Fair and Reasonable Price" (HTRFRP) or a pure pass/fail qualification threshold depending on the specific pool.9
+2.1 The Primacy of the J.P-1 Qualifications Matrix
+The central data structure of an OASIS+ proposal is not the textual narrative, but the Domain Qualifications Matrix (Attachment J.P-1). This is a complex Excel spreadsheet that functions as the rubric for the entire proposal. Each domain (e.g., Technical & Engineering, Management & Advisory) has a unique matrix defining the scoring criteria.10 The technical implication for PropelAI is that the system cannot treat the solicitation as a static text document; it must ingest J.P-1 as a dynamic rules engine.
+The Matrix defines "Qualifying Projects" (QPs) and "Federal Experience Projects" (FEPs).11 A fundamental technical challenge is that the criteria for these projects are highly specific and interdependent. For example, to claim points for a "Qualifying Project," it must meet a minimum Average Annual Value (AAV)—$500,000 for Technical & Engineering, but potentially lower for protégé companies.10 The software must therefore possess the logic to parse a project's "Period of Performance" and "Total Obligated Value" from an FPDS report or contract document, apply the AAV formula (Total Value divided by days, multiplied by 366), and determine eligibility dynamically.12
+Furthermore, the J.P-1 Matrix creates a "Credits" system. Points are awarded not just for the existence of a project, but for specific attributes within that project. A single project might yield 4 points for "Relevance," 2 points for "Cost-Reimbursement Contract Type," and 1 point for "OCONUS Performance".5 The PropelAI architecture must model this one-to-many relationship where a single "Project Asset" maps to multiple "Scoring Claims" across different criteria rows in the J.P-1 Matrix.
+2.2 The Threshold Logic and Combinatorial Optimization
+OASIS+ imposes strict qualification thresholds: 36 points for Small Business domains and 42 points for Unrestricted domains.11 This introduces a "Knapsack Problem" into the software logic. A contractor might have 50 past projects in their library, but they can only submit a maximum of five Qualifying Projects per domain.4
+The PropelAI system must essentially solve an optimization problem: Select the combination of five projects from the user's library that:
+1. Meets the mandatory minimums (e.g., AAV, Recency).
+2. Validates the highest number of optional credits (e.g., specialized functional experience, clearance levels).
+3. Maximizes the total score to exceed the 36/42 point threshold with a recommended "cushion" of 3-5 points to account for potential evaluator disqualification.11
+This moves the platform beyond simple "extraction" into "strategic advisory," where the AI calculates the probability of a win (PWin) based on the strength of the evidence found for each claim.
+2.3 The Symphony Portal and Evidence Tagging Constraints
+A critical constraint identified in the research is the mechanics of the Symphony portal (OSP), the exclusive submission interface for OASIS+.2 Symphony is not a passive file bucket; it requires structured data entry and specific file formatting.
+Most importantly, Symphony mandates a rigorous "Evidence Tagging" process. Offerors cannot simply upload a 100-page contract and claim it demonstrates "Systems Engineering." They must upload the PDF and explicitly annotate the file—using PDF comments or highlights—to point the evaluator to the exact paragraph substantiating the claim.6 The Symphony guide explicitly states that "evaluators will use the tags (comments) to find support for the claims" and that the platform allows evaluators to "jump" to these tags.7
+This requirement dictates a sophisticated PDF manipulation capability within PropelAI. The system must not only find the evidence using AI but must also programmatically inject annotations (Sticky Notes or Highlights) into the PDF binary at the exact coordinates of the found text. This "auto-tagging" feature would be a massive differentiator, saving proposal teams hundreds of hours of manual labor. Additionally, Symphony utilizes specific Excel templates for pricing and data ingestion (e.g., J.P-9 Cost Price Template), which PropelAI must be able to populate and export.14
+2.4 The J.P-3 Project Verification Form
+For projects where government databases (FPDS-NG) do not fully validate a claim (e.g., proving "surge capability" or "integration of multiple subsystems"), offerors must submit a Project Verification Form (Attachment J.P-3) signed by a Contracting Officer.12 This form requires specific data fields: Project Identification, Period of Performance, and a narrative explanation of relevance.
+PropelAI's architecture must support the automated generation of these forms. By extracting the relevant metadata from the project documents, the system should pre-fill the J.P-3 PDF, leaving only the signature field blank for the government client. This reduces the administrative burden on the user and ensures consistency between the data entered in Symphony and the data presented on the verification form.
+________________
+3. Technical Gap Analysis: PropelAI Version 2.10.0 vs. OASIS+
+The current "As-Built" architecture of PropelAI, while modern, requires specific enhancements to meet the rigorous demands of OASIS+.
+3.1 Input Processing Gap
+* Current State: The system uses PyMuPDF and python-docx for parsing Sections C/L/M of standard RFPs.15 It focuses on text extraction for requirements shredding.
+* OASIS+ Requirement: The system must ingest structured Excel files (J.P-1 Matrices) to learn the scoring rules dynamically. It must also process FPDS Reports (standardized PDFs from fpds.gov) to extract structured metadata like "PSC Code," "Obligated Amount," and "Dates" with 100% accuracy, as these determine eligibility.12
+* Gap: Lack of an "Excel Rules Engine" and a specialized "FPDS Parser." The generic text extractor will likely fail to interpret the strict row-column logic of the J.P-1 and the layout-specific data of FPDS reports.
+3.2 Logic and storage Gap
+* Current State: PropelAI uses an In-Memory Storage (RFPStore) for project state.15 This is suitable for ephemeral sessions but catastrophic for an OASIS+ proposal which requires building a persistent library of "Project Assets" over weeks or months.
+* OASIS+ Requirement: A persistent relational database is mandatory to store the "many-to-many" relationships between Projects, Domains, and Scoring Criteria. The optimization logic (choosing the best 5 projects) requires complex SQL queries or graph traversals that cannot be performed efficiently in memory.
+* Gap: Need for a persistent PostgreSQL database with a schema optimized for the J.P-1 hierarchy.
+3.3 Evidence Verification Gap
+* Current State: The "Requirement Extraction Agent" identifies "shall" statements.1
+* OASIS+ Requirement: The system needs an "Evidence Hunter." It must take a scoring criteria (e.g., "Experience with ancillary IT services") and semantically search through gigabytes of past contract PDFs to find a clause that proves that experience. This requires vector embeddings and semantic search, not just keyword matching.
+* Gap: Lack of a Vector Database (e.g., pgvector) and an embedding pipeline.
+3.4 Output Gap
+* Current State: Output is a Compliance Matrix (Excel/Word).
+* OASIS+ Requirement: Output must include Tagged PDFs (with coordinate-based annotations) and pre-filled J.P-3 Forms.
+* Gap: The current PDF handling is read-heavy. The system needs a write-heavy PDF engine to insert annotations and fill form fields compatible with Symphony's strict validation logic.
+________________
+4. Comprehensive Technical Strategy
+The following strategy details the evolution of PropelAI into an OASIS+ specialized platform. The architecture adheres to the "Scorecard-First" principle, where every component is designed to maximize and verify the user's self-score.
+4.1 Infrastructure Evolution on Render.com
+The current deployment on Render.com's free tier 15 is insufficient for the memory-intensive tasks of OCR and vector embedding. We must upgrade the infrastructure to a production-grade environment while leveraging Render's Platform-as-a-Service capabilities to minimize DevOps overhead.
+4.1.1 Dockerized Runtime Environment
+The standard Python native runtime on Render does not support system-level dependencies required for advanced OCR and PDF manipulation, specifically Tesseract OCR and Poppler.16 The "Technical Report" recommends a dual-engine ingestion pipeline (OCR + Document AI).1 To support Tesseract as the cost-effective local OCR engine, we must transition the Web Service to a Docker Runtime.
+The Dockerfile must be multi-stage to optimize image size. It will install tesseract-ocr, libtesseract-dev, and poppler-utils at the OS level.18 This allows the Python application to use wrappers like pytesseract and pdf2image to convert scanned contract pages into machine-readable text for the embedding model.
+4.1.2 Asynchronous Background Workers
+OASIS+ proposals involve processing massive files (100+ page contracts). Processing these synchronously in the FastAPI web thread will cause timeouts (Render's load balancer has a fixed timeout). We must implement an Asynchronous Task Queue architecture.19
+* Message Broker: Deploy a Redis instance (Render Key-Value Store) to manage the job queue.
+* Worker Service: Deploy a separate "Background Worker" service on Render. This worker will consume jobs from Redis (e.g., "Ingest Project PDF," "Run OCR," "Generate Embeddings").
+* Scaling: This separation allows independent scaling. The Web Service (API) can remain on a lighter plan, while the Worker Service (OCR/Compute heavy) can be scaled vertically to a "Performance" plan (e.g., 4GB+ RAM) to handle large PDF rendering in memory.21
+4.1.3 Persistent Data Layer with Vector Support
+We will provision a managed PostgreSQL database on Render. Crucially, we will enable the pgvector extension to support vector embeddings directly within the relational database.23 This simplifies the architecture by avoiding a separate vector database (like Pinecone or Milvus). The database will serve as the "Single Source of Truth" for both the structured scoring data and the semantic embeddings of the contract documents.
+4.2 Data Architecture and Schema Design
+The effectiveness of the system relies on a schema that accurately models the J.P-1 Matrix and the user's Project Library.
+4.2.1 The Scorecard Schema
+The database must mirror the hierarchical structure of the solicitation.
+* Solicitation Table: Stores metadata about the RFP (e.g., "OASIS+ Unrestricted").
+* Domain Table: Represents the functional domains (e.g., "Technical & Engineering," "Enterprise Solutions").
+* ScoringCriteria Table: Contains the specific rows from the J.P-1 Matrix. Columns include criteria_id (e.g., "L.5.2.1"), description, max_points, validation_rule (e.g., "Must be in FPDS"), and threshold_value (e.g., "$500,000").
+* Project Table: Stores the user's past performance projects. Key fields include title, client_agency, naics_code, psc_code, start_date, end_date, obligated_amount, and contract_number.
+* Claim Table: The intersection entity. It links a Project to a ScoringCriteria. It includes fields for claimed_points, evidence_snippet (text), page_number, and verification_status (Verified/Unverified).
+4.2.2 The Document Embedding Schema
+To support the "Evidence Hunter," documents must be chunked and stored as vectors.
+* Document Table: Metadata for the file (filename, S3/R2 URL, upload date).
+* DocumentChunk Table: Stores the text and vector embedding.
+   * content: The text of the paragraph.
+   * embedding: The vector representation (e.g., 1536 dimensions for OpenAI text-embedding-3-small).
+   * page_number: Crucial for the Symphony tagging requirement.
+   * bbox: The bounding box coordinates (x, y, w, h) of the text on the page. Storing this during ingestion is vital for later drawing the highlight annotations accurately.24
+4.3 The "OASIS+ Orchestrator" Agentic Workflow
+We will implement a specialized multi-agent workflow that replaces the generic "Drafting Agent" with "Verification Agents" tailored to the J.P-1 requirements.
+4.3.1 Agent 1: The J.P-1 Ingestion Agent
+This agent is responsible for parsing the complex Excel matrices provided by GSA. It utilizes pandas or openpyxl to read the J.P-1 file. It detects the domain tabs, extracts the scoring rows, and populates the ScoringCriteria table. This allows the system to adapt dynamically if GSA releases an amended matrix 25, ensuring the scoring logic is always up-to-date without hardcoding rules.
+4.3.2 Agent 2: The Relevance Classifier
+This agent determines if a project qualifies for a specific domain.
+* Logic: It first checks the project's NAICS and PSC codes against the "Auto-Relevant" list in Attachment J.P-4.12
+* Semantic Fallback: If there is no exact code match, the agent performs a semantic similarity search. It compares the project's "Scope of Work" description against the Domain Definition in Section C.2. It generates a "Relevance Confidence Score" and, if high enough, suggests a "Standard Relevance Verification" narrative for the J.P-3 form.12
+4.3.3 Agent 3: The Evidence Hunter (RAG-based)
+This is the core value driver. It validates subjective claims.
+* Trigger: A user claims points for "Surge Capability" (L.5.2.3.4).
+* Action: The agent queries the vector database for the specific project using semantic terms: "surge," "rapid expansion," "ramp up," "urgent requirement."
+* Verification: It retrieves the top k chunks. It then uses an LLM (e.g., Claude 3.5 Sonnet) to analyze the chunks: "Does this text explicitly mandate the contractor to provide surge support? If yes, extract the exact quote and page number."
+* Output: A verified claim record with a direct link to the evidence page.
+4.3.4 Agent 4: The Combinatorial Optimizer
+Once all projects are ingested and scored against all potential criteria, this agent solves the "Knapsack Problem."
+* Objective: Maximize Total Score > 42 (Unrestricted) or 36 (SB).
+* Constraint: Max 5 Qualifying Projects.
+* Logic: It runs a permutation algorithm to test different combinations of 5 projects. It identifies the "Golden Set" that yields the highest score while satisfying diversity constraints (e.g., "Federal Experience" points may require projects from different agencies).4
+4.4 Automated Artifact Generation for Symphony
+The final output must be tailored for the Symphony portal's manual upload process.
+4.4.1 The PDF Auto-Tagger
+To satisfy the Symphony tagging requirement 6, the system will use PyMuPDF (fitz).
+* Process:
+   1. Retrieve the page_number and bbox (bounding box) for the verified evidence found by Agent 3.
+   2. Open the original PDF using PyMuPDF.
+   3. Draw a Highlight Annotation (add_highlight_annot) over the bounding box coordinates.
+   4. Attach a Sticky Note/Comment (add_text_annot) to the highlight containing the specific claim reference (e.g., "Verification for L.5.2.1 - Qualifying Project Scale").
+   5. Save the modified PDF as a new "Submission Ready" artifact.
+* This automation directly addresses the "bottleneck" described in industry feedback regarding the manual labor of tagging hundreds of pages.26
+4.4.2 J.P-3 Form Automation
+The system will use a PDF form-filling library (like PyPDF2 or pdfrw) to map the structured project data (Dates, Values, NAICS) into the fields of the J.P-3 PDF template.27
+* Value Calculation: The system will automatically apply the "Annualization" formula (Value / Days * 366) to pre-fill the "Average Annual Value" field, ensuring mathematical accuracy and compliance with the GSA's specific calculation method.2
+________________
+5. Implementation Roadmap and Risk Mitigation
+Phase 1: Foundation and Ingestion (Weeks 1-3)
+* Infrastructure: Set up Render PostgreSQL with pgvector and Redis. Deploy the Dockerized generic worker.
+* Data: Implement the J.P-1 Matrix Parser to populate the scoring database.
+* Feature: "Project Library" upload. Users upload ZIPs; the system runs OCR (Tesseract), chunks text, and stores embeddings.
+Phase 2: The Scoring Engine (Weeks 4-6)
+* Feature: "Auto-Scoring." Implement the logic to calculate "Project Value" points based on J.P-1 thresholds (e.g., >$500k = Qualifying).
+* Feature: "Evidence Hunter." Connect the RAG pipeline to the scoring logic. Users click "Verify Credits," and the agents scour the documents for keywords related to optional credits (e.g., "CMMI," "ISO," "Facility Clearance").
+Phase 3: Optimization and Output (Weeks 7-9)
+* Feature: "Win Strategy Dashboard." Display the "Golden Set" of 5 projects and the gap to the 36/42 point threshold.
+* Feature: "Symphony Prep." Implement the PyMuPDF tagging engine. Generate the downloadable bundle of "Tagged PDFs" and pre-filled "J.P-3 Forms."
+Risks and Mitigations
+* Risk: OCR Quality. Poor quality scans of old government contracts may yield bad text, causing the "Evidence Hunter" to miss claims.
+   * Mitigation: Implement the "Dual-Engine" approach. Use Tesseract (free) for first pass. If confidence is low, prompt the user to authorize a call to Google Document AI (paid API) for superior handwriting/scan recognition.1
+* Risk: Symphony Updates. The Symphony portal or J.P-1 matrix may change.
+   * Mitigation: Keep the logic "Data-Driven." Do not hardcode scoring rules in Python. Load them from the J.P-1 Excel file at runtime so the system adapts instantly to GSA amendments.25
+* Risk: Hallucination. The AI might "invent" evidence.
+   * Mitigation: Strict RAG constraints. The Agent must return the exact quote and page number. The UI will show the snippet to the user for "Human-in-the-Loop" confirmation before the score is finalized.
+6. Conclusion
+The adaptation of PropelAI for GSA OASIS+ requires a strategic shift from generic proposal drafting to high-precision evidence verification. By implementing a Dockerized OCR pipeline on Render, a persistent vector-enabled database, and a specialized "Scorecard Orchestration" workflow, PropelAI can automate the most labor-intensive aspects of the OASIS+ submission: the mathematical optimization of the project portfolio and the granular tagging of evidence artifacts. This strategy not only creates a "perfect" technical implementation but also positions the client's tool as a critical compliance engine, directly addressing the anxiety and complexity inherent in the federal government's shift toward self-scoring acquisitions. The resulting platform will save users hundreds of man-hours per proposal and significantly increase their probability of clearing the qualification thresholds.
