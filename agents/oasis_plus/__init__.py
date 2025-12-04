@@ -54,6 +54,20 @@ from .symphony_export import (
     generate_symphony_bundle,
 )
 
+from .database import (
+    OASISDatabase,
+    get_database,
+)
+
+from .document_ingestion import (
+    DocumentIngestionPipeline,
+    IngestionResult,
+    DocumentContent,
+    PageContent,
+    ingest_document,
+    check_ocr_availability,
+)
+
 __all__ = [
     # Models
     "OASISDomain",
@@ -86,4 +100,14 @@ __all__ = [
     "BundleResult",
     "BundleManifest",
     "generate_symphony_bundle",
+    # Database
+    "OASISDatabase",
+    "get_database",
+    # Document Ingestion
+    "DocumentIngestionPipeline",
+    "IngestionResult",
+    "DocumentContent",
+    "PageContent",
+    "ingest_document",
+    "check_ocr_availability",
 ]
