@@ -100,15 +100,119 @@ class ExtractionResult:
     evaluation_requirements: List[StructuredRequirement] = field(default_factory=list)  # M
     attachment_requirements: List[StructuredRequirement] = field(default_factory=list)
     administrative_requirements: List[StructuredRequirement] = field(default_factory=list)
-    
+
     # All requirements (for convenience)
     all_requirements: List[StructuredRequirement] = field(default_factory=list)
-    
+
     # Extraction stats
     stats: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Document structure used
     structure: Optional[DocumentStructure] = None
+
+    # Detected RFP type information
+    rfp_type: str = "STANDARD"  # NIH, DOD, GSA, VA, HHS, SBIR, OASIS_TASK_ORDER, etc.
+    agency: str = ""  # NIH, Navy, Army, Air Force, GSA, VA, DHS, etc.
+    rfp_format: str = "UCF"  # UCF, NON_UCF, GSA_BPA, RESEARCH_OUTLINE
+
+
+# Agency-specific patterns for enhanced extraction
+AGENCY_PATTERNS = {
+    "NIH": {
+        "identifiers": [
+            r"NIH", r"National\s*Institutes?\s*of\s*Health",
+            r"NIEHS", r"NCI", r"NIAID", r"NICHD", r"NHLBI", r"NIMH",
+            r"75N\d{5}[A-Z]\d{5}",
+        ],
+        "extra_binding_keywords": [
+            r'\bPHS\s+\d+', r'\bNIH\s+policy', r'\bFunding\s+Opportunity',
+        ],
+        "section_patterns": {
+            "research_outline": r"(?:RO|Research\s+Outline)[-\s]*([IVX]+\.?\d*)",
+            "specific_aims": r"Specific\s+Aims?",
+        },
+        "special_attachments": ["Attachment 2", "Attachment 11", "PHS 398"],
+    },
+    "DOD": {
+        "identifiers": [
+            r"DoD", r"Department\s*of\s*Defense",
+            r"Navy|NAVSEA|NAVAIR|SPAWAR",
+            r"Army|USACE|AMC",
+            r"Air\s*Force|AFLCMC",
+            r"N\d{5}[-]?\d{2}[-]?[RQ][-]?\d+",  # Navy format
+            r"W\d{5}[-]?\d{2}[-]?[RQ][-]?\d+",  # Army format
+            r"FA\d{4}[-]?\d{2}[-]?[RQ][-]?\d+", # Air Force format
+        ],
+        "extra_binding_keywords": [
+            r'\bDFARS\b', r'\bDFAS\b', r'\bDD[-\s]*254\b', r'\bSecurity\s+Classification',
+            r'\bCUI\b', r'\bCDRL\b', r'\bDID\b', r'\bSOW\s+paragraph',
+        ],
+        "section_patterns": {
+            "cdrl": r"CDRL\s+([A-Z]\d{3})",
+            "did": r"DID[-\s]*(\w+-\d+)",
+            "dfars": r"DFARS\s+(\d+\.\d+[-\d]*)",
+        },
+        "special_attachments": ["J-series", "DD-254", "CDRL", "DID"],
+    },
+    "GSA": {
+        "identifiers": [
+            r"GSA", r"General\s*Services\s*Administration",
+            r"GS[-]?\d{2}[FQ]", r"Schedule\s+\d+",
+            r"BPA", r"Blanket\s+Purchase\s+Agreement",
+        ],
+        "extra_binding_keywords": [
+            r'\bGSAR\b', r'\bFSS\b', r'\bSchedule\s+pricing',
+            r'\bSymphony\b', r'\beBuy\b',
+        ],
+        "section_patterns": {
+            "sin": r"SIN\s+([\d-]+)",
+            "schedule": r"Schedule\s+(\d+)",
+        },
+        "special_attachments": ["Price List", "Labor Categories", "Terms and Conditions"],
+        "non_ucf_likely": True,
+    },
+    "OASIS": {
+        "identifiers": [
+            r"OASIS\+?", r"OASIS\s*Plus", r"47QSMD",
+            r"J\.P[-\s]*1", r"Qualifications\s+Matrix",
+        ],
+        "extra_binding_keywords": [
+            r'\bself[-\s]?scor', r'\bJ\.P[-\s]*[123]', r'\bSymphony\s+portal',
+            r'\bAAV\b', r'\bAverage\s+Annual\s+Value',
+        ],
+        "section_patterns": {
+            "jp_section": r"J\.P[-\s]*(\d)",
+            "domain": r"Domain\s+(\d+)",
+        },
+        "special_attachments": ["J.P-1", "J.P-2", "J.P-3"],
+    },
+    "VA": {
+        "identifiers": [
+            r"VA\b", r"Veterans\s*(?:Affairs|Administration)",
+            r"36C\d+",
+        ],
+        "extra_binding_keywords": [
+            r'\bVAAR\b', r'\bVHA\b', r'\bVISN\b',
+        ],
+        "section_patterns": {},
+        "special_attachments": [],
+    },
+    "SBIR": {
+        "identifiers": [
+            r"SBIR", r"STTR", r"Small\s+Business\s+Innovation\s+Research",
+            r"Phase\s+[I123]", r"Topic\s+\d+",
+        ],
+        "extra_binding_keywords": [
+            r'\bPhase\s+[I123]\b', r'\bTechnical\s+Volume', r'\bCost\s+Volume',
+            r'\bCommercialization\b',
+        ],
+        "section_patterns": {
+            "topic": r"Topic\s+(\d+(?:\.\d+)?)",
+            "phase": r"Phase\s+([I123])",
+        },
+        "special_attachments": ["Technical Volume", "Cost Volume", "Commercialization Plan"],
+    },
+}
 
 
 class SectionAwareExtractor:
@@ -169,32 +273,125 @@ class SectionAwareExtractor:
     # Maximum requirement length - if longer, it's probably multiple requirements
     MAX_REQUIREMENT_LENGTH = 2000
     
-    def __init__(self, preserve_rfp_ids: bool = True):
+    def __init__(self, preserve_rfp_ids: bool = True, agency_type: Optional[str] = None):
         """
         Args:
             preserve_rfp_ids: If True, always use RFP's own references as primary ID
+            agency_type: Pre-detected agency type (NIH, DOD, GSA, etc.)
         """
         self.preserve_rfp_ids = preserve_rfp_ids
+        self.agency_type = agency_type
         self.counters = {}  # For generating IDs when needed
-    
-    def extract(self, documents: List[Dict[str, Any]], structure: Optional[DocumentStructure] = None) -> ExtractionResult:
+        self.active_patterns = None  # Will be set based on agency detection
+
+    def _detect_agency_type(self, documents: List[Dict[str, Any]], solicitation_number: str = "") -> Tuple[str, str, str]:
+        """
+        Detect the agency/RFP type from document content and solicitation number.
+
+        Returns:
+            Tuple of (rfp_type, agency, rfp_format)
+        """
+        # Combine all text for detection
+        all_text = " ".join(doc.get('text', '')[:50000] for doc in documents)
+        all_text_lower = all_text.lower()
+
+        # Check solicitation number first (most reliable)
+        sol_upper = solicitation_number.upper() if solicitation_number else ""
+
+        # NIH
+        if sol_upper.startswith("75N") or re.search(r"75N\d{5}[A-Z]\d{5}", sol_upper):
+            return ("NIH", "NIH", "UCF")
+
+        # DoD - Navy
+        if sol_upper.startswith("N") and re.match(r"N\d{5}", sol_upper):
+            return ("DOD", "Navy", "UCF")
+
+        # DoD - Army
+        if sol_upper.startswith("W"):
+            return ("DOD", "Army", "UCF")
+
+        # DoD - Air Force
+        if sol_upper.startswith("FA"):
+            return ("DOD", "Air Force", "UCF")
+
+        # GSA
+        if sol_upper.startswith("GS") or sol_upper.startswith("47Q"):
+            if "OASIS" in all_text.upper() or "J.P-1" in all_text:
+                return ("OASIS_TASK_ORDER", "GSA OASIS+", "NON_UCF")
+            return ("GSA", "GSA", "NON_UCF")
+
+        # VA
+        if sol_upper.startswith("36C"):
+            return ("VA", "VA", "UCF")
+
+        # DHS
+        if sol_upper.startswith("70") or sol_upper.startswith("HSC"):
+            return ("DHS", "DHS", "UCF")
+
+        # Now check content patterns
+        best_match = None
+        best_score = 0
+
+        for agency_name, patterns in AGENCY_PATTERNS.items():
+            score = 0
+            for identifier in patterns.get("identifiers", []):
+                if re.search(identifier, all_text, re.IGNORECASE):
+                    score += 1
+
+            if score > best_score:
+                best_score = score
+                best_match = agency_name
+
+        if best_match and best_score >= 2:
+            rfp_format = "NON_UCF" if AGENCY_PATTERNS.get(best_match, {}).get("non_ucf_likely") else "UCF"
+            return (best_match, best_match, rfp_format)
+
+        # Check for SBIR/STTR
+        if re.search(r'\bSBIR\b|\bSTTR\b', all_text, re.IGNORECASE):
+            return ("SBIR", "Multiple", "SBIR")
+
+        # Default
+        return ("STANDARD", "", "UCF")
+
+    def _get_agency_patterns(self, agency_type: str) -> Dict[str, Any]:
+        """Get agency-specific patterns for enhanced extraction."""
+        return AGENCY_PATTERNS.get(agency_type, {})
+
+    def extract(self, documents: List[Dict[str, Any]], structure: Optional[DocumentStructure] = None,
+                solicitation_number: str = "") -> ExtractionResult:
         """
         Extract requirements from documents using structural analysis.
-        
+
         Args:
             documents: List of parsed documents with 'text', 'filename', 'pages'
             structure: Pre-computed document structure (will compute if not provided)
-            
+            solicitation_number: Solicitation number for agency detection
+
         Returns:
             ExtractionResult with categorized requirements
         """
         # First, analyze document structure
         if structure is None:
             structure = analyze_rfp_structure(documents)
-        
-        result = ExtractionResult(structure=structure)
+
+        # Detect agency type if not provided
+        if self.agency_type:
+            rfp_type, agency, rfp_format = self.agency_type, self.agency_type, "UCF"
+        else:
+            sol_num = solicitation_number or (structure.solicitation_number if structure else "")
+            rfp_type, agency, rfp_format = self._detect_agency_type(documents, sol_num)
+
+        # Get agency-specific patterns
+        self.active_patterns = self._get_agency_patterns(rfp_type)
+
+        result = ExtractionResult(
+            structure=structure,
+            rfp_type=rfp_type,
+            agency=agency,
+            rfp_format=rfp_format
+        )
         seen_hashes: Set[str] = set()  # For deduplication
-        
+
         # Reset counters
         self.counters = {cat: 0 for cat in RequirementCategory}
         

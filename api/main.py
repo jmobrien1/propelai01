@@ -950,6 +950,21 @@ def process_rfp_best_practices_background(rfp_id: str):
             len(result.technical_requirements) > 0 or len(result.evaluation_requirements) > 0
         )
         
+        # Get detected RFP type from result
+        rfp_type = getattr(result, 'rfp_type', 'STANDARD')
+        agency = getattr(result, 'agency', '')
+        rfp_format = getattr(result, 'rfp_format', 'UCF')
+
+        # Generate format note based on detected type
+        format_notes = {
+            "NIH": "NIH RFP detected. Look for Research Outlines (RO) and PHS forms in attachments.",
+            "DOD": f"{agency} RFP detected. Check for DD-254, CDRLs, and DFARS clauses.",
+            "GSA": "GSA RFP detected. Note: May use non-UCF format. Check for Schedule requirements.",
+            "OASIS_TASK_ORDER": "OASIS+ Task Order detected. Standard RFP analysis applies; for qualification scoring, use OASIS+ Scoring module.",
+            "VA": "VA RFP detected. Check for VAAR clauses and VHA-specific requirements.",
+            "SBIR": "SBIR/STTR RFP detected. Look for Phase-specific requirements and commercialization criteria.",
+        }
+
         stats = {
             "total": len(result.all_requirements),
             "section_l": len(result.section_l_requirements),
@@ -961,9 +976,12 @@ def process_rfp_best_practices_background(rfp_id: str):
             "sections_found": result.stats.get('sections_found', []),
             "sow_location": result.stats.get('sow_location'),
             "processing_time": duration,
-            "extractor_version": "best_practices_v2.10",
-            "is_non_ucf_format": is_non_ucf,  # Flag for UI to show guidance
-            "rfp_format_note": (
+            "extractor_version": "best_practices_v2.11",
+            "is_non_ucf_format": is_non_ucf or rfp_format == "NON_UCF",
+            "rfp_type": rfp_type,
+            "agency": agency,
+            "rfp_format": rfp_format,
+            "rfp_format_note": format_notes.get(rfp_type) or (
                 "This appears to be a GSA Schedule, BPA, or non-standard RFP. "
                 "Submission instructions are in Section M Alignment; "
                 "Technical requirements are from PWS/SOW."

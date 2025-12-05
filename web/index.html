@@ -1841,27 +1841,57 @@
         }
         
         // Matrix View
-        function MatrixView({ 
-            requirements, allRequirements, stats, 
-            searchQuery, setSearchQuery, 
+        function MatrixView({
+            requirements, allRequirements, stats,
+            searchQuery, setSearchQuery,
             filterType, setFilterType,
             filterPriority, setFilterPriority,
             onExport
         }) {
             const uniqueTypes = [...new Set(allRequirements.map(r => r.type).filter(Boolean))];
-            
+
+            // RFP type badge colors
+            const typeColors = {
+                NIH: { bg: 'rgba(79, 140, 255, 0.15)', border: 'rgba(79, 140, 255, 0.4)', text: '#4f8cff' },
+                DOD: { bg: 'rgba(251, 146, 60, 0.15)', border: 'rgba(251, 146, 60, 0.4)', text: '#fb923c' },
+                GSA: { bg: 'rgba(52, 211, 153, 0.15)', border: 'rgba(52, 211, 153, 0.4)', text: '#34d399' },
+                OASIS_TASK_ORDER: { bg: 'rgba(167, 139, 250, 0.15)', border: 'rgba(167, 139, 250, 0.4)', text: '#a78bfa' },
+                VA: { bg: 'rgba(99, 102, 241, 0.15)', border: 'rgba(99, 102, 241, 0.4)', text: '#6366f1' },
+                SBIR: { bg: 'rgba(236, 72, 153, 0.15)', border: 'rgba(236, 72, 153, 0.4)', text: '#ec4899' },
+                STANDARD: { bg: 'rgba(156, 163, 175, 0.15)', border: 'rgba(156, 163, 175, 0.4)', text: '#9ca3af' },
+            };
+            const rfpType = stats?.rfp_type || 'STANDARD';
+            const typeColor = typeColors[rfpType] || typeColors.STANDARD;
+
             return (
                 <div className="animate-in">
-                    <div className="page-header">
-                        <h2>Compliance Matrix</h2>
-                        <p>Extracted {stats?.total || allRequirements.length} requirements from your RFP documents</p>
+                    <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                                <h2 style={{ margin: 0 }}>Compliance Matrix</h2>
+                                {rfpType !== 'STANDARD' && (
+                                    <span style={{
+                                        padding: '4px 12px',
+                                        borderRadius: 6,
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        background: typeColor.bg,
+                                        border: `1px solid ${typeColor.border}`,
+                                        color: typeColor.text
+                                    }}>
+                                        {stats?.agency || rfpType}
+                                    </span>
+                                )}
+                            </div>
+                            <p>Extracted {stats?.total || allRequirements.length} requirements from your RFP documents</p>
+                        </div>
                     </div>
-                    
-                    {/* RFP Format Note (for GSA/BPA) */}
-                    {stats?.is_non_ucf_format && (
+
+                    {/* RFP Type Note */}
+                    {(stats?.rfp_format_note || stats?.is_non_ucf_format) && (
                         <div style={{
-                            background: 'rgba(251, 146, 60, 0.1)',
-                            border: '1px solid rgba(251, 146, 60, 0.3)',
+                            background: typeColor.bg,
+                            border: `1px solid ${typeColor.border}`,
                             borderRadius: '8px',
                             padding: '12px 16px',
                             marginBottom: '20px',
@@ -1869,15 +1899,17 @@
                             alignItems: 'flex-start',
                             gap: '12px'
                         }}>
-                            <span style={{ color: '#fb923c', fontSize: '18px' }}>ℹ️</span>
+                            <Icon name="Info" size={20} />
                             <div>
-                                <div style={{ fontWeight: '600', color: '#fb923c', marginBottom: '4px' }}>
-                                    GSA Schedule / BPA Format Detected
+                                <div style={{ fontWeight: '600', color: typeColor.text, marginBottom: '4px' }}>
+                                    {stats?.agency || rfpType} RFP Detected
                                 </div>
-                                <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>
-                                    This RFP does not follow the standard UCF format (Sections L/M/C). 
-                                    Submission instructions are in <strong>Section M Alignment</strong> ({stats?.evaluation || 0} items). 
-                                    Technical requirements are in the <strong>PWS/SOW</strong> ({stats?.technical || 0} items).
+                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                    {stats?.rfp_format_note || (
+                                        `This RFP does not follow the standard UCF format (Sections L/M/C).
+                                        Submission instructions are in Section M Alignment (${stats?.evaluation || 0} items).
+                                        Technical requirements are in the PWS/SOW (${stats?.technical || 0} items).`
+                                    )}
                                 </div>
                             </div>
                         </div>
