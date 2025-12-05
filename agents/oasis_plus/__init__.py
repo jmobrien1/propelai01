@@ -28,6 +28,9 @@ from .models import (
     DocumentChunk,
     VerificationStatus,
     DomainType,
+    BusinessSize,
+    ContractType,
+    OptimizationConstraints,
 )
 
 from .jp1_parser import JP1MatrixParser
@@ -77,6 +80,9 @@ __all__ = [
     "DocumentChunk",
     "VerificationStatus",
     "DomainType",
+    "BusinessSize",
+    "ContractType",
+    "OptimizationConstraints",
     # Parser
     "JP1MatrixParser",
     # Evidence Hunter
