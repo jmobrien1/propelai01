@@ -1,5 +1,5 @@
 """
-PropelAI: Smart Proposal Outline Generator v2.10
+PropelAI: Smart Proposal Outline Generator v2.12
 
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
@@ -10,6 +10,9 @@ Key improvements:
 - Detects RFP format (NIH Factor-based, GSA Volume-based, State RFP, etc.)
 - Better volume/section detection using actual requirement text
 - Proper evaluation factor mapping
+- Evaluation factor weighting (SF1 > SF2 >> Cost/Price)
+- P0 formatting constraints enforcement
+- Mandatory artifact tracking for Volume 3
 """
 
 import re
@@ -30,7 +33,46 @@ class VolumeType(Enum):
     SMALL_BUSINESS = "small_business"
     ADMINISTRATIVE = "administrative"
     ORAL_PRESENTATION = "oral_presentation"
+    CONTRACT_DOCUMENTATION = "contract_documentation"  # Volume 3 for OASIS+
     OTHER = "other"
+
+
+class AdjectivalRating(Enum):
+    """Standard adjectival rating scale"""
+    EXCEPTIONAL = "Exceptional"
+    VERY_GOOD = "Very Good"
+    GOOD = "Good"
+    UNACCEPTABLE = "Unacceptable"
+
+
+@dataclass
+class P0Constraint:
+    """P0 (Pass/Fail) constraint that can cause disqualification"""
+    constraint_type: str  # PAGE_LIMIT, FONT, MARGIN, FILE_FORMAT, MANDATORY_FORM
+    description: str
+    value: str
+    applies_to: str
+    consequence: str
+
+
+@dataclass
+class MandatoryArtifact:
+    """Mandatory artifact for Volume 3 Contract Documentation"""
+    artifact_id: str
+    name: str
+    description: str
+    far_reference: Optional[str] = None  # e.g., "FAR 52.204-7"
+    form_number: Optional[str] = None  # e.g., "SF1449"
+    is_pass_fail: bool = True
+
+
+@dataclass
+class ContentStrategy:
+    """Content strategy guidance for targeting Strengths"""
+    target_rating: AdjectivalRating
+    strength_opportunities: List[str] = field(default_factory=list)
+    discriminators: List[str] = field(default_factory=list)
+    risk_areas: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -42,6 +84,7 @@ class ProposalSection:
     requirements: List[str] = field(default_factory=list)
     eval_criteria: List[str] = field(default_factory=list)
     subsections: List['ProposalSection'] = field(default_factory=list)
+    content_strategy: Optional[ContentStrategy] = None
 
 
 @dataclass
@@ -54,6 +97,7 @@ class ProposalVolume:
     sections: List[ProposalSection] = field(default_factory=list)
     eval_factors: List[str] = field(default_factory=list)
     order: int = 0
+    mandatory_artifacts: List[MandatoryArtifact] = field(default_factory=list)  # For Volume 3
 
 
 @dataclass
@@ -64,6 +108,7 @@ class FormatRequirements:
     line_spacing: Optional[str] = None
     margins: Optional[str] = None
     page_size: Optional[str] = None
+    p0_constraints: List[P0Constraint] = field(default_factory=list)  # Disqualification risks
 
 
 @dataclass
@@ -76,27 +121,33 @@ class SubmissionInfo:
     email: Optional[str] = None
 
 
-@dataclass 
+@dataclass
 class EvaluationFactor:
     """An evaluation factor from Section M"""
     id: str
     name: str
     weight: Optional[str] = None
-    importance: Optional[str] = None
+    importance: Optional[str] = None  # "Most Important", "Second Most", etc.
+    importance_rank: int = 0  # Numeric rank (1 = most important)
     criteria: List[str] = field(default_factory=list)
-    rating_scale: Optional[str] = None
+    rating_scale: Optional[str] = None  # "Adjectival", "Pass/Fail", "Price"
+    adjectival_definitions: Dict[str, str] = field(default_factory=dict)
+    content_strategy: Optional[ContentStrategy] = None
 
 
 @dataclass
 class ProposalOutline:
     """Complete proposal outline"""
-    rfp_format: str  # "NIH", "GSA_BPA", "STATE_RFP", "STANDARD_UCF", etc.
+    rfp_format: str  # "NIH", "GSA_BPA", "STATE_RFP", "STANDARD_UCF", "OASIS_TASK_ORDER"
     volumes: List[ProposalVolume]
     eval_factors: List[EvaluationFactor]
     format_requirements: FormatRequirements
     submission_info: SubmissionInfo
     warnings: List[str] = field(default_factory=list)
     total_pages: Optional[int] = None
+    # OASIS+ specific
+    adjectival_ratings: Dict[str, str] = field(default_factory=dict)
+    mandatory_artifacts: List[MandatoryArtifact] = field(default_factory=list)
 
 
 # ============== Smart Outline Generator ==============
@@ -714,9 +765,292 @@ class SmartOutlineGenerator:
                             volume.page_limit = page_limit
                             break
     
+    def _calculate_factor_weighting(
+        self,
+        eval_factors: List[EvaluationFactor],
+        section_m: List[Dict]
+    ) -> List[EvaluationFactor]:
+        """
+        Calculate evaluation factor weighting/importance ranking.
+
+        Per PropelAI mandate: SF1 > SF2 >> Cost/Price
+        Uses patterns like "descending order of importance" and explicit weights.
+        """
+        all_text = " ".join([
+            r.get("text", "") or r.get("full_text", "")
+            for r in section_m
+        ]).lower()
+
+        # Check for descending order of importance
+        descending_order = "descending order of importance" in all_text
+
+        # Pattern: "Factor X is more important than Factor Y"
+        importance_patterns = [
+            r"(technical|management|past\s+performance)\s+(?:is\s+)?(?:more|most)\s+important",
+            r"(?:price|cost)\s+(?:is\s+)?(?:less|least)\s+important",
+            r"when\s+combined[^.]*exceed\s+(?:price|cost)",
+        ]
+
+        tech_more_important = any(
+            re.search(p, all_text) for p in importance_patterns[:2]
+        )
+
+        # Assign importance ranks
+        for i, factor in enumerate(eval_factors):
+            factor_lower = factor.name.lower()
+
+            # Set rating scale if not already set
+            if not factor.rating_scale:
+                if any(kw in factor_lower for kw in ["price", "cost"]):
+                    factor.rating_scale = "Price"
+                elif "pass" in factor_lower or "fail" in factor_lower:
+                    factor.rating_scale = "Pass/Fail"
+                else:
+                    factor.rating_scale = "Adjectival"
+
+            # Determine importance
+            if descending_order:
+                # First factor listed is most important
+                factor.importance_rank = i + 1
+                if i == 0:
+                    factor.importance = "Most Important"
+                elif i == 1:
+                    factor.importance = "Second Most Important"
+                elif any(kw in factor_lower for kw in ["price", "cost"]):
+                    factor.importance = "Less Important than Technical"
+                    factor.importance_rank = len(eval_factors)  # Price typically last
+                else:
+                    factor.importance = f"#{i + 1} in Importance"
+
+            # Create content strategy for Adjectival factors
+            if factor.rating_scale == "Adjectival":
+                factor.content_strategy = ContentStrategy(
+                    target_rating=AdjectivalRating.EXCEPTIONAL if factor.importance_rank <= 2 else AdjectivalRating.VERY_GOOD,
+                    strength_opportunities=[
+                        "Demonstrate experience exceeding minimum requirements",
+                        "Highlight unique discriminators",
+                        "Provide specific, quantified past performance",
+                    ],
+                    discriminators=[
+                        "Innovation beyond RFP requirements",
+                        "Risk mitigation approaches",
+                        "Proven methodologies with metrics",
+                    ],
+                    risk_areas=[
+                        "Generic language that doesn't address specific requirements",
+                        "Missing compliance with mandatory items",
+                        "Lack of substantiation for claims",
+                    ]
+                )
+
+        return eval_factors
+
+    def _extract_p0_constraints(
+        self,
+        section_l: List[Dict],
+        oasis_constraints: Optional[List[Any]] = None
+    ) -> List[P0Constraint]:
+        """
+        Extract P0 (Pass/Fail) formatting constraints.
+
+        These are constraints that can cause disqualification if not followed.
+        """
+        constraints = []
+
+        # Use OASIS+ constraints if provided
+        if oasis_constraints:
+            for c in oasis_constraints:
+                constraints.append(P0Constraint(
+                    constraint_type=getattr(c, 'constraint_type', 'UNKNOWN'),
+                    description=getattr(c, 'description', ''),
+                    value=getattr(c, 'value', ''),
+                    applies_to=getattr(c, 'applies_to', 'All'),
+                    consequence=getattr(c, 'consequence', 'May cause disqualification')
+                ))
+            return constraints
+
+        all_text = " ".join([
+            r.get("text", "") or r.get("full_text", "")
+            for r in section_l
+        ]).lower()
+
+        # Page limit with consequence
+        page_patterns = [
+            (r"(\d+)\s*page\s*(?:limit|maximum)[^.]*(?:will\s+not\s+be\s+read|excess[^.]*not[^.]*read)", "PAGE_LIMIT"),
+            (r"exceed\s*(\d+)\s*pages?[^.]*(?:will\s+not\s+be\s+read|disqualif)", "PAGE_LIMIT"),
+        ]
+
+        for pattern, ctype in page_patterns:
+            match = re.search(pattern, all_text)
+            if match:
+                constraints.append(P0Constraint(
+                    constraint_type=ctype,
+                    description=f"Page limit: {match.group(1)} pages",
+                    value=match.group(1),
+                    applies_to="All",
+                    consequence="Excess pages will NOT be read or considered"
+                ))
+
+        # Font requirements
+        if "12" in all_text and "point" in all_text:
+            constraints.append(P0Constraint(
+                constraint_type="FONT_SIZE",
+                description="Font size: 12-point minimum",
+                value="12",
+                applies_to="Body text",
+                consequence="Formatting compliance required"
+            ))
+
+        # Margin requirements
+        margin_match = re.search(r"(\d+)\s*(?:inch|in)\s*margins?", all_text)
+        if margin_match:
+            constraints.append(P0Constraint(
+                constraint_type="MARGIN",
+                description=f"Margins: {margin_match.group(1)}-inch all around",
+                value=f"{margin_match.group(1)} inch",
+                applies_to="All pages",
+                consequence="Formatting compliance required"
+            ))
+
+        return constraints
+
+    def _extract_mandatory_artifacts(self, section_l: List[Dict]) -> List[MandatoryArtifact]:
+        """
+        Extract mandatory artifacts for Volume 3 Contract Documentation.
+
+        These are Pass/Fail requirements per FAR/DFARS.
+        """
+        artifacts = []
+
+        all_text = " ".join([
+            r.get("text", "") or r.get("full_text", "")
+            for r in section_l
+        ])
+        all_text_lower = all_text.lower()
+
+        # Standard mandatory artifacts
+        artifact_patterns = [
+            (r"SF[-\s]?1449", "SF1449", "Standard Form 1449", "Contract Award Form", None),
+            (r"DD[-\s]?254", "DD254", "DD Form 254", "Security Classification Specification", None),
+            (r"FAR\s+52\.204[-\s]?7", "FAR52.204-7", "Online Representations and Certifications",
+             "Evidence of registration in SAM.gov", "FAR 52.204-7"),
+            (r"representations?\s+and\s+certifications?", "REPS_CERTS",
+             "Representations and Certifications", "Completed certifications per solicitation", None),
+            (r"OCI\s+(?:mitigation|checklist|plan)", "OCI_PLAN",
+             "OCI Mitigation Plan", "Organizational Conflict of Interest disclosure", None),
+            (r"small\s+business\s+subcontracting\s+plan", "SB_PLAN",
+             "Small Business Subcontracting Plan", "Required for contracts over threshold", "FAR 52.219-9"),
+        ]
+
+        seen_ids = set()
+        for pattern, art_id, name, desc, far_ref in artifact_patterns:
+            if re.search(pattern, all_text_lower) and art_id not in seen_ids:
+                seen_ids.add(art_id)
+                artifacts.append(MandatoryArtifact(
+                    artifact_id=art_id,
+                    name=name,
+                    description=desc,
+                    far_reference=far_ref,
+                    form_number=art_id if art_id.startswith(("SF", "DD")) else None,
+                    is_pass_fail=True
+                ))
+
+        return artifacts
+
+    def _create_volume_3_artifacts(self, outline: ProposalOutline):
+        """
+        Ensure Volume 3 (Contract Documentation) has mandatory artifacts tracked.
+        """
+        vol3 = None
+        for vol in outline.volumes:
+            if vol.volume_type == VolumeType.CONTRACT_DOCUMENTATION:
+                vol3 = vol
+                break
+            elif "contract" in vol.name.lower() and "doc" in vol.name.lower():
+                vol3 = vol
+                vol.volume_type = VolumeType.CONTRACT_DOCUMENTATION
+                break
+
+        if not vol3:
+            # Create Volume 3 if not present
+            vol3 = ProposalVolume(
+                id="VOL-3",
+                name="Contract Documentation Volume",
+                volume_type=VolumeType.CONTRACT_DOCUMENTATION,
+                order=3,
+                sections=[]
+            )
+            outline.volumes.append(vol3)
+
+        # Add mandatory artifacts
+        vol3.mandatory_artifacts = outline.mandatory_artifacts
+
+        # Create sections for mandatory forms if not present
+        if not vol3.sections:
+            vol3.sections = [
+                ProposalSection(
+                    id="V3-FORMS",
+                    name="Mandatory Forms",
+                    requirements=[f"Submit {a.name}" for a in outline.mandatory_artifacts if a.form_number],
+                ),
+                ProposalSection(
+                    id="V3-CERTS",
+                    name="Certifications and Representations",
+                    requirements=["FAR 52.204-7 Online Representations", "Agency-specific certifications"],
+                ),
+            ]
+
+    def generate_with_oasis_data(
+        self,
+        section_l_requirements: List[Dict],
+        section_m_requirements: List[Dict],
+        technical_requirements: List[Dict],
+        stats: Dict,
+        oasis_task_order_data: Optional[Dict] = None
+    ) -> ProposalOutline:
+        """
+        Generate outline with OASIS+ task order enhancements.
+
+        This is the enhanced entry point that uses P0 constraints,
+        evaluation weighting, and mandatory artifact tracking.
+        """
+        # First generate base outline
+        outline = self.generate_from_compliance_matrix(
+            section_l_requirements,
+            section_m_requirements,
+            technical_requirements,
+            stats
+        )
+
+        # Apply evaluation factor weighting
+        outline.eval_factors = self._calculate_factor_weighting(
+            outline.eval_factors,
+            section_m_requirements
+        )
+
+        # Extract P0 constraints
+        oasis_constraints = None
+        if oasis_task_order_data:
+            oasis_constraints = oasis_task_order_data.get('formatting_constraints', [])
+            outline.adjectival_ratings = oasis_task_order_data.get('adjectival_ratings', {})
+            outline.rfp_format = "OASIS_TASK_ORDER"
+
+        outline.format_requirements.p0_constraints = self._extract_p0_constraints(
+            section_l_requirements,
+            oasis_constraints
+        )
+
+        # Extract mandatory artifacts
+        outline.mandatory_artifacts = self._extract_mandatory_artifacts(section_l_requirements)
+
+        # Ensure Volume 3 tracking
+        self._create_volume_3_artifacts(outline)
+
+        return outline
+
     def to_json(self, outline: ProposalOutline) -> Dict[str, Any]:
         """Convert outline to JSON format for API"""
-        
+
         return {
             "rfp_format": outline.rfp_format,
             "total_pages": outline.total_pages,
@@ -728,6 +1062,16 @@ class SmartOutlineGenerator:
                     "page_limit": vol.page_limit,
                     "order": vol.order,
                     "eval_factors": vol.eval_factors,
+                    "mandatory_artifacts": [
+                        {
+                            "id": a.artifact_id,
+                            "name": a.name,
+                            "description": a.description,
+                            "far_reference": a.far_reference,
+                            "is_pass_fail": a.is_pass_fail
+                        }
+                        for a in vol.mandatory_artifacts
+                    ] if vol.mandatory_artifacts else [],
                     "sections": [
                         {
                             "id": sec.id,
@@ -737,6 +1081,12 @@ class SmartOutlineGenerator:
                             "content_requirements": sec.requirements,  # UI expects this name
                             "requirements": sec.requirements,
                             "compliance_checkpoints": [],  # Can be populated later
+                            "content_strategy": {
+                                "target_rating": sec.content_strategy.target_rating.value,
+                                "strength_opportunities": sec.content_strategy.strength_opportunities,
+                                "discriminators": sec.content_strategy.discriminators,
+                                "risk_areas": sec.content_strategy.risk_areas
+                            } if sec.content_strategy else None,
                             "subsections": [
                                 {"id": sub.id, "title": sub.name, "name": sub.name}
                                 for sub in sec.subsections
@@ -754,7 +1104,14 @@ class SmartOutlineGenerator:
                     "name": ef.name,
                     "weight": ef.weight,
                     "importance": ef.importance,
+                    "importance_rank": ef.importance_rank,
                     "criteria": ef.criteria,
+                    "rating_scale": ef.rating_scale,
+                    "content_strategy": {
+                        "target_rating": ef.content_strategy.target_rating.value,
+                        "strength_opportunities": ef.content_strategy.strength_opportunities,
+                        "discriminators": ef.content_strategy.discriminators,
+                    } if ef.content_strategy else None,
                     "subfactors": []  # Can be populated later
                 }
                 for ef in outline.eval_factors
@@ -774,7 +1131,17 @@ class SmartOutlineGenerator:
                 "font_size": outline.format_requirements.font_size,
                 "margins": outline.format_requirements.margins,
                 "line_spacing": outline.format_requirements.line_spacing,
-                "page_size": outline.format_requirements.page_size
+                "page_size": outline.format_requirements.page_size,
+                "p0_constraints": [
+                    {
+                        "type": c.constraint_type,
+                        "description": c.description,
+                        "value": c.value,
+                        "applies_to": c.applies_to,
+                        "consequence": c.consequence
+                    }
+                    for c in outline.format_requirements.p0_constraints
+                ] if outline.format_requirements.p0_constraints else []
             },
             "submission": {
                 "due_date": outline.submission_info.due_date or "TBD",
@@ -782,5 +1149,18 @@ class SmartOutlineGenerator:
                 "method": outline.submission_info.method or "Not Specified",
                 "email": outline.submission_info.email
             },
-            "warnings": outline.warnings
+            "warnings": outline.warnings,
+            # OASIS+ specific
+            "adjectival_ratings": outline.adjectival_ratings,
+            "mandatory_artifacts": [
+                {
+                    "id": a.artifact_id,
+                    "name": a.name,
+                    "description": a.description,
+                    "far_reference": a.far_reference,
+                    "form_number": a.form_number,
+                    "is_pass_fail": a.is_pass_fail
+                }
+                for a in outline.mandatory_artifacts
+            ] if outline.mandatory_artifacts else []
         }
