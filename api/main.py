@@ -1763,30 +1763,67 @@ async def export_annotated_outline(rfp_id: str):
             outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, technical, stats)
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
-    
+
     requirements = rfp.get("requirements", [])
-    
+
+    # Extract solicitation number from multiple sources (priority order)
+    sol_num = None
+    # 1. Direct field on RFP
+    if rfp.get("solicitation_number") and rfp.get("solicitation_number") not in [None, "null", "UNKNOWN", rfp_id]:
+        sol_num = rfp["solicitation_number"]
+    # 2. From stats (extraction result)
+    if not sol_num:
+        stats = rfp.get("stats", {})
+        if stats.get("solicitation_number") and stats.get("solicitation_number") not in ["null", "UNKNOWN"]:
+            sol_num = stats["solicitation_number"]
+        elif stats.get("document_structure", {}).get("solicitation_number"):
+            sol_num = stats["document_structure"]["solicitation_number"]
+    # 3. From best_practices_result
+    if not sol_num and rfp.get("best_practices_result"):
+        result = rfp["best_practices_result"]
+        if hasattr(result, 'structure') and result.structure:
+            if result.structure.solicitation_number and result.structure.solicitation_number not in ["null", "UNKNOWN"]:
+                sol_num = result.structure.solicitation_number
+
+    # Extract RFP title from multiple sources
+    rfp_title = None
+    # 1. From stats extraction (preferred - actual RFP title from document)
+    stats = rfp.get("stats", {})
+    if stats.get("document_structure", {}).get("title"):
+        rfp_title = stats["document_structure"]["title"]
+    # 2. From best_practices_result
+    if not rfp_title and rfp.get("best_practices_result"):
+        result = rfp["best_practices_result"]
+        if hasattr(result, 'structure') and result.structure and result.structure.title:
+            rfp_title = result.structure.title
+    # 3. Fallback to RFP name (may be filename) but clean it up
+    if not rfp_title:
+        name = rfp.get("name", rfp.get("title", "RFP"))
+        # If name looks like a filename, try to clean it
+        if name and ("." in name or "Attachment" in name):
+            # Try to use solicitation number as title base
+            if sol_num:
+                rfp_title = f"Solicitation {sol_num}"
+            else:
+                rfp_title = "RFP Analysis"
+        else:
+            rfp_title = name
+
     config = AnnotatedOutlineConfig(
-        rfp_title=rfp.get("name", rfp.get("title", "RFP")),
-        solicitation_number=rfp.get("solicitation_number", rfp_id),
+        rfp_title=rfp_title,
+        solicitation_number=sol_num or "TBD",
         due_date=outline.get("submission", {}).get("due_date", "TBD"),
         submission_method=outline.get("submission", {}).get("method", "Not Specified"),
         total_pages=outline.get("total_pages"),
         company_name="[Your Company Name]"
     )
-    
+
     try:
         exporter = AnnotatedOutlineExporter()
         doc_bytes = exporter.export(outline, requirements, outline.get("format_requirements", {}), config)
 
         # Build meaningful filename from solicitation number
-        sol_num = config.solicitation_number if config.solicitation_number != "TBD" else None
-        if not sol_num and rfp.get("best_practices_result"):
-            result = rfp["best_practices_result"]
-            if hasattr(result, 'structure') and result.structure:
-                sol_num = result.structure.solicitation_number
-
-        if sol_num and sol_num != "UNKNOWN":
+        if sol_num and sol_num not in ["TBD", "UNKNOWN", "null"]:
             import re
             clean_sol = re.sub(r'[^\w\-]', '', sol_num)
             agency = _detect_agency_from_solicitation(sol_num)
@@ -1795,7 +1832,7 @@ async def export_annotated_outline(rfp_id: str):
             else:
                 filename = f"{clean_sol}_Annotated_Outline.docx"
         else:
-            safe_name = "".join(c for c in rfp.get("name", rfp_id) if c.isalnum() or c in " -_")[:50]
+            safe_name = "".join(c for c in rfp_title if c.isalnum() or c in " -_")[:50]
             filename = f"{safe_name}_Annotated_Outline.docx"
 
         return Response(
