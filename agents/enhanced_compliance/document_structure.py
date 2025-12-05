@@ -275,7 +275,11 @@ class RFPStructureParser:
             r"75N\d{5}[A-Z]\d{5}",
             # DoD Navy format: N0017826R30020003
             r"\b(N\d{5}\d{2}[RQ]\d+)\b",
-            # DoD Air Force/Army format: FA8732-25-R-0001, W912HQ-25-R-0001
+            # DoD Air Force format without hyphens: FA880625RB003
+            r"\b(FA\d{6}[RQ][A-Z]?\d{3,})\b",
+            # DoD Army format without hyphens: W912HQ25R0001
+            r"\b(W\d{3}[A-Z]{2}\d{2}[RQ]\d{4,})\b",
+            # DoD Air Force/Army format with hyphens: FA8732-25-R-0001, W912HQ-25-R-0001
             r"\b([A-Z]{2}\d{4}[-]\d{2}[-][A-Z][-]\d{4,})\b",
             # GSA format: GS-00F-12345
             r"\b(GS[-][A-Z0-9]{2,}[-][A-Z0-9]+)\b",

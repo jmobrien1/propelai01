@@ -1034,15 +1034,27 @@ def process_rfp_best_practices_background(rfp_id: str):
                 )
 
         store.set_status(rfp_id, "processing", 95, "Finalizing...")
-        
+
+        # Extract solicitation number from structure if not already set
+        extracted_sol_num = None
+        if result.structure and result.structure.solicitation_number:
+            extracted_sol_num = result.structure.solicitation_number
+
         # Store results
-        store.update(rfp_id, {
+        update_data = {
             "status": "completed",
             "requirements": requirements,
             "best_practices_result": result,  # Keep full result for export
             "stats": stats,
             "extraction_mode": "best_practices"
-        })
+        }
+
+        # Update solicitation_number if we extracted one and user didn't provide it
+        current_rfp = store.get(rfp_id)
+        if extracted_sol_num and (not current_rfp.get("solicitation_number") or current_rfp.get("solicitation_number") == rfp_id):
+            update_data["solicitation_number"] = extracted_sol_num
+
+        store.update(rfp_id, update_data)
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
         
