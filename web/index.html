@@ -359,6 +359,87 @@
             async generateOutline(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/outline`, { method: 'POST' });
                 return res.json();
+            },
+
+            // OASIS+ API Methods
+            async oasisHealth() {
+                const res = await fetch(`${API_BASE}/oasis/health`);
+                return res.json();
+            },
+
+            async oasisCreateProposal(data) {
+                const res = await fetch(`${API_BASE}/oasis/proposals`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            },
+
+            async oasisListProposals() {
+                const res = await fetch(`${API_BASE}/oasis/proposals`);
+                return res.json();
+            },
+
+            async oasisGetProposal(proposalId) {
+                const res = await fetch(`${API_BASE}/oasis/proposals/${proposalId}`);
+                return res.json();
+            },
+
+            async oasisUploadJP1(proposalId, file) {
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch(`${API_BASE}/oasis/proposals/${proposalId}/jp1`, {
+                    method: 'POST',
+                    body: formData
+                });
+                return res.json();
+            },
+
+            async oasisAddProject(proposalId, projectData) {
+                const res = await fetch(`${API_BASE}/oasis/proposals/${proposalId}/projects`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(projectData)
+                });
+                return res.json();
+            },
+
+            async oasisUploadProjectDocs(proposalId, projectId, files) {
+                const formData = new FormData();
+                files.forEach(f => formData.append('files', f));
+                const res = await fetch(`${API_BASE}/oasis/proposals/${proposalId}/projects/${projectId}/documents`, {
+                    method: 'POST',
+                    body: formData
+                });
+                return res.json();
+            },
+
+            async oasisScore(proposalId, domain, projectIds = null) {
+                const res = await fetch(`${API_BASE}/oasis/proposals/${proposalId}/score`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ domain, project_ids: projectIds })
+                });
+                return res.json();
+            },
+
+            async oasisOptimize(proposalId, domain, maxProjects = 5) {
+                const res = await fetch(`${API_BASE}/oasis/proposals/${proposalId}/optimize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ domain, max_projects: maxProjects })
+                });
+                return res.json();
+            },
+
+            async oasisGetScorecard(proposalId, domain) {
+                const res = await fetch(`${API_BASE}/oasis/proposals/${proposalId}/scorecard?domain=${domain}`);
+                return res.json();
+            },
+
+            async oasisExportBundle(proposalId, domain) {
+                window.open(`${API_BASE}/oasis/proposals/${proposalId}/export?domain=${domain}`, '_blank');
             }
         };
         
@@ -565,6 +646,637 @@
             );
         }
 
+        // OASIS+ Upload View Component
+        function OASISUploadView({
+            proposalId, setProposalId,
+            jp1File, setJP1File,
+            domains, setDomains,
+            selectedDomain, setSelectedDomain,
+            projects, setProjects,
+            processing, setProcessing,
+            status, setStatus,
+            setScorecard,
+            onCancel, onComplete,
+            setError, saveToRecentProjects
+        }) {
+            const [contractorName, setContractorName] = useState('');
+            const [businessSize, setBusinessSize] = useState('unrestricted');
+            const [step, setStep] = useState(1);
+            const jp1InputRef = useRef(null);
+            const projectInputRef = useRef(null);
+
+            const DOMAIN_OPTIONS = [
+                { id: 'technical_engineering', name: 'Technical & Engineering', icon: 'Cpu' },
+                { id: 'management_advisory', name: 'Management & Advisory', icon: 'Users' },
+                { id: 'research_development', name: 'Research & Development', icon: 'FlaskConical' },
+                { id: 'intelligence_services', name: 'Intelligence Services', icon: 'Shield' },
+                { id: 'environmental', name: 'Environmental', icon: 'Leaf' },
+                { id: 'logistics', name: 'Logistics', icon: 'Truck' },
+                { id: 'enterprise_solutions', name: 'Enterprise Solutions', icon: 'Server' },
+                { id: 'facilities', name: 'Facilities', icon: 'Building2' }
+            ];
+
+            // Step 1: Create proposal
+            const handleCreateProposal = async () => {
+                if (!contractorName.trim()) {
+                    setError('Please enter contractor name');
+                    return;
+                }
+                setProcessing(true);
+                setStatus({ step: 'creating', message: 'Creating OASIS+ proposal...' });
+                try {
+                    const result = await api.oasisCreateProposal({
+                        contractor_name: contractorName,
+                        business_size: businessSize,
+                        target_domains: []
+                    });
+                    setProposalId(result.proposal_id);
+                    setStep(2);
+                    setStatus({ step: '', message: '' });
+                } catch (e) {
+                    setError('Failed to create proposal: ' + e.message);
+                } finally {
+                    setProcessing(false);
+                }
+            };
+
+            // Step 2: Upload J.P-1
+            const handleJP1Upload = async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+
+                setJP1File(file);
+                setProcessing(true);
+                setStatus({ step: 'jp1', message: 'Parsing J.P-1 Qualifications Matrix...' });
+
+                try {
+                    const result = await api.oasisUploadJP1(proposalId, file);
+                    if (result.success) {
+                        setDomains(result.domains || []);
+                        setStep(3);
+                        setStatus({ step: '', message: '' });
+                    } else {
+                        setError('Failed to parse J.P-1: ' + (result.detail || 'Unknown error'));
+                    }
+                } catch (e) {
+                    setError('Failed to upload J.P-1: ' + e.message);
+                } finally {
+                    setProcessing(false);
+                }
+            };
+
+            // Step 4: Upload project documents
+            const handleProjectUpload = async (e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length === 0) return;
+
+                setProcessing(true);
+                setStatus({ step: 'projects', message: `Processing ${files.length} document(s)...` });
+
+                try {
+                    // For simplicity, create one project per batch upload
+                    const projectData = {
+                        title: `Project ${projects.length + 1}`,
+                        client_agency: 'TBD',
+                        contract_number: `CONTRACT-${Date.now()}`,
+                        start_date: '2020-01-01',
+                        total_obligated_amount: 1000000,
+                        scope_description: 'Uploaded project documents'
+                    };
+
+                    const projectResult = await api.oasisAddProject(proposalId, projectData);
+
+                    // Upload documents to the project
+                    await api.oasisUploadProjectDocs(proposalId, projectResult.project_id, files);
+
+                    setProjects([...projects, {
+                        ...projectResult,
+                        files: files.map(f => f.name)
+                    }]);
+
+                    setStatus({ step: '', message: '' });
+                } catch (e) {
+                    setError('Failed to upload project: ' + e.message);
+                } finally {
+                    setProcessing(false);
+                }
+            };
+
+            // Start scoring
+            const handleStartScoring = async () => {
+                if (!selectedDomain) {
+                    setError('Please select a domain');
+                    return;
+                }
+                if (projects.length === 0) {
+                    setError('Please upload at least one project');
+                    return;
+                }
+
+                setProcessing(true);
+                setStatus({ step: 'scoring', message: 'Analyzing projects and finding evidence...' });
+
+                try {
+                    // Score all projects
+                    await api.oasisScore(proposalId, selectedDomain);
+
+                    setStatus({ step: 'optimizing', message: 'Optimizing project selection...' });
+
+                    // Optimize selection
+                    await api.oasisOptimize(proposalId, selectedDomain);
+
+                    setStatus({ step: 'scorecard', message: 'Generating scorecard...' });
+
+                    // Get scorecard
+                    const scorecard = await api.oasisGetScorecard(proposalId, selectedDomain);
+                    setScorecard(scorecard);
+
+                    // Save to recent projects
+                    saveToRecentProjects({
+                        id: proposalId,
+                        name: contractorName,
+                        type: 'oasis',
+                        date: new Date().toLocaleDateString(),
+                        status: 'completed',
+                        score: scorecard.total_score
+                    });
+
+                    onComplete();
+                } catch (e) {
+                    setError('Scoring failed: ' + e.message);
+                } finally {
+                    setProcessing(false);
+                    setStatus({ step: '', message: '' });
+                }
+            };
+
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>OASIS+ Self-Scoring Proposal</h2>
+                        <p>Upload J.P-1 Matrix and project documents for automated scoring and optimization</p>
+                    </div>
+
+                    {/* Progress Steps */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
+                        {['Setup', 'J.P-1 Matrix', 'Domain', 'Projects', 'Score'].map((label, idx) => (
+                            <div key={idx} style={{ flex: 1, textAlign: 'center' }}>
+                                <div style={{
+                                    width: 32, height: 32,
+                                    borderRadius: '50%',
+                                    background: step > idx + 1 ? 'var(--accent-green)' : step === idx + 1 ? 'var(--accent-purple)' : 'var(--bg-tertiary)',
+                                    color: step >= idx + 1 ? 'white' : 'var(--text-muted)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    margin: '0 auto 8px',
+                                    fontWeight: 600, fontSize: 14
+                                }}>
+                                    {step > idx + 1 ? '✓' : idx + 1}
+                                </div>
+                                <div style={{ fontSize: 12, color: step === idx + 1 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                    {label}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Step 1: Setup */}
+                    {step === 1 && (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Step 1: Proposal Setup</h3>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>Contractor Name</label>
+                                    <input
+                                        type="text"
+                                        value={contractorName}
+                                        onChange={e => setContractorName(e.target.value)}
+                                        placeholder="Enter your company name"
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 16px',
+                                            background: 'var(--bg-tertiary)',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: 8,
+                                            color: 'var(--text-primary)',
+                                            fontSize: 14
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>Business Size</label>
+                                    <select
+                                        value={businessSize}
+                                        onChange={e => setBusinessSize(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 16px',
+                                            background: 'var(--bg-tertiary)',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: 8,
+                                            color: 'var(--text-primary)',
+                                            fontSize: 14
+                                        }}
+                                    >
+                                        <option value="unrestricted">Unrestricted (42 point threshold)</option>
+                                        <option value="small_business">Small Business (36 point threshold)</option>
+                                        <option value="wosb">Women-Owned Small Business</option>
+                                        <option value="hubzone">HUBZone</option>
+                                        <option value="sdvosb">Service-Disabled Veteran-Owned</option>
+                                        <option value="8a">8(a)</option>
+                                    </select>
+                                </div>
+                                <button className="btn btn-primary" onClick={handleCreateProposal} disabled={processing}>
+                                    {processing ? 'Creating...' : 'Continue'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 2: J.P-1 Upload */}
+                    {step === 2 && (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Step 2: Upload J.P-1 Qualifications Matrix</h3>
+                            </div>
+                            <input
+                                ref={jp1InputRef}
+                                type="file"
+                                accept=".xlsx,.xls"
+                                onChange={handleJP1Upload}
+                                style={{ display: 'none' }}
+                            />
+                            <div
+                                onClick={() => jp1InputRef.current?.click()}
+                                style={{
+                                    border: '2px dashed var(--border-accent)',
+                                    borderRadius: 12,
+                                    padding: 48,
+                                    textAlign: 'center',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <div style={{
+                                    width: 64, height: 64,
+                                    background: 'rgba(167, 139, 250, 0.15)',
+                                    borderRadius: 16,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    margin: '0 auto 16px'
+                                }}>
+                                    <Icon name="FileSpreadsheet" size={32} />
+                                </div>
+                                {jp1File ? (
+                                    <div>
+                                        <h4 style={{ color: 'var(--accent-green)', marginBottom: 8 }}>✓ {jp1File.name}</h4>
+                                        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Click to replace</p>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <h4 style={{ marginBottom: 8 }}>Click to upload J.P-1 Matrix</h4>
+                                        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Excel file (.xlsx) with scoring criteria</p>
+                                    </div>
+                                )}
+                            </div>
+                            {processing && (
+                                <div style={{ marginTop: 16, textAlign: 'center', color: 'var(--accent-purple)' }}>
+                                    <div className="spinner" style={{ width: 24, height: 24, margin: '0 auto 8px' }}></div>
+                                    {status.message}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Step 3: Domain Selection */}
+                    {step === 3 && (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Step 3: Select Target Domain</h3>
+                                <span className="badge badge-green">{domains.length} domains loaded</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                                {(domains.length > 0 ? domains : DOMAIN_OPTIONS).map(domain => (
+                                    <div
+                                        key={domain.id || domain.type}
+                                        onClick={() => {
+                                            setSelectedDomain(domain.id || domain.type);
+                                            setStep(4);
+                                        }}
+                                        style={{
+                                            padding: 16,
+                                            border: selectedDomain === (domain.id || domain.type) ? '2px solid var(--accent-purple)' : '1px solid var(--border-color)',
+                                            borderRadius: 8,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 12,
+                                            cursor: 'pointer',
+                                            background: selectedDomain === (domain.id || domain.type) ? 'rgba(167, 139, 250, 0.1)' : 'transparent',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Icon name={domain.icon || 'FileText'} size={24} />
+                                        <div>
+                                            <div style={{ fontWeight: 500 }}>{domain.name}</div>
+                                            {domain.criteria_count && (
+                                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                    {domain.criteria_count} criteria
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 4: Project Documents */}
+                    {step === 4 && (
+                        <div>
+                            <div className="card" style={{ marginBottom: 24 }}>
+                                <div className="card-header">
+                                    <h3 className="card-title">Step 4: Upload Project Documents</h3>
+                                    <span className="badge badge-purple">{projects.length} project(s)</span>
+                                </div>
+                                <input
+                                    ref={projectInputRef}
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.docx,.doc,.xlsx,.xls"
+                                    onChange={handleProjectUpload}
+                                    style={{ display: 'none' }}
+                                />
+                                <div
+                                    onClick={() => projectInputRef.current?.click()}
+                                    style={{
+                                        border: '2px dashed var(--border-accent)',
+                                        borderRadius: 12,
+                                        padding: 32,
+                                        textAlign: 'center',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <Icon name="FolderUp" size={40} />
+                                    <h4 style={{ marginTop: 12, marginBottom: 8 }}>Click to upload project documents</h4>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                                        Contracts, task orders, CPARS, performance reports
+                                    </p>
+                                </div>
+                                {processing && (
+                                    <div style={{ marginTop: 16, textAlign: 'center', color: 'var(--accent-purple)' }}>
+                                        <div className="spinner" style={{ width: 24, height: 24, margin: '0 auto 8px' }}></div>
+                                        {status.message}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Project List */}
+                            {projects.length > 0 && (
+                                <div className="card" style={{ marginBottom: 24 }}>
+                                    <div className="card-header">
+                                        <h3 className="card-title">Uploaded Projects</h3>
+                                    </div>
+                                    {projects.map((proj, idx) => (
+                                        <div key={proj.project_id || idx} style={{
+                                            padding: 16,
+                                            borderBottom: idx < projects.length - 1 ? '1px solid var(--border-color)' : 'none',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 12
+                                        }}>
+                                            <div style={{
+                                                width: 40, height: 40,
+                                                background: 'rgba(79, 140, 255, 0.15)',
+                                                borderRadius: 8,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                            }}>
+                                                <Icon name="Briefcase" size={20} />
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 500 }}>{proj.title}</div>
+                                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                    {proj.documents_count || proj.files?.length || 0} document(s)
+                                                </div>
+                                            </div>
+                                            <span className="badge badge-green">Ready</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleStartScoring}
+                                    disabled={processing || projects.length === 0}
+                                >
+                                    <Icon name="Zap" />
+                                    {processing ? status.message : 'Start Scoring Analysis'}
+                                </button>
+                                <button className="btn btn-secondary" onClick={() => setStep(3)}>
+                                    Back
+                                </button>
+                                <button className="btn btn-secondary" onClick={onCancel}>
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Info Box */}
+                    <div style={{
+                        marginTop: 32,
+                        padding: 16,
+                        background: 'rgba(79, 140, 255, 0.1)',
+                        border: '1px solid rgba(79, 140, 255, 0.2)',
+                        borderRadius: 8
+                    }}>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                            <Icon name="Info" size={20} />
+                            <div>
+                                <strong>How OASIS+ Scoring Works</strong>
+                                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+                                    PropelAI parses the J.P-1 matrix to extract scoring criteria, then analyzes your project documents
+                                    to find evidence supporting each criterion. The optimizer selects the best 5 projects to meet
+                                    the {businessSize === 'small_business' ? '36' : '42'}-point threshold.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // OASIS+ Scorecard View Component
+        function OASISScorecardView({ proposalId, scorecard, setScorecard, selectedDomain, onBack, onExport, setError }) {
+            const [loading, setLoading] = useState(!scorecard);
+
+            useEffect(() => {
+                if (!scorecard && proposalId && selectedDomain) {
+                    setLoading(true);
+                    api.oasisGetScorecard(proposalId, selectedDomain)
+                        .then(data => {
+                            setScorecard(data);
+                            setLoading(false);
+                        })
+                        .catch(e => {
+                            setError('Failed to load scorecard: ' + e.message);
+                            setLoading(false);
+                        });
+                }
+            }, [proposalId, selectedDomain]);
+
+            if (loading) {
+                return (
+                    <div className="animate-in" style={{ textAlign: 'center', padding: 60 }}>
+                        <div className="spinner"></div>
+                        <p style={{ marginTop: 16, color: 'var(--text-muted)' }}>Loading scorecard...</p>
+                    </div>
+                );
+            }
+
+            if (!scorecard) {
+                return (
+                    <div className="animate-in">
+                        <div className="card" style={{ textAlign: 'center', padding: 60 }}>
+                            <Icon name="AlertCircle" size={48} />
+                            <h3 style={{ marginTop: 16 }}>No Scorecard Available</h3>
+                            <p style={{ color: 'var(--text-muted)', marginTop: 8 }}>Please complete the scoring process first.</p>
+                            <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={onBack}>
+                                Go Back
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            const scorePercent = Math.min(100, (scorecard.total_score / scorecard.threshold) * 100);
+            const meetsThreshold = scorecard.total_score >= scorecard.threshold;
+
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>OASIS+ Scorecard</h2>
+                        <p>Domain: {selectedDomain?.replace(/_/g, ' ').toUpperCase()} · Business Size: {scorecard.business_size}</p>
+                    </div>
+
+                    {/* Score Summary */}
+                    <div className="stats-grid" style={{ marginBottom: 32 }}>
+                        <div className="stat-card" style={{ gridColumn: 'span 2' }}>
+                            <div className="label">Total Score</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                                <span className="value" style={{ color: meetsThreshold ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                    {scorecard.total_score}
+                                </span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: 20 }}>/ {scorecard.threshold} pts</span>
+                            </div>
+                            <div className="progress-bar" style={{ marginTop: 16, height: 8 }}>
+                                <div
+                                    className="progress-fill"
+                                    style={{
+                                        width: `${scorePercent}%`,
+                                        background: meetsThreshold ? 'var(--accent-green)' : 'var(--accent-red)'
+                                    }}
+                                ></div>
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Margin</div>
+                            <div className="value" style={{ color: scorecard.margin >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                {scorecard.margin >= 0 ? '+' : ''}{scorecard.margin}
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Status</div>
+                            <div className="value" style={{ fontSize: 20, color: meetsThreshold ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                {meetsThreshold ? 'QUALIFIES' : 'BELOW THRESHOLD'}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Qualifying Projects */}
+                    {scorecard.qualifying_projects && scorecard.qualifying_projects.length > 0 && (
+                        <div className="card" style={{ marginBottom: 24 }}>
+                            <div className="card-header">
+                                <h3 className="card-title">Selected Projects ({scorecard.qualifying_projects.length})</h3>
+                            </div>
+                            {scorecard.qualifying_projects.map((proj, idx) => (
+                                <div key={proj.project_id || idx} style={{
+                                    padding: 16,
+                                    borderBottom: idx < scorecard.qualifying_projects.length - 1 ? '1px solid var(--border-color)' : 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 16
+                                }}>
+                                    <div style={{
+                                        width: 36, height: 36,
+                                        background: 'var(--bg-tertiary)',
+                                        borderRadius: 8,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontWeight: 600
+                                    }}>
+                                        {idx + 1}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 500 }}>{proj.title || proj.project_id}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                            {proj.client_agency || 'N/A'} · {proj.contract_number || 'N/A'}
+                                        </div>
+                                    </div>
+                                    <span className="badge badge-blue">{proj.score || proj.total_points || 0} pts</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Claims/Criteria */}
+                    {scorecard.claims && scorecard.claims.length > 0 && (
+                        <div className="card" style={{ marginBottom: 24 }}>
+                            <div className="card-header">
+                                <h3 className="card-title">Scoring Claims ({scorecard.claims.length})</h3>
+                            </div>
+                            <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                                {scorecard.claims.slice(0, 20).map((claim, idx) => (
+                                    <div key={idx} style={{
+                                        padding: 12,
+                                        borderBottom: '1px solid var(--border-color)',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: 12
+                                    }}>
+                                        <span className={`badge badge-${claim.verified ? 'green' : 'amber'}`}>
+                                            {claim.points_claimed || 0} pts
+                                        </span>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: 13 }}>{claim.criterion_id || claim.criteria_name}</div>
+                                            {claim.evidence_snippet && (
+                                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                                                    Evidence: {claim.evidence_snippet.slice(0, 100)}...
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: 12 }}>
+                        <button className="btn btn-primary" onClick={onExport}>
+                            <Icon name="Download" />
+                            Export Symphony Bundle
+                        </button>
+                        <button className="btn btn-secondary" onClick={onBack}>
+                            <Icon name="ArrowLeft" />
+                            Back to Setup
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         // Main App
         function App() {
             const [currentView, setCurrentView] = useState('dashboard');
@@ -593,7 +1305,18 @@
             const [searchQuery, setSearchQuery] = useState('');
             const [filterType, setFilterType] = useState('all');
             const [filterPriority, setFilterPriority] = useState('all');
-            
+
+            // OASIS+ State
+            const [oasisProposalId, setOasisProposalId] = useState(null);
+            const [oasisProposal, setOasisProposal] = useState(null);
+            const [oasisDomains, setOasisDomains] = useState([]);
+            const [oasisSelectedDomain, setOasisSelectedDomain] = useState(null);
+            const [oasisJP1File, setOasisJP1File] = useState(null);
+            const [oasisProjects, setOasisProjects] = useState([]);
+            const [oasisScorecard, setOasisScorecard] = useState(null);
+            const [oasisProcessing, setOasisProcessing] = useState(false);
+            const [oasisStatus, setOasisStatus] = useState({ step: '', message: '' });
+
             // Check API health on mount
             useEffect(() => {
                 const checkHealth = async () => {
@@ -905,138 +1628,39 @@
                         )}
 
                         {currentView === 'oasis_upload' && (
-                            <div className="animate-in">
-                                <div className="page-header">
-                                    <h2>OASIS+ Self-Scoring Proposal</h2>
-                                    <p>Upload J.P-1 Matrix and project documents for automated scoring and optimization</p>
-                                </div>
+                            <OASISUploadView
+                                proposalId={oasisProposalId}
+                                setProposalId={setOasisProposalId}
+                                jp1File={oasisJP1File}
+                                setJP1File={setOasisJP1File}
+                                domains={oasisDomains}
+                                setDomains={setOasisDomains}
+                                selectedDomain={oasisSelectedDomain}
+                                setSelectedDomain={setOasisSelectedDomain}
+                                projects={oasisProjects}
+                                setProjects={setOasisProjects}
+                                processing={oasisProcessing}
+                                setProcessing={setOasisProcessing}
+                                status={oasisStatus}
+                                setStatus={setOasisStatus}
+                                setScorecard={setOasisScorecard}
+                                onCancel={() => setCurrentView('dashboard')}
+                                onComplete={() => setCurrentView('oasis_scorecard')}
+                                setError={setError}
+                                saveToRecentProjects={saveToRecentProjects}
+                            />
+                        )}
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-                                    {/* J.P-1 Matrix Upload */}
-                                    <div className="card">
-                                        <div className="card-header">
-                                            <h3 className="card-title">Step 1: J.P-1 Qualifications Matrix</h3>
-                                        </div>
-                                        <div style={{
-                                            border: '2px dashed var(--border-accent)',
-                                            borderRadius: 12,
-                                            padding: 40,
-                                            textAlign: 'center',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}>
-                                            <div style={{
-                                                width: 56, height: 56,
-                                                background: 'rgba(167, 139, 250, 0.15)',
-                                                borderRadius: 12,
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                margin: '0 auto 16px'
-                                            }}>
-                                                <Icon name="FileSpreadsheet" size={28} />
-                                            </div>
-                                            <h4 style={{ marginBottom: 8 }}>Upload J.P-1 Matrix</h4>
-                                            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                                                Excel file with scoring criteria
-                                            </p>
-                                            <div style={{ marginTop: 16 }}>
-                                                <span className="file-type">.xlsx</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Domain Selection */}
-                                    <div className="card">
-                                        <div className="card-header">
-                                            <h3 className="card-title">Step 2: Select Domain</h3>
-                                        </div>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                            {[
-                                                { id: 'technical_engineering', name: 'Technical & Engineering', icon: 'Cpu' },
-                                                { id: 'management_advisory', name: 'Management & Advisory', icon: 'Users' },
-                                                { id: 'rd', name: 'Research & Development', icon: 'FlaskConical' },
-                                                { id: 'intelligence', name: 'Intelligence Services', icon: 'Shield' },
-                                                { id: 'environmental', name: 'Environmental', icon: 'Leaf' }
-                                            ].map(domain => (
-                                                <div
-                                                    key={domain.id}
-                                                    style={{
-                                                        padding: 12,
-                                                        border: '1px solid var(--border-color)',
-                                                        borderRadius: 8,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 12,
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.2s'
-                                                    }}
-                                                    onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent-purple)'}
-                                                    onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
-                                                >
-                                                    <Icon name={domain.icon} size={20} />
-                                                    <span>{domain.name}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Project Documents */}
-                                <div className="card" style={{ marginTop: 24 }}>
-                                    <div className="card-header">
-                                        <h3 className="card-title">Step 3: Upload Project Documents</h3>
-                                        <span className="badge badge-gray">Up to 10 projects</span>
-                                    </div>
-                                    <div style={{
-                                        border: '2px dashed var(--border-accent)',
-                                        borderRadius: 12,
-                                        padding: 40,
-                                        textAlign: 'center'
-                                    }}>
-                                        <Icon name="FolderUp" size={40} />
-                                        <h4 style={{ marginTop: 16, marginBottom: 8 }}>Drop project folders or files</h4>
-                                        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                                            Contracts, task orders, performance reports, DD-254s, CPARS
-                                        </p>
-                                        <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'center' }}>
-                                            <span className="file-type">.pdf</span>
-                                            <span className="file-type">.docx</span>
-                                            <span className="file-type">.xlsx</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Action Buttons */}
-                                <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
-                                    <button className="btn btn-primary" disabled>
-                                        <Icon name="Zap" />
-                                        Start Scoring Analysis
-                                    </button>
-                                    <button className="btn btn-secondary" onClick={() => setCurrentView('dashboard')}>
-                                        Cancel
-                                    </button>
-                                </div>
-
-                                {/* Info Box */}
-                                <div style={{
-                                    marginTop: 32,
-                                    padding: 16,
-                                    background: 'rgba(79, 140, 255, 0.1)',
-                                    border: '1px solid rgba(79, 140, 255, 0.2)',
-                                    borderRadius: 8
-                                }}>
-                                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                                        <Icon name="Info" size={20} />
-                                        <div>
-                                            <strong>How OASIS+ Scoring Works</strong>
-                                            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-                                                PropelAI parses the J.P-1 matrix to extract scoring criteria, then analyzes your project documents
-                                                to find evidence supporting each criterion. The optimizer selects the best 5 projects to meet
-                                                the 42-point threshold (Unrestricted) or 36-point threshold (Small Business).
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        {currentView === 'oasis_scorecard' && (
+                            <OASISScorecardView
+                                proposalId={oasisProposalId}
+                                scorecard={oasisScorecard}
+                                setScorecard={setOasisScorecard}
+                                selectedDomain={oasisSelectedDomain}
+                                onBack={() => setCurrentView('oasis_upload')}
+                                onExport={() => api.oasisExportBundle(oasisProposalId, oasisSelectedDomain)}
+                                setError={setError}
+                            />
                         )}
                     </main>
                     
