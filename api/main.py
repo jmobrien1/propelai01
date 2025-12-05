@@ -1559,60 +1559,86 @@ async def get_stats(rfp_id: str):
 async def generate_outline(rfp_id: str):
     """
     Generate proposal outline from RFP.
-    
+
     v2.10: Uses SmartOutlineGenerator which leverages already-extracted
     compliance matrix data for better accuracy.
+    v2.12: Enhanced for OASIS+ task orders with P0 constraints and mandatory artifacts.
     """
     from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
-    
+
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     # Check if we have compliance matrix data
     requirements = rfp.get("requirements", [])
     stats = rfp.get("stats", {})
-    
+
     if not requirements:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="No compliance matrix data. Process RFP first using /process-best-practices"
         )
-    
+
     try:
         generator = SmartOutlineGenerator()
-        
+
         # Separate requirements by category
-        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE" 
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
                      or r.get("section", "").upper() == "L"]
         section_m = [r for r in requirements if r.get("category") == "EVALUATION"
                      or r.get("section", "").upper() == "M"]
         technical = [r for r in requirements if r.get("category") == "TECHNICAL"
                      or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
-        
+
         # If section_l is empty, treat section_m as containing submission instructions (GSA/BPA)
         if not section_l and section_m:
             section_l = section_m  # GSA/BPA format has instructions in eval section
-        
-        # Generate outline from compliance matrix data
-        outline = generator.generate_from_compliance_matrix(
-            section_l_requirements=section_l,
-            section_m_requirements=section_m,
-            technical_requirements=technical,
-            stats=stats
+
+        # Check for OASIS+ task order data from best practices extraction
+        # OASIS+ data is stored in stats["oasis_task_order"] by the extraction endpoint
+        oasis_task_order_stats = stats.get("oasis_task_order", {})
+        is_oasis_task_order = (
+            stats.get("rfp_type") == "OASIS_TASK_ORDER" or
+            oasis_task_order_stats.get("placement_procedures_source") or
+            any("oasis" in str(r.get("source_document", "")).lower() for r in requirements[:20])
         )
-        
+
+        if is_oasis_task_order:
+            # Use enhanced OASIS+ generation with P0 constraints and mandatory artifacts
+            oasis_data = {
+                "formatting_constraints": oasis_task_order_stats.get("formatting_constraints", []),
+                "adjectival_ratings": oasis_task_order_stats.get("adjectival_ratings", {}),
+                "volume_structure": oasis_task_order_stats.get("volume_structure", []),
+                "evaluation_subfactors": oasis_task_order_stats.get("evaluation_subfactors", []),
+            }
+            outline = generator.generate_with_oasis_data(
+                section_l_requirements=section_l,
+                section_m_requirements=section_m,
+                technical_requirements=technical,
+                stats=stats,
+                oasis_task_order_data=oasis_data
+            )
+        else:
+            # Standard outline generation
+            outline = generator.generate_from_compliance_matrix(
+                section_l_requirements=section_l,
+                section_m_requirements=section_m,
+                technical_requirements=technical,
+                stats=stats
+            )
+
         # Convert to JSON
         outline_data = generator.to_json(outline)
-        
+
         # Store outline
         store.update(rfp_id, {"outline": outline_data})
-        
+
         return {
             "status": "generated",
             "outline": outline_data
         }
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1621,72 +1647,120 @@ async def generate_outline(rfp_id: str):
 
 @app.get("/api/rfp/{rfp_id}/outline")
 async def get_outline(rfp_id: str, format: str = "json"):
-    """Get proposal outline"""
+    """Get proposal outline (v2.12: OASIS+ enhanced)"""
     from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
-    
+
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     outline = rfp.get("outline")
-    
+
     if not outline:
         # Generate if not exists - need compliance matrix data
         requirements = rfp.get("requirements", [])
         stats = rfp.get("stats", {})
-        
+
         if not requirements:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="No compliance matrix data. Process RFP first using /process-best-practices"
             )
-        
+
         generator = SmartOutlineGenerator()
-        
+
         # Separate requirements by category
-        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE" 
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
                      or r.get("section", "").upper() == "L"]
         section_m = [r for r in requirements if r.get("category") == "EVALUATION"
                      or r.get("section", "").upper() == "M"]
         technical = [r for r in requirements if r.get("category") == "TECHNICAL"
                      or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
-        
+
         if not section_l and section_m:
             section_l = section_m
-        
-        outline_obj = generator.generate_from_compliance_matrix(
-            section_l_requirements=section_l,
-            section_m_requirements=section_m,
-            technical_requirements=technical,
-            stats=stats
+
+        # Check for OASIS+ task order data
+        oasis_task_order_stats = stats.get("oasis_task_order", {})
+        is_oasis_task_order = (
+            stats.get("rfp_type") == "OASIS_TASK_ORDER" or
+            oasis_task_order_stats.get("placement_procedures_source")
         )
+
+        if is_oasis_task_order:
+            oasis_data = {
+                "formatting_constraints": oasis_task_order_stats.get("formatting_constraints", []),
+                "adjectival_ratings": oasis_task_order_stats.get("adjectival_ratings", {}),
+                "volume_structure": oasis_task_order_stats.get("volume_structure", []),
+                "evaluation_subfactors": oasis_task_order_stats.get("evaluation_subfactors", []),
+            }
+            outline_obj = generator.generate_with_oasis_data(
+                section_l_requirements=section_l,
+                section_m_requirements=section_m,
+                technical_requirements=technical,
+                stats=stats,
+                oasis_task_order_data=oasis_data
+            )
+        else:
+            outline_obj = generator.generate_from_compliance_matrix(
+                section_l_requirements=section_l,
+                section_m_requirements=section_m,
+                technical_requirements=technical,
+                stats=stats
+            )
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
-    
+
     return {"format": "json", "outline": outline}
 
 
 @app.get("/api/rfp/{rfp_id}/outline/export")
 async def export_annotated_outline(rfp_id: str):
-    """Export annotated proposal outline as Word document."""
+    """Export annotated proposal outline as Word document (v2.12: OASIS+ P0 constraints)."""
     from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
-    
+
     if not ANNOTATED_OUTLINE_AVAILABLE:
         raise HTTPException(
             status_code=501,
             detail="Annotated outline export not available. Install Node.js and docx package."
         )
-    
+
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     outline = rfp.get("outline")
     if not outline:
         generator = SmartOutlineGenerator()
-        section_l = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("L")]
-        section_m = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("M")]
-        outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, rfp.get("documents", []))
+        requirements = rfp.get("requirements", [])
+        stats = rfp.get("stats", {})
+        section_l = [r for r in requirements if r.get("section", "").upper().startswith("L")]
+        section_m = [r for r in requirements if r.get("section", "").upper().startswith("M")]
+        technical = [r for r in requirements if r.get("section", "").upper() in ["C", "PWS", "SOW"]]
+
+        # Check for OASIS+ task order data
+        oasis_task_order_stats = stats.get("oasis_task_order", {})
+        is_oasis_task_order = (
+            stats.get("rfp_type") == "OASIS_TASK_ORDER" or
+            oasis_task_order_stats.get("placement_procedures_source")
+        )
+
+        if is_oasis_task_order:
+            oasis_data = {
+                "formatting_constraints": oasis_task_order_stats.get("formatting_constraints", []),
+                "adjectival_ratings": oasis_task_order_stats.get("adjectival_ratings", {}),
+                "volume_structure": oasis_task_order_stats.get("volume_structure", []),
+                "evaluation_subfactors": oasis_task_order_stats.get("evaluation_subfactors", []),
+            }
+            outline_obj = generator.generate_with_oasis_data(
+                section_l_requirements=section_l,
+                section_m_requirements=section_m,
+                technical_requirements=technical,
+                stats=stats,
+                oasis_task_order_data=oasis_data
+            )
+        else:
+            outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, technical, stats)
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
     

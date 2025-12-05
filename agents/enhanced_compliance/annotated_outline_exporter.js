@@ -63,8 +63,18 @@ function generateAnnotatedOutline(data) {
         requirements = [],         // From CTM extraction
         documentStructure = null,  // From document_structure parser
         winThemes = [],            // Optional: pre-defined win themes
-        companyName = "[Company Name]"
+        companyName = "[Company Name]",
+        // OASIS+ / P0 Constraint data
+        p0Constraints = [],        // P0 formatting constraints from extraction
+        mandatoryArtifacts = [],   // Mandatory forms for Volume 3
+        adjectivalRatings = {}     // Rating scale definitions
     } = data;
+
+    // Merge p0 constraints from formatRequirements if present
+    const allP0Constraints = [
+        ...(p0Constraints || []),
+        ...(formatRequirements.p0_constraints || [])
+    ];
 
     // Build the document
     const doc = new Document({
@@ -198,7 +208,10 @@ function generateAnnotatedOutline(data) {
                 requirements,
                 documentStructure,
                 winThemes,
-                companyName
+                companyName,
+                p0Constraints: allP0Constraints,
+                mandatoryArtifacts,
+                adjectivalRatings
             })
         }]
     });
@@ -218,6 +231,11 @@ function buildDocumentContent(data) {
 
     // === FORMATTING REQUIREMENTS ===
     children.push(...buildFormatRequirementsSection(data));
+
+    // === P0 CONSTRAINTS (CRITICAL) ===
+    if (data.p0Constraints && data.p0Constraints.length > 0) {
+        children.push(...buildP0ConstraintsSection(data));
+    }
     children.push(new Paragraph({ children: [new PageBreak()] }));
 
     // === COLOR CODE LEGEND ===
@@ -225,10 +243,20 @@ function buildDocumentContent(data) {
 
     // === EVALUATION FACTORS SUMMARY ===
     children.push(...buildEvalFactorsSummary(data));
+
+    // === ADJECTIVAL RATING DEFINITIONS (for OASIS+) ===
+    if (data.adjectivalRatings && Object.keys(data.adjectivalRatings).length > 0) {
+        children.push(...buildAdjectivalRatingsSection(data));
+    }
     children.push(new Paragraph({ children: [new PageBreak()] }));
 
     // === VOLUME OUTLINES ===
     children.push(...buildVolumeOutlines(data));
+
+    // === VOLUME 3: CONTRACT DOCUMENTATION (if mandatory artifacts exist) ===
+    if (data.mandatoryArtifacts && data.mandatoryArtifacts.length > 0) {
+        children.push(...buildVolume3ContractDocs(data));
+    }
 
     return children;
 }
@@ -326,6 +354,294 @@ function buildFormatRequirementsSection(data) {
         }),
         new Paragraph({ spacing: { after: 200 } })
     ];
+}
+
+/**
+ * Build P0 Constraints Section - CRITICAL disqualification risks
+ */
+function buildP0ConstraintsSection(data) {
+    const constraints = data.p0Constraints || [];
+    const tableBorder = { style: BorderStyle.SINGLE, size: 2, color: COLORS.SECTION_L };
+    const cellBorders = { top: tableBorder, bottom: tableBorder, left: tableBorder, right: tableBorder };
+
+    const children = [
+        new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [
+                new TextRun({ text: "⚠️ P0 CONSTRAINTS - DISQUALIFICATION RISKS", color: COLORS.SECTION_L })
+            ]
+        }),
+        new Paragraph({
+            spacing: { after: 120 },
+            shading: { fill: "FCE4D6", type: ShadingType.CLEAR },
+            border: { left: { style: BorderStyle.SINGLE, size: 12, color: COLORS.SECTION_L } },
+            indent: { left: 180 },
+            children: [
+                new TextRun({
+                    text: "CRITICAL: The following constraints are Pass/Fail. Violation of ANY P0 constraint may result in proposal rejection without further evaluation.",
+                    bold: true, size: 22, color: COLORS.SECTION_L
+                })
+            ]
+        })
+    ];
+
+    // Build constraint table
+    const rows = [
+        new TableRow({
+            tableHeader: true,
+            children: [
+                new TableCell({
+                    borders: cellBorders, width: { size: 1500, type: WidthType.DXA },
+                    shading: { fill: COLORS.SECTION_L, type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Type", bold: true, color: "FFFFFF", size: 18 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 3500, type: WidthType.DXA },
+                    shading: { fill: COLORS.SECTION_L, type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Constraint", bold: true, color: "FFFFFF", size: 18 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 1800, type: WidthType.DXA },
+                    shading: { fill: COLORS.SECTION_L, type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Applies To", bold: true, color: "FFFFFF", size: 18 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 2560, type: WidthType.DXA },
+                    shading: { fill: COLORS.SECTION_L, type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Consequence", bold: true, color: "FFFFFF", size: 18 })] })]
+                })
+            ]
+        })
+    ];
+
+    constraints.forEach(constraint => {
+        const typeLabel = constraint.type || constraint.constraint_type || "UNKNOWN";
+        const description = constraint.description || "";
+        const appliesTo = constraint.applies_to || "All";
+        const consequence = constraint.consequence || "May cause disqualification";
+
+        rows.push(new TableRow({
+            children: [
+                new TableCell({
+                    borders: cellBorders, width: { size: 1500, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: typeLabel, bold: true, size: 18 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 3500, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: description, size: 18 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 1800, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: appliesTo, size: 18 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 2560, type: WidthType.DXA },
+                    shading: { fill: "FCE4D6", type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: consequence, size: 18, bold: true, color: COLORS.SECTION_L })] })]
+                })
+            ]
+        }));
+    });
+
+    children.push(new Table({ columnWidths: [1500, 3500, 1800, 2560], rows }));
+    children.push(new Paragraph({ spacing: { after: 200 } }));
+
+    return children;
+}
+
+/**
+ * Build Adjectival Ratings Section for OASIS+ task orders
+ */
+function buildAdjectivalRatingsSection(data) {
+    const ratings = data.adjectivalRatings || {};
+    const tableBorder = { style: BorderStyle.SINGLE, size: 1, color: COLORS.SECTION_M };
+    const cellBorders = { top: tableBorder, bottom: tableBorder, left: tableBorder, right: tableBorder };
+
+    const children = [
+        new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: "Adjectival Rating Definitions" })]
+        }),
+        new Paragraph({
+            spacing: { after: 120 },
+            children: [new TextRun({
+                text: "Understanding the rating scale is essential for targeting Exceptional ratings on key factors.",
+                size: 20, color: COLORS.SECTION_M
+            })]
+        })
+    ];
+
+    const ratingOrder = ['Exceptional', 'Very Good', 'Good', 'Unacceptable'];
+    const ratingColors = {
+        'Exceptional': '00B050',  // Green
+        'Very Good': '92D050',    // Light green
+        'Good': 'FFC000',         // Yellow
+        'Unacceptable': 'C00000'  // Red
+    };
+
+    const rows = [
+        new TableRow({
+            tableHeader: true,
+            children: [
+                new TableCell({
+                    borders: cellBorders, width: { size: 2000, type: WidthType.DXA },
+                    shading: { fill: COLORS.SECTION_M, type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Rating", bold: true, color: "FFFFFF", size: 20 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 7360, type: WidthType.DXA },
+                    shading: { fill: COLORS.SECTION_M, type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Definition", bold: true, color: "FFFFFF", size: 20 })] })]
+                })
+            ]
+        })
+    ];
+
+    ratingOrder.forEach(rating => {
+        const definition = ratings[rating] || ratings[rating.toLowerCase()] || `See RFP for ${rating} definition`;
+        const color = ratingColors[rating] || COLORS.BLACK;
+
+        rows.push(new TableRow({
+            children: [
+                new TableCell({
+                    borders: cellBorders, width: { size: 2000, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: rating, bold: true, size: 20, color: color })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 7360, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: definition, size: 18 })] })]
+                })
+            ]
+        }));
+    });
+
+    children.push(new Table({ columnWidths: [2000, 7360], rows }));
+    children.push(new Paragraph({ spacing: { after: 200 } }));
+
+    return children;
+}
+
+/**
+ * Build Volume 3: Contract Documentation section with mandatory artifacts
+ */
+function buildVolume3ContractDocs(data) {
+    const artifacts = data.mandatoryArtifacts || [];
+    const tableBorder = { style: BorderStyle.SINGLE, size: 1, color: "666666" };
+    const cellBorders = { top: tableBorder, bottom: tableBorder, left: tableBorder, right: tableBorder };
+
+    const children = [
+        new Paragraph({
+            heading: HeadingLevel.HEADING_1,
+            pageBreakBefore: true,
+            children: [new TextRun({ text: "VOLUME 3: CONTRACT DOCUMENTATION" })]
+        }),
+        new Paragraph({
+            spacing: { after: 120 },
+            shading: { fill: "FCE4D6", type: ShadingType.CLEAR },
+            border: { left: { style: BorderStyle.SINGLE, size: 12, color: COLORS.SECTION_L } },
+            indent: { left: 180 },
+            children: [
+                new TextRun({
+                    text: "PASS/FAIL: All items in this volume are mandatory. Missing or incomplete documents may result in proposal rejection.",
+                    bold: true, size: 20, color: COLORS.SECTION_L
+                })
+            ]
+        }),
+        new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: "Mandatory Forms and Certifications" })]
+        })
+    ];
+
+    // Build artifact checklist table
+    const rows = [
+        new TableRow({
+            tableHeader: true,
+            children: [
+                new TableCell({
+                    borders: cellBorders, width: { size: 500, type: WidthType.DXA },
+                    shading: { fill: "D5D5D5", type: ShadingType.CLEAR },
+                    children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "✓", bold: true, size: 20 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 2200, type: WidthType.DXA },
+                    shading: { fill: "D5D5D5", type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Document", bold: true, size: 20 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 4000, type: WidthType.DXA },
+                    shading: { fill: "D5D5D5", type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Description / Instructions", bold: true, size: 20 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 1600, type: WidthType.DXA },
+                    shading: { fill: "D5D5D5", type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Reference", bold: true, size: 20 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 1060, type: WidthType.DXA },
+                    shading: { fill: "D5D5D5", type: ShadingType.CLEAR },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Status", bold: true, size: 20 })] })]
+                })
+            ]
+        })
+    ];
+
+    artifacts.forEach(artifact => {
+        const name = artifact.name || artifact.id || "Document";
+        const description = artifact.description || "";
+        const farRef = artifact.far_reference || artifact.form_number || "";
+        const isPassFail = artifact.is_pass_fail !== false;
+
+        rows.push(new TableRow({
+            children: [
+                new TableCell({
+                    borders: cellBorders, width: { size: 500, type: WidthType.DXA },
+                    children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "☐", size: 24 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 2200, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [
+                        new TextRun({ text: name, bold: true, size: 18 }),
+                        isPassFail ? new TextRun({ text: " [P/F]", size: 16, color: COLORS.SECTION_L }) : new TextRun({ text: "" })
+                    ] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 4000, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: description, size: 18 })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 1600, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: farRef, size: 18, color: COLORS.SECTION_M })] })]
+                }),
+                new TableCell({
+                    borders: cellBorders, width: { size: 1060, type: WidthType.DXA },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Pending", size: 16, italics: true, color: COLORS.DARK_GRAY })] })]
+                })
+            ]
+        }));
+    });
+
+    children.push(new Table({ columnWidths: [500, 2200, 4000, 1600, 1060], rows }));
+
+    // Add guidance for Volume 3 completion
+    children.push(new Paragraph({ spacing: { before: 200 } }));
+    children.push(createAnnotationBlock(
+        "VOLUME 3 COMPLETION CHECKLIST",
+        [
+            "☐ SF1449 - Completed with all required fields (Blocks 12-17)",
+            "☐ Online Representations - Verify SAM.gov registration is current",
+            "☐ FAR 52.204-7 - Submit evidence of registration",
+            "☐ Security Forms - DD-254 if applicable (verify classification requirements)",
+            "☐ Certifications - All agency-specific certifications completed",
+            "☐ Subcontracting Plan - Required if over simplified acquisition threshold"
+        ],
+        COLORS.SECTION_L,
+        ANNOTATION_SHADING.L,
+        false
+    ));
+
+    return children;
 }
 
 function createTableRow(label, value, borders, highlight = false) {

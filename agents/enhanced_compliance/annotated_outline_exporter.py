@@ -171,7 +171,7 @@ class AnnotatedOutlineExporter:
         config: AnnotatedOutlineConfig
     ) -> Dict[str, Any]:
         """Build the complete input data for the Node.js exporter"""
-        
+
         # Start with outline data
         data = {
             "rfpTitle": config.rfp_title,
@@ -183,33 +183,50 @@ class AnnotatedOutlineExporter:
             "formatRequirements": format_requirements,
             "requirements": requirements
         }
-        
+
         # Merge outline data
         if "volumes" in outline_data:
             data["volumes"] = outline_data["volumes"]
-        
+
         if "evaluation_factors" in outline_data:
             data["evaluationFactors"] = outline_data["evaluation_factors"]
         elif "eval_factors" in outline_data:
             data["evaluationFactors"] = outline_data["eval_factors"]
-        
+
         if "format_requirements" in outline_data:
             # Merge with any explicit format requirements
             outline_fmt = outline_data["format_requirements"]
             for key, value in outline_fmt.items():
                 if value and key not in format_requirements:
                     data["formatRequirements"][key] = value
-        
+
+            # IMPORTANT: Pass through P0 constraints for SOG display
+            if "p0_constraints" in outline_fmt:
+                data["p0Constraints"] = outline_fmt["p0_constraints"]
+
         if "submission" in outline_data:
             sub = outline_data["submission"]
             if sub.get("due_date") and data["dueDate"] == "TBD":
                 data["dueDate"] = sub["due_date"]
             if sub.get("method") and data["submissionMethod"] == "Not Specified":
                 data["submissionMethod"] = sub["method"]
-        
+
         if "total_pages" in outline_data and outline_data["total_pages"]:
             data["totalPages"] = outline_data["total_pages"]
-        
+
+        # OASIS+ Task Order specific data
+        # Pass through mandatory artifacts for Volume 3
+        if "mandatory_artifacts" in outline_data:
+            data["mandatoryArtifacts"] = outline_data["mandatory_artifacts"]
+
+        # Pass through adjectival rating definitions
+        if "adjectival_ratings" in outline_data:
+            data["adjectivalRatings"] = outline_data["adjectival_ratings"]
+
+        # Pass through win themes if available
+        if "win_themes" in outline_data:
+            data["winThemes"] = outline_data["win_themes"]
+
         return data
 
 
