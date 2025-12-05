@@ -919,7 +919,23 @@ def process_rfp_best_practices_background(rfp_id: str):
                 priority = "high"
             elif req.binding_level.value in ["Desirable", "Informational", "Reference"]:
                 priority = "low"
-            
+
+            # Calculate confidence based on extraction quality indicators
+            confidence = 0.7  # Base confidence
+            # Higher confidence for mandatory requirements (clearer language)
+            if req.binding_level.value == "Mandatory":
+                confidence = 0.9
+            elif req.binding_level.value == "Highly Desirable":
+                confidence = 0.85
+            elif req.binding_level.value == "Desirable":
+                confidence = 0.75
+            # Boost if has clear RFP reference
+            if req.rfp_reference and req.rfp_reference not in ["UNKNOWN", "TBD", ""]:
+                confidence = min(confidence + 0.05, 0.95)
+            # Boost if from known section
+            if req.source_section and req.source_section.value in ["L", "M", "C"]:
+                confidence = min(confidence + 0.05, 0.95)
+
             requirements.append({
                 "id": req.generated_id,
                 "rfp_reference": req.rfp_reference,
@@ -935,6 +951,7 @@ def process_rfp_best_practices_background(rfp_id: str):
                 "parent_title": req.parent_title,
                 "cross_references": req.references_to,
                 "priority": priority,  # For UI compatibility
+                "confidence": confidence,  # Extraction confidence score
             })
         
         # Build stats
