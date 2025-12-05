@@ -104,6 +104,8 @@ try:
     from .section_aware_extractor import (
         SectionAwareExtractor, StructuredRequirement, ExtractionResult,
         RequirementCategory, BindingLevel, extract_requirements_structured,
+        # OASIS+ Task Order support
+        FormattingConstraint, EvaluationSubFactor, VolumeStructure,
     )
     SECTION_EXTRACTOR_AVAILABLE = True
 except ImportError as e:
@@ -111,6 +113,7 @@ except ImportError as e:
     SECTION_EXTRACTOR_AVAILABLE = False
     SectionAwareExtractor = StructuredRequirement = ExtractionResult = None
     RequirementCategory = BindingLevel = extract_requirements_structured = None
+    FormattingConstraint = EvaluationSubFactor = VolumeStructure = None
 
 # Best Practices CTM (depends on section_aware_extractor)
 try:
@@ -150,6 +153,7 @@ __all__ = [
     # Section Aware Extractor
     "SectionAwareExtractor", "StructuredRequirement", "ExtractionResult",
     "RequirementCategory", "BindingLevel", "extract_requirements_structured",
+    "FormattingConstraint", "EvaluationSubFactor", "VolumeStructure",
     "SECTION_EXTRACTOR_AVAILABLE",
     # Best Practices CTM
     "BestPracticesCTMExporter", "export_ctm_best_practices",

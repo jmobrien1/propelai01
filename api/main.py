@@ -976,7 +976,7 @@ def process_rfp_best_practices_background(rfp_id: str):
             "sections_found": result.stats.get('sections_found', []),
             "sow_location": result.stats.get('sow_location'),
             "processing_time": duration,
-            "extractor_version": "best_practices_v2.11",
+            "extractor_version": "best_practices_v2.12",
             "is_non_ucf_format": is_non_ucf or rfp_format == "NON_UCF",
             "rfp_type": rfp_type,
             "agency": agency,
@@ -987,7 +987,52 @@ def process_rfp_best_practices_background(rfp_id: str):
                 "Technical requirements are from PWS/SOW."
             ) if is_non_ucf else None
         }
-        
+
+        # Add OASIS+ Task Order specific fields
+        if rfp_type == "OASIS_TASK_ORDER" or getattr(result, 'placement_procedures_source', ''):
+            stats["oasis_task_order"] = {
+                "placement_procedures_source": getattr(result, 'placement_procedures_source', ''),
+                "formatting_constraints": [
+                    {
+                        "type": c.constraint_type,
+                        "description": c.description,
+                        "value": c.value,
+                        "applies_to": c.applies_to,
+                        "consequence": c.consequence,
+                        "priority": c.priority
+                    }
+                    for c in getattr(result, 'formatting_constraints', [])
+                ],
+                "volume_structure": [
+                    {
+                        "volume_number": v.volume_number,
+                        "volume_name": v.volume_name,
+                        "required_content": v.required_content,
+                        "page_limit": v.page_limit,
+                        "subfactors": v.subfactors
+                    }
+                    for v in getattr(result, 'volume_structure', [])
+                ],
+                "evaluation_subfactors": [
+                    {
+                        "factor_name": sf.factor_name,
+                        "subfactor_name": sf.subfactor_name,
+                        "subfactor_number": sf.subfactor_number,
+                        "rating_scale": sf.rating_scale,
+                        "volume": sf.volume
+                    }
+                    for sf in getattr(result, 'evaluation_subfactors', [])
+                ],
+                "adjectival_ratings": getattr(result, 'adjectival_ratings', {})
+            }
+            # Update format note for OASIS+ with more detail
+            if stats["oasis_task_order"]["placement_procedures_source"]:
+                stats["rfp_format_note"] = (
+                    f"OASIS+ Task Order detected. Placement Procedures ({stats['oasis_task_order']['placement_procedures_source']}) "
+                    f"define L/M requirements. Found {len(stats['oasis_task_order']['formatting_constraints'])} formatting constraints (P0) "
+                    f"and {len(stats['oasis_task_order']['volume_structure'])} required volumes."
+                )
+
         store.set_status(rfp_id, "processing", 95, "Finalizing...")
         
         # Store results

@@ -47,6 +47,42 @@ class BindingLevel(Enum):
 
 
 @dataclass
+class FormattingConstraint:
+    """
+    P0 formatting constraints that can cause disqualification if violated.
+    These come from Placement Procedures in OASIS+ task orders.
+    """
+    constraint_type: str  # PAGE_LIMIT, FONT, MARGIN, FILE_FORMAT, VOLUME_STRUCTURE
+    description: str
+    value: str  # e.g., "12-point", "1 inch", "25 pages"
+    applies_to: str  # Volume 1, Volume 2, All, etc.
+    consequence: str  # "excess pages will not be read", "disqualification", etc.
+    priority: str = "P0"  # P0 = disqualification risk
+
+
+@dataclass
+class EvaluationSubFactor:
+    """Evaluation sub-factor with adjectival rating scale"""
+    factor_name: str  # "Technical Factor"
+    subfactor_name: str  # "Management Approach"
+    subfactor_number: int  # 1, 2, etc.
+    instruction_text: str  # What to address (Section L equivalent)
+    evaluation_text: str  # How it will be evaluated (Section M equivalent)
+    rating_scale: str  # "Adjectival", "Pass/Fail", "Price"
+    volume: str  # "Volume 1", "Volume 2", etc.
+
+
+@dataclass
+class VolumeStructure:
+    """Required proposal volume structure"""
+    volume_number: int  # 1, 2, 3
+    volume_name: str  # "Executive Summary and Technical Volume"
+    required_content: List[str] = field(default_factory=list)
+    page_limit: Optional[int] = None
+    subfactors: List[str] = field(default_factory=list)
+
+
+@dataclass
 class StructuredRequirement:
     """
     A requirement extracted with full structural context.
@@ -114,6 +150,13 @@ class ExtractionResult:
     rfp_type: str = "STANDARD"  # NIH, DOD, GSA, VA, HHS, SBIR, OASIS_TASK_ORDER, etc.
     agency: str = ""  # NIH, Navy, Army, Air Force, GSA, VA, DHS, etc.
     rfp_format: str = "UCF"  # UCF, NON_UCF, GSA_BPA, RESEARCH_OUTLINE
+
+    # OASIS+ Task Order specific fields
+    formatting_constraints: List[FormattingConstraint] = field(default_factory=list)  # P0 constraints
+    volume_structure: List[VolumeStructure] = field(default_factory=list)  # Required volumes
+    evaluation_subfactors: List[EvaluationSubFactor] = field(default_factory=list)  # Sub-factors with ratings
+    adjectival_ratings: Dict[str, str] = field(default_factory=dict)  # Rating definitions
+    placement_procedures_source: str = ""  # Which attachment contains L/M equivalent
 
 
 # Agency-specific patterns for enhanced extraction
@@ -185,6 +228,25 @@ AGENCY_PATTERNS = {
             "domain": r"Domain\s+(\d+)",
         },
         "special_attachments": ["J.P-1", "J.P-2", "J.P-3"],
+    },
+    "OASIS_TASK_ORDER": {
+        "identifiers": [
+            r"OASIS\+?", r"OASIS\s*Plus", r"47QSMD",
+            r"Placement\s+Procedures", r"Task\s+Order",
+            r"Multiple\s+Award\s+IDIQ",
+        ],
+        "extra_binding_keywords": [
+            r'\bVolume\s+[123I]+\b', r'\bTechnical\s+Volume\b', r'\bCost\s+Volume\b',
+            r'\bpage\s+limit', r'\bexcess\s+pages', r'\bwill\s+not\s+be\s+read',
+            r'\bAdjectival', r'\bExceptional', r'\bUnacceptable',
+        ],
+        "section_patterns": {
+            "volume": r"Volume\s+([123I]+)",
+            "subfactor": r"Sub[-\s]?[Ff]actor\s+(\d+)",
+            "factor": r"Factor\s+(\d+)",
+        },
+        "special_attachments": ["Placement Procedures", "Attachment 2"],
+        "placement_procedures_is_lm": True,  # Key flag for OASIS+ task orders
     },
     "VA": {
         "identifiers": [
@@ -430,10 +492,23 @@ class SectionAwareExtractor:
                         # Also add to technical if it's SOW/PWS or Technical Attachment
                         if att_info.document_type in ['SOW', 'PWS', 'Technical Attachment']:
                             result.technical_requirements.append(req)
-        
+
+        # Check if this is an OASIS+ task order and process Placement Procedures
+        is_oasis_task_order = (
+            rfp_type == "OASIS_TASK_ORDER" or
+            any('oasis' in doc.get('text', '').lower()[:5000] for doc in documents) or
+            any('placement procedure' in doc.get('text', '').lower()[:5000] for doc in documents) or
+            any('placement' in (doc.get('filename', '') or '').lower() and
+                'procedure' in (doc.get('filename', '') or '').lower() for doc in documents)
+        )
+
+        if is_oasis_task_order:
+            result.rfp_type = "OASIS_TASK_ORDER"
+            self._process_oasis_task_order(documents, structure, result)
+
         # Build stats
         result.stats = self._build_stats(result)
-        
+
         return result
     
     def _section_to_category(self, section: UCFSection) -> RequirementCategory:
@@ -702,7 +777,7 @@ class SectionAwareExtractor:
     
     def _build_stats(self, result: ExtractionResult) -> Dict[str, Any]:
         """Build extraction statistics"""
-        return {
+        stats = {
             'total': len(result.all_requirements),
             'section_l': len(result.section_l_requirements),
             'technical': len(result.technical_requirements),
@@ -717,6 +792,409 @@ class SectionAwareExtractor:
             'sections_found': [s.value for s in result.structure.sections.keys()] if result.structure else [],
             'sow_location': result.structure.sow_location if result.structure else None,
         }
+
+        # Add OASIS+ task order stats if applicable
+        if result.formatting_constraints:
+            stats['formatting_constraints_count'] = len(result.formatting_constraints)
+            stats['p0_constraints'] = sum(1 for c in result.formatting_constraints if c.priority == "P0")
+        if result.volume_structure:
+            stats['volumes_required'] = len(result.volume_structure)
+        if result.evaluation_subfactors:
+            stats['evaluation_subfactors_count'] = len(result.evaluation_subfactors)
+        if result.placement_procedures_source:
+            stats['placement_procedures_source'] = result.placement_procedures_source
+
+        return stats
+
+    def _find_placement_procedures(self, documents: List[Dict[str, Any]],
+                                   structure: DocumentStructure) -> Optional[Dict[str, Any]]:
+        """
+        Find the Placement Procedures document which serves as L/M for OASIS+ task orders.
+
+        Returns:
+            Dict with 'text', 'filename', 'attachment_id' if found, None otherwise
+        """
+        # Check attachments first
+        for att_id, att_info in structure.attachments.items():
+            title_lower = att_info.title.lower() if att_info.title else ""
+            filename_lower = att_info.filename.lower() if att_info.filename else ""
+
+            if any(term in title_lower or term in filename_lower for term in
+                   ['placement procedure', 'placement_procedure']):
+                return {
+                    'text': att_info.content,
+                    'filename': att_info.filename,
+                    'attachment_id': att_id,
+                    'title': att_info.title
+                }
+
+        # Check documents directly
+        for doc in documents:
+            filename = doc.get('filename', '').lower()
+            if 'placement' in filename and 'procedure' in filename:
+                return {
+                    'text': doc.get('text', ''),
+                    'filename': doc.get('filename', ''),
+                    'attachment_id': 'Attachment 2',
+                    'title': 'Placement Procedures'
+                }
+
+        return None
+
+    def _extract_formatting_constraints(self, text: str) -> List[FormattingConstraint]:
+        """
+        Extract P0 formatting constraints from Placement Procedures.
+
+        These include page limits, font requirements, margin requirements, and file formats.
+        """
+        constraints = []
+        text_lower = text.lower()
+
+        # Page limit patterns
+        page_patterns = [
+            (r'(\d+)\s*(?:page|pg)s?\s*(?:limit|maximum)', 'PAGE_LIMIT'),
+            (r'(?:limit|maximum)\s*(?:of\s*)?(\d+)\s*(?:page|pg)s?', 'PAGE_LIMIT'),
+            (r'(?:not\s+(?:to\s+)?exceed|no\s+more\s+than)\s*(\d+)\s*(?:page|pg)s?', 'PAGE_LIMIT'),
+        ]
+
+        for pattern, constraint_type in page_patterns:
+            for match in re.finditer(pattern, text_lower):
+                # Find context around the match - look more before than after
+                start = max(0, match.start() - 150)
+                end = min(len(text), match.end() + 50)
+                context = text[start:end]
+
+                # Determine which volume this applies to (check same line/paragraph)
+                # Use a tight context - look for volume on the same line or nearby
+                line_start = text.rfind('\n', 0, match.start()) + 1
+                line_end = text.find('\n', match.end())
+                if line_end == -1:
+                    line_end = len(text)
+                line_context = text[line_start:line_end].lower()
+
+                volume = "All"
+                if re.search(r'volume\s*1\b|technical\s+volume', line_context):
+                    volume = "Volume 1 (Technical)"
+                elif re.search(r'volume\s*2\b|cost\s+volume|price\s+volume', line_context):
+                    volume = "Volume 2 (Cost/Price)"
+                elif re.search(r'volume\s*3\b|contract\s+doc', line_context):
+                    volume = "Volume 3 (Contract Documentation)"
+
+                # Check for consequence language
+                consequence = "Page limits apply"
+                if 'will not be read' in context.lower() or 'excess pages' in context.lower():
+                    consequence = "Excess pages will NOT be read or considered"
+                elif 'disqualif' in context.lower():
+                    consequence = "May result in disqualification"
+
+                constraints.append(FormattingConstraint(
+                    constraint_type=constraint_type,
+                    description=f"Page limit: {match.group(1)} pages",
+                    value=match.group(1),
+                    applies_to=volume,
+                    consequence=consequence,
+                    priority="P0"
+                ))
+
+        # Font requirements
+        font_patterns = [
+            (r'(\d+)[-\s]*point', 'FONT_SIZE'),
+            (r'(times\s+new\s+roman|arial|calibri)', 'FONT_FAMILY'),
+        ]
+
+        for pattern, constraint_type in font_patterns:
+            for match in re.finditer(pattern, text_lower):
+                start = max(0, match.start() - 50)
+                end = min(len(text), match.end() + 100)
+                context = text[start:end]
+
+                # Determine if body or graphics
+                applies_to = "Body text"
+                if 'graphic' in context.lower() or 'table' in context.lower() or 'figure' in context.lower():
+                    applies_to = "Graphics/Tables"
+
+                if constraint_type == 'FONT_SIZE':
+                    desc = f"Font size: no smaller than {match.group(1)}-point"
+                else:
+                    desc = f"Font family: {match.group(1).title()}"
+
+                constraints.append(FormattingConstraint(
+                    constraint_type=constraint_type,
+                    description=desc,
+                    value=match.group(1),
+                    applies_to=applies_to,
+                    consequence="Formatting compliance required",
+                    priority="P0"
+                ))
+
+        # Margin requirements
+        margin_match = re.search(r'(\d+(?:\.\d+)?)\s*[-\s]?inch\s*margins?', text_lower)
+        if margin_match:
+            constraints.append(FormattingConstraint(
+                constraint_type="MARGIN",
+                description=f"Margins: {margin_match.group(1)}-inch margins all around",
+                value=f"{margin_match.group(1)} inch",
+                applies_to="All pages",
+                consequence="Formatting compliance required",
+                priority="P0"
+            ))
+
+        # Electronic format requirements
+        format_patterns = [
+            (r'microsoft\s+word\s+(\d+)', 'FILE_FORMAT', 'Microsoft Word'),
+            (r'microsoft\s+excel\s+(\d+)', 'FILE_FORMAT', 'Microsoft Excel'),
+            (r'adobe\s+acrobat', 'FILE_FORMAT', 'Adobe Acrobat PDF'),
+            (r'\.pdf\s+format', 'FILE_FORMAT', 'PDF'),
+        ]
+
+        for pattern, constraint_type, format_name in format_patterns:
+            if re.search(pattern, text_lower):
+                constraints.append(FormattingConstraint(
+                    constraint_type=constraint_type,
+                    description=f"File format: {format_name}",
+                    value=format_name,
+                    applies_to="Electronic submission",
+                    consequence="Files must be accessible in specified format",
+                    priority="P0"
+                ))
+
+        return constraints
+
+    def _extract_volume_structure(self, text: str) -> List[VolumeStructure]:
+        """
+        Extract the required volume structure from Placement Procedures.
+        """
+        volumes = []
+        text_lower = text.lower()
+
+        # Common volume patterns for OASIS+ task orders
+        volume_defs = [
+            (1, r'volume\s*(?:1|i|one)[:\s]*(.{0,100})', ['Executive Summary', 'Technical']),
+            (2, r'volume\s*(?:2|ii|two)[:\s]*(.{0,100})', ['Cost', 'Price']),
+            (3, r'volume\s*(?:3|iii|three)[:\s]*(.{0,100})', ['Contract Documentation', 'Administrative']),
+        ]
+
+        for vol_num, pattern, default_content in volume_defs:
+            match = re.search(pattern, text_lower)
+            if match:
+                vol_name = match.group(1).strip() if match.group(1) else f"Volume {vol_num}"
+                # Clean up the name
+                vol_name = re.sub(r'[:\n\r].*', '', vol_name).strip()
+                if len(vol_name) > 80:
+                    vol_name = vol_name[:80]
+
+                volumes.append(VolumeStructure(
+                    volume_number=vol_num,
+                    volume_name=vol_name.title() if vol_name else f"Volume {vol_num}",
+                    required_content=default_content,
+                    page_limit=None,  # Extracted separately
+                    subfactors=[]
+                ))
+
+        # If no volumes found explicitly, create default OASIS+ structure
+        if not volumes and 'oasis' in text_lower:
+            volumes = [
+                VolumeStructure(1, "Executive Summary and Technical Volume",
+                               ["Management Approach", "Infrastructure Approach"]),
+                VolumeStructure(2, "Cost & Price Volume",
+                               ["Supply Pricing", "Labor Rates"]),
+                VolumeStructure(3, "Contract Documentation Volume",
+                               ["Required Forms", "Certifications"]),
+            ]
+
+        return volumes
+
+    def _extract_evaluation_subfactors(self, text: str) -> Tuple[List[EvaluationSubFactor], Dict[str, str]]:
+        """
+        Extract evaluation factors, sub-factors, and adjectival ratings from Placement Procedures.
+
+        Returns:
+            Tuple of (subfactors list, adjectival ratings dict)
+        """
+        subfactors = []
+        adjectival_ratings = {}
+
+        # Extract adjectival rating definitions - use sentence boundary detection
+        rating_patterns = {
+            'Exceptional': r'exceptional[:\s-]+([^.]+(?:expectations?|strengths?|requirements?)[^.]*\.)',
+            'Very Good': r'very\s+good[:\s-]+([^.]+(?:expectations?|strengths?|requirements?)[^.]*\.)',
+            'Good': r'(?<!\bvery\s)\bgood[:\s-]+([^.]+(?:expectations?|requirements?|solicitation)[^.]*\.)',
+            'Unacceptable': r'unacceptable[:\s-]+([^.]+(?:requirements?|confidence|solicitation)[^.]*\.)',
+        }
+
+        for rating, pattern in rating_patterns.items():
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                definition = match.group(1).strip()
+                # Clean up the definition
+                definition = re.sub(r'\s+', ' ', definition)
+                # Truncate if too long
+                if len(definition) > 200:
+                    definition = definition[:200] + "..."
+                adjectival_ratings[rating] = definition
+
+        # Extract sub-factors
+        subfactor_patterns = [
+            r'sub[-\s]?factor\s*(\d+)[:\s]*([^\n]{5,100})',
+            r'factor\s*(\d+)[:\s]*([^\n]{5,100})',
+            r'(\d+)\.\s*(management\s+approach)',
+            r'(\d+)\.\s*(infrastructure\s+approach)',
+            r'(\d+)\.\s*(technical\s+approach)',
+            r'(\d+)\.\s*(past\s+performance)',
+        ]
+
+        seen_subfactors = set()
+        for pattern in subfactor_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                num = match.group(1)
+                name = match.group(2).strip().title()
+
+                if name.lower() not in seen_subfactors:
+                    seen_subfactors.add(name.lower())
+
+                    # Determine rating type
+                    rating_scale = "Adjectival"
+                    if 'cost' in name.lower() or 'price' in name.lower():
+                        rating_scale = "Price Analysis"
+                    elif 'past performance' in name.lower():
+                        rating_scale = "Confidence Rating"
+
+                    subfactors.append(EvaluationSubFactor(
+                        factor_name="Technical Factor" if 'cost' not in name.lower() else "Cost Factor",
+                        subfactor_name=name,
+                        subfactor_number=int(num) if num.isdigit() else len(subfactors) + 1,
+                        instruction_text="",  # Would need more context
+                        evaluation_text="",
+                        rating_scale=rating_scale,
+                        volume="Volume 1" if 'cost' not in name.lower() else "Volume 2"
+                    ))
+
+        return subfactors, adjectival_ratings
+
+    def _extract_pass_fail_requirements(self, text: str, result: ExtractionResult) -> None:
+        """
+        Extract Pass/Fail (P0) requirements like mandatory forms.
+
+        These are added as high-priority requirements to the result.
+        """
+        # Common mandatory forms for OASIS+ and DoD
+        mandatory_forms = [
+            (r'SF[-\s]?1449', 'SF1449 Standard Form'),
+            (r'DD[-\s]?254', 'DD Form 254 Security Classification'),
+            (r'DD[-\s]?250', 'DD Form 250 Material Inspection'),
+            (r'OCI\s+(?:mitigation|checklist|plan)', 'OCI Mitigation Plan'),
+            (r'representations?\s+and\s+certifications?', 'Representations and Certifications'),
+            (r'sam\.gov\s+registration', 'SAM.gov Registration'),
+            (r'online\s+representation', 'Online Representations and Certifications'),
+        ]
+
+        text_lower = text.lower()
+
+        for pattern, form_name in mandatory_forms:
+            if re.search(pattern, text_lower):
+                # Create a P0 requirement for this form
+                req = StructuredRequirement(
+                    rfp_reference="FORM-P0",
+                    generated_id=f"TW-FORM-{len(result.administrative_requirements) + 1:04d}",
+                    full_text=f"MANDATORY FORM: {form_name} - Must be submitted as part of proposal. Pass/Fail requirement.",
+                    category=RequirementCategory.ADMINISTRATIVE,
+                    binding_level=BindingLevel.MANDATORY,
+                    binding_keyword="required",
+                    source_section=UCFSection.SECTION_K,
+                    source_subsection="Forms",
+                    page_number=0,
+                    source_document="Placement Procedures",
+                    parent_title="Mandatory Forms",
+                    evaluation_factor="Pass/Fail"
+                )
+
+                # Check if not already captured
+                if form_name.lower() not in ' '.join(r.full_text.lower() for r in result.administrative_requirements):
+                    result.administrative_requirements.append(req)
+                    result.all_requirements.append(req)
+
+    def _process_oasis_task_order(self, documents: List[Dict[str, Any]],
+                                   structure: DocumentStructure,
+                                   result: ExtractionResult) -> None:
+        """
+        Enhanced processing for OASIS+ task orders.
+
+        Extracts L/M requirements from Placement Procedures and adds
+        formatting constraints, volume structure, and evaluation criteria.
+        """
+        # Find Placement Procedures
+        pp_doc = self._find_placement_procedures(documents, structure)
+
+        if not pp_doc:
+            # Check if any document content mentions placement procedures
+            for doc in documents:
+                if 'placement procedure' in doc.get('text', '').lower():
+                    pp_doc = {
+                        'text': doc.get('text', ''),
+                        'filename': doc.get('filename', ''),
+                        'attachment_id': 'Embedded',
+                        'title': 'Placement Procedures (Embedded)'
+                    }
+                    break
+
+        if not pp_doc:
+            return
+
+        pp_text = pp_doc['text']
+        result.placement_procedures_source = pp_doc.get('filename') or pp_doc.get('attachment_id', '')
+
+        # Extract formatting constraints (P0)
+        result.formatting_constraints = self._extract_formatting_constraints(pp_text)
+
+        # Extract volume structure
+        result.volume_structure = self._extract_volume_structure(pp_text)
+
+        # Extract evaluation sub-factors and adjectival ratings
+        subfactors, ratings = self._extract_evaluation_subfactors(pp_text)
+        result.evaluation_subfactors = subfactors
+        result.adjectival_ratings = ratings
+
+        # Extract pass/fail requirements
+        self._extract_pass_fail_requirements(pp_text, result)
+
+        # Now extract L/M equivalent requirements from Placement Procedures
+        # Section L equivalent: submission instructions
+        l_reqs = self._extract_from_text(
+            text=pp_text,
+            parent_section=UCFSection.SECTION_L,
+            subsection_ref="Placement Procedures",
+            subsection_title="Proposal Submission Instructions (from Placement Procedures)",
+            page_number=1,
+            source_document=pp_doc.get('filename', 'Placement Procedures'),
+            category=RequirementCategory.SECTION_L_COMPLIANCE
+        )
+
+        # Add L requirements that aren't duplicates
+        seen_hashes = {r.text_hash for r in result.section_l_requirements}
+        for req in l_reqs:
+            if req.text_hash not in seen_hashes:
+                seen_hashes.add(req.text_hash)
+                result.section_l_requirements.append(req)
+                result.all_requirements.append(req)
+
+        # Section M equivalent: evaluation criteria
+        m_reqs = self._extract_from_text(
+            text=pp_text,
+            parent_section=UCFSection.SECTION_M,
+            subsection_ref="Placement Procedures",
+            subsection_title="Evaluation Criteria (from Placement Procedures)",
+            page_number=1,
+            source_document=pp_doc.get('filename', 'Placement Procedures'),
+            category=RequirementCategory.EVALUATION_FACTOR
+        )
+
+        # Add M requirements that aren't duplicates
+        seen_hashes = {r.text_hash for r in result.evaluation_requirements}
+        for req in m_reqs:
+            if req.text_hash not in seen_hashes:
+                seen_hashes.add(req.text_hash)
+                result.evaluation_requirements.append(req)
+                result.all_requirements.append(req)
 
 
 def extract_requirements_structured(documents: List[Dict[str, Any]]) -> ExtractionResult:
