@@ -850,22 +850,35 @@ class SectionAwareExtractor:
         constraints = []
         text_lower = text.lower()
 
-        # Page limit patterns
+        # =========================================================================
+        # PAGE LIMITS - Multiple pattern styles for different RFP formats
+        # =========================================================================
+
+        # Pattern 1: Standard "X page limit" or "limit of X pages"
         page_patterns = [
             (r'(\d+)\s*(?:page|pg)s?\s*(?:limit|maximum)', 'PAGE_LIMIT'),
             (r'(?:limit|maximum)\s*(?:of\s*)?(\d+)\s*(?:page|pg)s?', 'PAGE_LIMIT'),
             (r'(?:not\s+(?:to\s+)?exceed|no\s+more\s+than)\s*(\d+)\s*(?:page|pg)s?', 'PAGE_LIMIT'),
         ]
 
+        # Pattern 2: Table format "X Pages" or just number in page limit column
+        # Look for table-style entries like "8 Pages" or "10" after section names
+        table_page_patterns = [
+            # "Technical 8 Pages" or "Executive Summary 1"
+            (r'(executive\s+summary|technical|management|infrastructure|cost|price)[^\n]*?(\d+)\s*(?:pages?)?', 'PAGE_LIMIT'),
+            # "SF 1 Management Approach 10"
+            (r'(?:sf\s*\d+|sub\s*factor\s*\d+)[^\n]*?(?:approach|plan)[^\n]*?(\d+)', 'PAGE_LIMIT'),
+        ]
+
+        # Check for consequence language once for all page limits
+        has_excess_consequence = 'excess pages will not be read' in text_lower or 'will not be read or considered' in text_lower
+
         for pattern, constraint_type in page_patterns:
             for match in re.finditer(pattern, text_lower):
-                # Find context around the match - look more before than after
                 start = max(0, match.start() - 150)
                 end = min(len(text), match.end() + 50)
                 context = text[start:end]
 
-                # Determine which volume this applies to (check same line/paragraph)
-                # Use a tight context - look for volume on the same line or nearby
                 line_start = text.rfind('\n', 0, match.start()) + 1
                 line_end = text.find('\n', match.end())
                 if line_end == -1:
@@ -880,12 +893,7 @@ class SectionAwareExtractor:
                 elif re.search(r'volume\s*3\b|contract\s+doc', line_context):
                     volume = "Volume 3 (Contract Documentation)"
 
-                # Check for consequence language
-                consequence = "Page limits apply"
-                if 'will not be read' in context.lower() or 'excess pages' in context.lower():
-                    consequence = "Excess pages will NOT be read or considered"
-                elif 'disqualif' in context.lower():
-                    consequence = "May result in disqualification"
+                consequence = "Excess pages will NOT be read or considered" if has_excess_consequence else "Page limits apply"
 
                 constraints.append(FormattingConstraint(
                     constraint_type=constraint_type,
@@ -896,59 +904,133 @@ class SectionAwareExtractor:
                     priority="P0"
                 ))
 
-        # Font requirements
+        # Extract page limits from table format (OASIS+ style)
+        # Look for patterns like "Executive Summary 1 Y" or "Management Approach 10 Y"
+        section_page_patterns = [
+            (r'executive\s+summary[^\d]*(\d+)', 'Executive Summary'),
+            (r'management\s+(?:approach|support)[^\d]*(\d+)', 'Management Approach (SF1)'),
+            (r'infrastructure\s+approach[^\d]*(\d+)', 'Infrastructure Approach (SF2)'),
+            (r'sf\s*1[^\d]*management[^\d]*(\d+)', 'Management Approach (SF1)'),
+            (r'sf\s*2[^\d]*infrastructure[^\d]*(\d+)', 'Infrastructure Approach (SF2)'),
+        ]
+
+        for pattern, section_name in section_page_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                page_count = match.group(1)
+                # Only add if reasonable page count (1-100)
+                if 1 <= int(page_count) <= 100:
+                    constraints.append(FormattingConstraint(
+                        constraint_type="PAGE_LIMIT",
+                        description=f"{section_name}: {page_count} page{'s' if int(page_count) > 1 else ''} maximum",
+                        value=page_count,
+                        applies_to="Volume 1 (Technical)",
+                        consequence="Excess pages will NOT be read or considered" if has_excess_consequence else "Page limits apply",
+                        priority="P0"
+                    ))
+
+        # =========================================================================
+        # FONT REQUIREMENTS
+        # =========================================================================
+        # Pattern for "no smaller than X-point" or "X-point font"
         font_patterns = [
-            (r'(\d+)[-\s]*point', 'FONT_SIZE'),
+            (r'no\s+smaller\s+than\s+(\d+)[-\s]*point', 'FONT_SIZE'),
+            (r'(\d+)[-\s]*point\s*(?:font|type)', 'FONT_SIZE'),
+            (r'(\d+)[-\s]*point\s+times', 'FONT_SIZE'),
             (r'(times\s+new\s+roman|arial|calibri)', 'FONT_FAMILY'),
         ]
 
+        seen_fonts = set()
         for pattern, constraint_type in font_patterns:
             for match in re.finditer(pattern, text_lower):
-                start = max(0, match.start() - 50)
-                end = min(len(text), match.end() + 100)
-                context = text[start:end]
+                start = max(0, match.start() - 80)
+                end = min(len(text), match.end() + 80)
+                context = text[start:end].lower()
 
-                # Determine if body or graphics
                 applies_to = "Body text"
-                if 'graphic' in context.lower() or 'table' in context.lower() or 'figure' in context.lower():
+                if 'graphic' in context or 'table' in context or 'figure' in context:
                     applies_to = "Graphics/Tables"
 
                 if constraint_type == 'FONT_SIZE':
-                    desc = f"Font size: no smaller than {match.group(1)}-point"
+                    font_size = match.group(1)
+                    key = f"{font_size}-{applies_to}"
+                    if key not in seen_fonts:
+                        seen_fonts.add(key)
+                        desc = f"Font size: no smaller than {font_size}-point"
+                        constraints.append(FormattingConstraint(
+                            constraint_type=constraint_type,
+                            description=desc,
+                            value=font_size,
+                            applies_to=applies_to,
+                            consequence="Non-compliance may result in disqualification",
+                            priority="P0"
+                        ))
                 else:
-                    desc = f"Font family: {match.group(1).title()}"
+                    font_name = match.group(1).title()
+                    key = font_name
+                    if key not in seen_fonts:
+                        seen_fonts.add(key)
+                        constraints.append(FormattingConstraint(
+                            constraint_type=constraint_type,
+                            description=f"Font family: {font_name}",
+                            value=font_name,
+                            applies_to="All text",
+                            consequence="Non-compliance may result in disqualification",
+                            priority="P0"
+                        ))
+
+        # =========================================================================
+        # MARGIN REQUIREMENTS
+        # =========================================================================
+        margin_patterns = [
+            (r'(\d+(?:\.\d+)?)\s*[-\s]?inch\s*margins?\s*(?:all\s*around)?', 'standard'),
+            (r'one[-\s]?inch\s*margins?', 'one-inch'),
+            (r'half[-\s]?inch\s*margins?', 'half-inch'),
+        ]
+
+        for pattern, margin_type in margin_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                if margin_type == 'one-inch':
+                    value = "1"
+                elif margin_type == 'half-inch':
+                    value = "0.5"
+                else:
+                    value = match.group(1)
+
+                # Check context for what it applies to
+                start = max(0, match.start() - 100)
+                end = min(len(text), match.end() + 100)
+                context = text[start:end].lower()
+
+                applies_to = "All pages"
+                if '11x17' in context or 'worksheet' in context or 'cost table' in context:
+                    applies_to = "Cost worksheets (11x17)"
 
                 constraints.append(FormattingConstraint(
-                    constraint_type=constraint_type,
-                    description=desc,
-                    value=match.group(1),
+                    constraint_type="MARGIN",
+                    description=f"Margins: {value}-inch margins all around",
+                    value=f"{value} inch",
                     applies_to=applies_to,
-                    consequence="Formatting compliance required",
+                    consequence="Non-compliance may result in disqualification",
                     priority="P0"
                 ))
+                break  # Only add one margin constraint
 
-        # Margin requirements
-        margin_match = re.search(r'(\d+(?:\.\d+)?)\s*[-\s]?inch\s*margins?', text_lower)
-        if margin_match:
-            constraints.append(FormattingConstraint(
-                constraint_type="MARGIN",
-                description=f"Margins: {margin_match.group(1)}-inch margins all around",
-                value=f"{margin_match.group(1)} inch",
-                applies_to="All pages",
-                consequence="Formatting compliance required",
-                priority="P0"
-            ))
-
-        # Electronic format requirements
+        # =========================================================================
+        # FILE FORMAT REQUIREMENTS
+        # =========================================================================
         format_patterns = [
-            (r'microsoft\s+word\s+(\d+)', 'FILE_FORMAT', 'Microsoft Word'),
-            (r'microsoft\s+excel\s+(\d+)', 'FILE_FORMAT', 'Microsoft Excel'),
-            (r'adobe\s+acrobat', 'FILE_FORMAT', 'Adobe Acrobat PDF'),
+            (r'(?:microsoft|ms)\s+word\s*(?:20)?(\d+)?', 'FILE_FORMAT', 'Microsoft Word'),
+            (r'(?:microsoft|ms)\s+excel\s*(?:20)?(\d+)?', 'FILE_FORMAT', 'Microsoft Excel'),
+            (r'adobe\s+acrobat(?:\s+pro)?', 'FILE_FORMAT', 'Adobe Acrobat PDF'),
             (r'\.pdf\s+format', 'FILE_FORMAT', 'PDF'),
         ]
 
+        seen_formats = set()
         for pattern, constraint_type, format_name in format_patterns:
-            if re.search(pattern, text_lower):
+            if re.search(pattern, text_lower) and format_name not in seen_formats:
+                seen_formats.add(format_name)
                 constraints.append(FormattingConstraint(
                     constraint_type=constraint_type,
                     description=f"File format: {format_name}",
@@ -957,6 +1039,55 @@ class SectionAwareExtractor:
                     consequence="Files must be accessible in specified format",
                     priority="P0"
                 ))
+
+        # =========================================================================
+        # SUBMISSION METHOD
+        # =========================================================================
+        if 'electronic submission only' in text_lower or 'electronic only' in text_lower:
+            constraints.append(FormattingConstraint(
+                constraint_type="SUBMISSION_METHOD",
+                description="Electronic submission only via secure file transfer (eBuy/GSA)",
+                value="Electronic",
+                applies_to="All volumes",
+                consequence="Email and physical submissions are NOT acceptable",
+                priority="P0"
+            ))
+
+        # =========================================================================
+        # LATE PROPOSAL WARNING
+        # =========================================================================
+        if 'late proposals' in text_lower and 'ineligible' in text_lower:
+            constraints.append(FormattingConstraint(
+                constraint_type="DEADLINE",
+                description="Proposals must be received by deadline",
+                value="See RFP for due date",
+                applies_to="All volumes",
+                consequence="Late proposals may make Offeror ineligible for award",
+                priority="P0"
+            ))
+
+        # =========================================================================
+        # DISQUALIFICATION CONDITIONS
+        # =========================================================================
+        if 'unacceptable' in text_lower and 'ineligible for award' in text_lower:
+            constraints.append(FormattingConstraint(
+                constraint_type="RATING_THRESHOLD",
+                description="Technical subfactors must not receive 'Unacceptable' rating",
+                value="Minimum: Good",
+                applies_to="All technical subfactors",
+                consequence="Unacceptable rating on ANY technical subfactor = ineligible for award",
+                priority="P0"
+            ))
+
+        if 'non-compliant' in text_lower and 'ineligible for award' in text_lower:
+            constraints.append(FormattingConstraint(
+                constraint_type="RATING_THRESHOLD",
+                description="Price criteria must not receive 'Non-Compliant' rating",
+                value="Minimum: Compliant",
+                applies_to="All price criteria",
+                consequence="Non-compliant rating on ANY price criteria = ineligible for award",
+                priority="P0"
+            ))
 
         return constraints
 
