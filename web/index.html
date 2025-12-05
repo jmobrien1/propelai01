@@ -375,20 +375,218 @@
             return <span ref={ref} style={{ display: 'inline-flex', width: size, height: size }} />;
         }
         
+        // Dashboard View - NEW Landing Page
+        function DashboardView({ onNewRFP, onNewOASIS, onOpenProject, recentProjects, apiConnected }) {
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>Welcome to PropelAI</h2>
+                        <p>RFP Intelligence Platform - Extract requirements, build compliance matrices, and win more contracts</p>
+                    </div>
+
+                    {/* Quick Actions */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginBottom: 40 }}>
+                        <div
+                            className="card"
+                            style={{ cursor: 'pointer', transition: 'all 0.2s', border: '2px solid transparent' }}
+                            onClick={onNewRFP}
+                            onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
+                            onMouseOut={e => e.currentTarget.style.borderColor = 'transparent'}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                                <div style={{
+                                    width: 48, height: 48,
+                                    background: 'rgba(79, 140, 255, 0.15)',
+                                    borderRadius: 12,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <Icon name="FileText" size={24} />
+                                </div>
+                                <div>
+                                    <h3 style={{ fontSize: 18, marginBottom: 4 }}>New RFP Analysis</h3>
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Standard UCF Format</span>
+                                </div>
+                            </div>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                                Upload NIH, DoD, VA, HHS, or other standard RFPs. Extract requirements and build compliance matrices.
+                            </p>
+                        </div>
+
+                        <div
+                            className="card"
+                            style={{ cursor: 'pointer', transition: 'all 0.2s', border: '2px solid transparent' }}
+                            onClick={onNewOASIS}
+                            onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent-purple)'}
+                            onMouseOut={e => e.currentTarget.style.borderColor = 'transparent'}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                                <div style={{
+                                    width: 48, height: 48,
+                                    background: 'rgba(167, 139, 250, 0.15)',
+                                    borderRadius: 12,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <Icon name="Target" size={24} />
+                                </div>
+                                <div>
+                                    <h3 style={{ fontSize: 18, marginBottom: 4 }}>OASIS+ Proposal</h3>
+                                    <span style={{ fontSize: 12, color: 'var(--accent-green)' }}>NEW</span>
+                                </div>
+                            </div>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                                GSA OASIS+ self-scoring. Parse J.P-1 matrices, optimize project selection, generate Symphony bundles.
+                            </p>
+                        </div>
+
+                        <div
+                            className="card"
+                            style={{ cursor: 'pointer', transition: 'all 0.2s', border: '2px solid transparent', opacity: apiConnected ? 1 : 0.5 }}
+                            onClick={() => apiConnected && onOpenProject('library')}
+                            onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent-green)'}
+                            onMouseOut={e => e.currentTarget.style.borderColor = 'transparent'}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                                <div style={{
+                                    width: 48, height: 48,
+                                    background: 'rgba(52, 211, 153, 0.15)',
+                                    borderRadius: 12,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <Icon name="Building" size={24} />
+                                </div>
+                                <div>
+                                    <h3 style={{ fontSize: 18, marginBottom: 4 }}>Company Library</h3>
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Capabilities & Past Performance</span>
+                                </div>
+                            </div>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                                Upload capabilities statements, past performance, and resumes for enhanced proposal generation.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Recent Projects */}
+                    <div className="card">
+                        <div className="card-header">
+                            <h3 className="card-title">Recent Projects</h3>
+                            {recentProjects.length > 0 && (
+                                <button className="btn btn-ghost" onClick={() => {
+                                    localStorage.removeItem('propelai_recent_projects');
+                                    window.location.reload();
+                                }}>
+                                    Clear History
+                                </button>
+                            )}
+                        </div>
+
+                        {recentProjects.length === 0 ? (
+                            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                <Icon name="Folder" size={48} />
+                                <p style={{ marginTop: 16 }}>No recent projects</p>
+                                <p style={{ fontSize: 13, marginTop: 8 }}>Start a new RFP analysis to see it here</p>
+                            </div>
+                        ) : (
+                            <div>
+                                {recentProjects.map((project, idx) => (
+                                    <div
+                                        key={project.id || idx}
+                                        style={{
+                                            padding: 16,
+                                            borderBottom: idx < recentProjects.length - 1 ? '1px solid var(--border-color)' : 'none',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 16,
+                                            cursor: 'pointer',
+                                            transition: 'background 0.2s'
+                                        }}
+                                        onClick={() => onOpenProject(project)}
+                                        onMouseOver={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <div style={{
+                                            width: 40, height: 40,
+                                            background: project.type === 'oasis' ? 'rgba(167, 139, 250, 0.15)' : 'rgba(79, 140, 255, 0.15)',
+                                            borderRadius: 8,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                            <Icon name={project.type === 'oasis' ? 'Target' : 'FileText'} size={20} />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 500 }}>{project.name}</div>
+                                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                {project.type === 'oasis' ? 'OASIS+ Proposal' : 'RFP Analysis'} · {project.date}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            {project.requirementsCount && (
+                                                <span className="badge badge-blue">{project.requirementsCount} reqs</span>
+                                            )}
+                                            {project.score && (
+                                                <span className="badge badge-purple">{project.score} pts</span>
+                                            )}
+                                            <span className={`badge badge-${project.status === 'completed' ? 'green' : project.status === 'processing' ? 'amber' : 'gray'}`}>
+                                                {project.status || 'draft'}
+                                            </span>
+                                            <Icon name="ChevronRight" size={18} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Quick Stats */}
+                    <div style={{ marginTop: 32 }}>
+                        <h3 style={{ fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 }}>
+                            Platform Status
+                        </h3>
+                        <div className="stats-grid">
+                            <div className="stat-card">
+                                <div className="label">API Status</div>
+                                <div className="value" style={{ color: apiConnected ? 'var(--accent-green)' : 'var(--accent-red)', fontSize: 20 }}>
+                                    {apiConnected ? 'Connected' : 'Offline'}
+                                </div>
+                            </div>
+                            <div className="stat-card">
+                                <div className="label">Recent Projects</div>
+                                <div className="value" style={{ fontSize: 20 }}>{recentProjects.length}</div>
+                            </div>
+                            <div className="stat-card">
+                                <div className="label">Version</div>
+                                <div className="value" style={{ fontSize: 20 }}>v3.0</div>
+                            </div>
+                            <div className="stat-card">
+                                <div className="label">OASIS+ Module</div>
+                                <div className="value" style={{ color: 'var(--accent-green)', fontSize: 20 }}>Active</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // Main App
         function App() {
-            const [currentView, setCurrentView] = useState('upload');
+            const [currentView, setCurrentView] = useState('dashboard');
             const [apiConnected, setApiConnected] = useState(false);
             const [error, setError] = useState(null);
-            
+
             // RFP State
             const [currentRfpId, setCurrentRfpId] = useState(null);
+            const [rfpType, setRfpType] = useState('standard'); // 'standard' or 'oasis'
             const [files, setFiles] = useState([]);
             const [rawFiles, setRawFiles] = useState([]);
             const [processing, setProcessing] = useState(false);
             const [processingStatus, setProcessingStatus] = useState({ status: '', progress: 0, message: '' });
-            const [extractionMode, setExtractionMode] = useState('standard'); // v2.9: Default to best practices
-            
+            const [extractionMode, setExtractionMode] = useState('best_practices');
+
+            // Recent Projects (localStorage)
+            const [recentProjects, setRecentProjects] = useState(() => {
+                try {
+                    return JSON.parse(localStorage.getItem('propelai_recent_projects') || '[]');
+                } catch { return []; }
+            });
+
             // Requirements State
             const [requirements, setRequirements] = useState([]);
             const [stats, setStats] = useState(null);
@@ -514,6 +712,41 @@
                 return matchesSearch && matchesType && matchesPriority;
             });
             
+            // Save project to recent projects
+            const saveToRecentProjects = (project) => {
+                const updated = [project, ...recentProjects.filter(p => p.id !== project.id)].slice(0, 10);
+                setRecentProjects(updated);
+                localStorage.setItem('propelai_recent_projects', JSON.stringify(updated));
+            };
+
+            // Handle opening a project from dashboard
+            const handleOpenProject = (project) => {
+                if (project === 'library') {
+                    setCurrentView('library');
+                    return;
+                }
+                if (project.type === 'oasis') {
+                    setRfpType('oasis');
+                    setCurrentView('oasis_scorecard');
+                } else {
+                    setRfpType('standard');
+                    setCurrentRfpId(project.id);
+                    setCurrentView('matrix');
+                }
+            };
+
+            // Handle new RFP
+            const handleNewRFP = () => {
+                setRfpType('standard');
+                setCurrentView('upload');
+            };
+
+            // Handle new OASIS+
+            const handleNewOASIS = () => {
+                setRfpType('oasis');
+                setCurrentView('oasis_upload');
+            };
+
             return (
                 <div className="app-container">
                     {/* Sidebar */}
@@ -522,7 +755,7 @@
                             <h1>PropelAI</h1>
                             <span>RFP Intelligence</span>
                         </div>
-                        
+
                         <nav className="nav-section">
                             <div className="api-status">
                                 <span className={`api-dot ${apiConnected ? 'connected' : 'disconnected'}`}></span>
@@ -530,73 +763,107 @@
                                     {apiConnected ? 'API Connected' : 'API Offline'}
                                 </span>
                             </div>
-                            
-                            <div className="nav-label">Workspace</div>
-                            <div 
+
+                            <div className="nav-label">Dashboard</div>
+                            <div
+                                className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`}
+                                onClick={() => setCurrentView('dashboard')}
+                            >
+                                <Icon name="LayoutDashboard" />
+                                <span>Overview</span>
+                            </div>
+
+                            <div className="nav-label" style={{ marginTop: 16 }}>RFP Analysis</div>
+                            <div
                                 className={`nav-item ${currentView === 'upload' ? 'active' : ''}`}
-                                onClick={() => setCurrentView('upload')}
+                                onClick={() => { setRfpType('standard'); setCurrentView('upload'); }}
                             >
                                 <Icon name="Upload" />
                                 <span>Upload RFP</span>
                             </div>
-                            <div 
+                            <div
                                 className={`nav-item ${currentView === 'matrix' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
                                 onClick={() => stats && setCurrentView('matrix')}
                             >
                                 <Icon name="Table" />
                                 <span>Compliance Matrix</span>
                             </div>
-                            <div 
+                            <div
                                 className={`nav-item ${currentView === 'amendments' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
                                 onClick={() => stats && setCurrentView('amendments')}
                             >
                                 <Icon name="GitBranch" />
                                 <span>Amendments</span>
                             </div>
-                            <div 
+                            <div
                                 className={`nav-item ${currentView === 'outline' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
                                 onClick={() => stats && setCurrentView('outline')}
                             >
                                 <Icon name="FileText" />
                                 <span>Proposal Outline</span>
                             </div>
-                            
-                            <div className="nav-label" style={{ marginTop: 24 }}>Company Library</div>
-                            <div 
+
+                            <div className="nav-label" style={{ marginTop: 16 }}>OASIS+ Scoring</div>
+                            <div
+                                className={`nav-item ${currentView === 'oasis_upload' ? 'active' : ''}`}
+                                onClick={() => { setRfpType('oasis'); setCurrentView('oasis_upload'); }}
+                            >
+                                <Icon name="Target" />
+                                <span>New Proposal</span>
+                            </div>
+                            <div
+                                className={`nav-item ${currentView === 'oasis_scorecard' ? 'active' : ''} disabled`}
+                            >
+                                <Icon name="Award" />
+                                <span>Scorecard</span>
+                            </div>
+                            <div
+                                className={`nav-item ${currentView === 'oasis_optimizer' ? 'active' : ''} disabled`}
+                            >
+                                <Icon name="Sparkles" />
+                                <span>Optimizer</span>
+                            </div>
+
+                            <div className="nav-label" style={{ marginTop: 16 }}>Resources</div>
+                            <div
                                 className={`nav-item ${currentView === 'library' ? 'active' : ''}`}
                                 onClick={() => setCurrentView('library')}
                             >
                                 <Icon name="Building" />
-                                <span>Library</span>
-                            </div>
-                            
-                            <div className="nav-label" style={{ marginTop: 24 }}>Coming Soon</div>
-                            <div className="nav-item disabled">
-                                <Icon name="Target" />
-                                <span>Win Themes</span>
+                                <span>Company Library</span>
                             </div>
                         </nav>
-                        
+
                         <div className="sidebar-footer">
-                            <p>PropelAI v2.11</p>
-                            {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
+                            <p>PropelAI v3.0</p>
+                            {currentRfpId && <p style={{ marginTop: 4, fontSize: 10, fontFamily: 'JetBrains Mono' }}>{currentRfpId}</p>}
                         </div>
                     </aside>
-                    
+
                     {/* Main Content */}
                     <main className="main-content">
                         {error && (
                             <div className="error-banner">
                                 <strong>Error:</strong> {error}
-                                <button 
-                                    onClick={() => setError(null)} 
+                                <button
+                                    onClick={() => setError(null)}
                                     style={{ float: 'right', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
                                 >
                                     ✕
                                 </button>
                             </div>
                         )}
-                        
+
+                        {currentView === 'dashboard' && (
+                            <DashboardView
+                                onNewRFP={handleNewRFP}
+                                onNewOASIS={handleNewOASIS}
+                                onOpenProject={handleOpenProject}
+                                recentProjects={recentProjects}
+                                apiConnected={apiConnected}
+                            />
+                        )}
+
                         {currentView === 'upload' && (
                             <UploadView 
                                 files={files}
@@ -635,6 +902,141 @@
                         
                         {currentView === 'library' && (
                             <LibraryView />
+                        )}
+
+                        {currentView === 'oasis_upload' && (
+                            <div className="animate-in">
+                                <div className="page-header">
+                                    <h2>OASIS+ Self-Scoring Proposal</h2>
+                                    <p>Upload J.P-1 Matrix and project documents for automated scoring and optimization</p>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                                    {/* J.P-1 Matrix Upload */}
+                                    <div className="card">
+                                        <div className="card-header">
+                                            <h3 className="card-title">Step 1: J.P-1 Qualifications Matrix</h3>
+                                        </div>
+                                        <div style={{
+                                            border: '2px dashed var(--border-accent)',
+                                            borderRadius: 12,
+                                            padding: 40,
+                                            textAlign: 'center',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <div style={{
+                                                width: 56, height: 56,
+                                                background: 'rgba(167, 139, 250, 0.15)',
+                                                borderRadius: 12,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                margin: '0 auto 16px'
+                                            }}>
+                                                <Icon name="FileSpreadsheet" size={28} />
+                                            </div>
+                                            <h4 style={{ marginBottom: 8 }}>Upload J.P-1 Matrix</h4>
+                                            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                                                Excel file with scoring criteria
+                                            </p>
+                                            <div style={{ marginTop: 16 }}>
+                                                <span className="file-type">.xlsx</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Domain Selection */}
+                                    <div className="card">
+                                        <div className="card-header">
+                                            <h3 className="card-title">Step 2: Select Domain</h3>
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            {[
+                                                { id: 'technical_engineering', name: 'Technical & Engineering', icon: 'Cpu' },
+                                                { id: 'management_advisory', name: 'Management & Advisory', icon: 'Users' },
+                                                { id: 'rd', name: 'Research & Development', icon: 'FlaskConical' },
+                                                { id: 'intelligence', name: 'Intelligence Services', icon: 'Shield' },
+                                                { id: 'environmental', name: 'Environmental', icon: 'Leaf' }
+                                            ].map(domain => (
+                                                <div
+                                                    key={domain.id}
+                                                    style={{
+                                                        padding: 12,
+                                                        border: '1px solid var(--border-color)',
+                                                        borderRadius: 8,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 12,
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent-purple)'}
+                                                    onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                                                >
+                                                    <Icon name={domain.icon} size={20} />
+                                                    <span>{domain.name}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Project Documents */}
+                                <div className="card" style={{ marginTop: 24 }}>
+                                    <div className="card-header">
+                                        <h3 className="card-title">Step 3: Upload Project Documents</h3>
+                                        <span className="badge badge-gray">Up to 10 projects</span>
+                                    </div>
+                                    <div style={{
+                                        border: '2px dashed var(--border-accent)',
+                                        borderRadius: 12,
+                                        padding: 40,
+                                        textAlign: 'center'
+                                    }}>
+                                        <Icon name="FolderUp" size={40} />
+                                        <h4 style={{ marginTop: 16, marginBottom: 8 }}>Drop project folders or files</h4>
+                                        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                                            Contracts, task orders, performance reports, DD-254s, CPARS
+                                        </p>
+                                        <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'center' }}>
+                                            <span className="file-type">.pdf</span>
+                                            <span className="file-type">.docx</span>
+                                            <span className="file-type">.xlsx</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+                                    <button className="btn btn-primary" disabled>
+                                        <Icon name="Zap" />
+                                        Start Scoring Analysis
+                                    </button>
+                                    <button className="btn btn-secondary" onClick={() => setCurrentView('dashboard')}>
+                                        Cancel
+                                    </button>
+                                </div>
+
+                                {/* Info Box */}
+                                <div style={{
+                                    marginTop: 32,
+                                    padding: 16,
+                                    background: 'rgba(79, 140, 255, 0.1)',
+                                    border: '1px solid rgba(79, 140, 255, 0.2)',
+                                    borderRadius: 8
+                                }}>
+                                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                        <Icon name="Info" size={20} />
+                                        <div>
+                                            <strong>How OASIS+ Scoring Works</strong>
+                                            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+                                                PropelAI parses the J.P-1 matrix to extract scoring criteria, then analyzes your project documents
+                                                to find evidence supporting each criterion. The optimizer selects the best 5 projects to meet
+                                                the 42-point threshold (Unrestricted) or 36-point threshold (Small Business).
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         )}
                     </main>
                     
