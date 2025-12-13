@@ -218,20 +218,92 @@ class TensorlakeProcessor:
     ) -> ExtractionResult:
         """Process raw Tensorlake result into ExtractionResult"""
         try:
-            # Handle different result formats
-            if hasattr(result, 'markdown'):
+            markdown = ""
+            page_count = 0
+
+            # Handle different Tensorlake result formats
+            if hasattr(result, 'markdown') and result.markdown:
                 markdown = result.markdown
+            elif hasattr(result, 'chunks') and result.chunks:
+                # Extract text content from chunks
+                chunk_texts = []
+                for chunk in result.chunks:
+                    if hasattr(chunk, 'content') and chunk.content:
+                        chunk_texts.append(str(chunk.content))
+                    elif hasattr(chunk, 'text') and chunk.text:
+                        chunk_texts.append(str(chunk.text))
+                    elif isinstance(chunk, str):
+                        chunk_texts.append(chunk)
+                markdown = "\n\n".join(chunk_texts)
+            elif hasattr(result, 'pages') and result.pages:
+                # Extract from pages structure
+                page_texts = []
+                for page in result.pages:
+                    if hasattr(page, 'content'):
+                        page_texts.append(str(page.content))
+                    elif hasattr(page, 'text'):
+                        page_texts.append(str(page.text))
+                    elif hasattr(page, 'fragments'):
+                        # Handle page fragments
+                        frag_texts = []
+                        for frag in page.fragments:
+                            if hasattr(frag, 'content'):
+                                frag_texts.append(str(frag.content))
+                            elif hasattr(frag, 'text'):
+                                frag_texts.append(str(frag.text))
+                        page_texts.append(" ".join(frag_texts))
+                markdown = "\n\n".join(page_texts)
             elif isinstance(result, dict):
-                markdown = result.get('markdown', result.get('content', ''))
+                # Dict response
+                markdown = result.get('markdown', '')
+                if not markdown:
+                    markdown = result.get('content', '')
+                if not markdown and 'chunks' in result:
+                    chunk_texts = []
+                    for chunk in result['chunks']:
+                        if isinstance(chunk, dict):
+                            chunk_texts.append(chunk.get('content', chunk.get('text', '')))
+                        else:
+                            chunk_texts.append(str(chunk))
+                    markdown = "\n\n".join(chunk_texts)
+            elif isinstance(result, str):
+                markdown = result
             else:
-                markdown = str(result)
+                # Last resort - but filter out object representations
+                result_str = str(result)
+                # If it looks like raw Python objects, don't use it
+                if 'PageFragment(' in result_str or 'Chunk(' in result_str or 'bbox=' in result_str:
+                    logger.warning("Tensorlake result contains raw object representations, extraction may be incomplete")
+                    # Try to extract just text content using regex
+                    import re
+                    content_matches = re.findall(r"content='([^']*)'", result_str)
+                    text_matches = re.findall(r"text='([^']*)'", result_str)
+                    markdown = "\n".join(content_matches + text_matches)
+                else:
+                    markdown = result_str
 
             # Extract page count
-            page_count = 0
             if hasattr(result, 'page_count'):
                 page_count = result.page_count
+            elif hasattr(result, 'pages'):
+                page_count = len(result.pages)
             elif isinstance(result, dict):
                 page_count = result.get('page_count', 0)
+
+            # Clean up markdown - remove any remaining object artifacts
+            if markdown:
+                import re
+                # Remove bbox coordinates
+                markdown = re.sub(r"bbox=\{[^}]+\}", "", markdown)
+                # Remove reading_order
+                markdown = re.sub(r"reading_order=\d+,?\s*", "", markdown)
+                # Remove PageFragment wrapper
+                markdown = re.sub(r"PageFragment\([^)]+\)", "", markdown)
+                # Remove fragment_type
+                markdown = re.sub(r"fragment_type=<[^>]+>,?\s*", "", markdown)
+                # Clean up extra whitespace
+                markdown = re.sub(r'\n{3,}', '\n\n', markdown)
+                markdown = markdown.strip()
 
             return ExtractionResult(
                 success=True,
