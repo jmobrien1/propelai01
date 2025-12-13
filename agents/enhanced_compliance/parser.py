@@ -3,25 +3,38 @@ PropelAI Cycle 5: Multi-Format Document Parser
 Parses PDF, DOCX, XLSX with section boundary detection
 
 Preserves page numbers and section references for traceability
+
+Enhanced with Tensorlake integration for:
+- Gemini 3 OCR for scanned/complex PDFs
+- Better table extraction
+- Improved handling of multi-column layouts
 """
 
 import os
 import re
+import logging
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
 from .models import ParsedDocument, DocumentType, RFPBundle
 
+logger = logging.getLogger(__name__)
+
 
 class MultiFormatParser:
     """
     Parse PDF, DOCX, XLSX into unified format with section detection
-    
+
     Uses:
-    - pypdf for PDFs
+    - Tensorlake (Gemini 3 OCR) for enhanced PDF extraction (if configured)
+    - pypdf for PDFs (fallback)
     - python-docx for DOCX
     - openpyxl for XLSX
     - markitdown as fallback for complex layouts
+
+    To enable Tensorlake:
+        Set TENSORLAKE_API_KEY environment variable
+        parser = MultiFormatParser(use_tensorlake=True)
     """
     
     # Enhanced section header patterns (federal RFP standard + variants)
@@ -76,14 +89,44 @@ class MultiFormatParser:
     # Subsection patterns: C.3.1, L.4.a.2, etc.
     SUBSECTION_PATTERN = r"([A-Z])\.(\d+)(?:\.(\d+|[a-z]))?(?:\.(\d+|[a-z]))?"
     
-    def __init__(self, use_markitdown_fallback: bool = True):
+    def __init__(self, use_markitdown_fallback: bool = True, use_tensorlake: bool = True):
         self.use_markitdown_fallback = use_markitdown_fallback
+        self.use_tensorlake = use_tensorlake
+        self._tensorlake_processor = None
+        self._tensorlake_checked = False
         self.stats = {
             "pdf_parsed": 0,
+            "pdf_tensorlake": 0,
+            "pdf_pypdf_fallback": 0,
             "docx_parsed": 0,
             "xlsx_parsed": 0,
             "parse_failures": 0,
         }
+
+    def _get_tensorlake_processor(self):
+        """Lazy initialization of Tensorlake processor"""
+        if self._tensorlake_checked:
+            return self._tensorlake_processor
+
+        self._tensorlake_checked = True
+
+        if not self.use_tensorlake:
+            return None
+
+        try:
+            from agents.integrations import TensorlakeProcessor
+            processor = TensorlakeProcessor()
+            if processor.is_available:
+                self._tensorlake_processor = processor
+                logger.info("Tensorlake processor initialized successfully")
+            else:
+                logger.info("Tensorlake not available (API key not configured)")
+        except ImportError:
+            logger.debug("Tensorlake integration not installed")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Tensorlake: {e}")
+
+        return self._tensorlake_processor
     
     def parse_bundle(self, bundle: RFPBundle) -> Dict[str, ParsedDocument]:
         """
@@ -165,31 +208,109 @@ class MultiFormatParser:
             return None
     
     def _parse_pdf(self, filepath: str, filename: str, doc_type: DocumentType) -> ParsedDocument:
-        """Parse PDF using pypdf"""
+        """
+        Parse PDF using Tensorlake (if available) or pypdf fallback.
+
+        Tensorlake provides better extraction for:
+        - Scanned PDFs requiring OCR
+        - Complex tables with merged cells
+        - Multi-column layouts
+        - Documents with charts/diagrams containing text
+        """
+        # Try Tensorlake first if available
+        tensorlake = self._get_tensorlake_processor()
+        if tensorlake:
+            try:
+                result = self._parse_pdf_with_tensorlake(filepath, filename, doc_type, tensorlake)
+                if result and result.extraction_quality >= 0.7:
+                    self.stats["pdf_tensorlake"] += 1
+                    self.stats["pdf_parsed"] += 1
+                    return result
+                else:
+                    logger.info(f"Tensorlake extraction quality low ({result.extraction_quality if result else 0}), falling back to pypdf")
+            except Exception as e:
+                logger.warning(f"Tensorlake parsing failed for {filename}, falling back to pypdf: {e}")
+
+        # Fallback to pypdf
+        return self._parse_pdf_with_pypdf(filepath, filename, doc_type)
+
+    def _parse_pdf_with_tensorlake(self, filepath: str, filename: str, doc_type: DocumentType,
+                                    processor) -> Optional[ParsedDocument]:
+        """Parse PDF using Tensorlake's Gemini 3 OCR"""
+        logger.info(f"Parsing {filename} with Tensorlake (Gemini 3 OCR)")
+
+        result = processor.process_document_sync(filepath, extract_structure=True)
+
+        if not result.success:
+            logger.warning(f"Tensorlake extraction failed: {result.error_message}")
+            return None
+
+        full_text = result.markdown
+
+        # Convert Tensorlake tables to our format
+        tables = []
+        for tl_table in result.tables:
+            tables.append({
+                "headers": tl_table.headers,
+                "rows": tl_table.rows,
+                "page": tl_table.page_number,
+                "source": "tensorlake"
+            })
+
+        # Split markdown into pages (estimate based on content)
+        pages = self._split_into_pages(full_text, chars_per_page=3000)
+
+        # Detect sections from the markdown
+        sections = self._detect_sections(full_text)
+
+        # Assess quality
+        quality = self._assess_extraction_quality(full_text, result.page_count or len(pages))
+
+        # Tensorlake typically produces higher quality for complex documents
+        if result.page_count and result.page_count > 0:
+            quality = min(1.0, quality + 0.1)  # Bonus for successful Tensorlake parse
+
+        return ParsedDocument(
+            filepath=filepath,
+            filename=filename,
+            document_type=doc_type,
+            full_text=full_text,
+            pages=pages,
+            page_count=result.page_count or len(pages),
+            sections=sections,
+            tables=tables,
+            title=self._extract_title(full_text),
+            parser_used="tensorlake",
+            extraction_quality=quality,
+        )
+
+    def _parse_pdf_with_pypdf(self, filepath: str, filename: str, doc_type: DocumentType) -> ParsedDocument:
+        """Parse PDF using pypdf (fallback method)"""
         from pypdf import PdfReader
-        
+
         reader = PdfReader(filepath)
         pages = []
         full_text_parts = []
-        
+
         for page in reader.pages:
             text = page.extract_text() or ""
             pages.append(text)
             full_text_parts.append(text)
-        
+
         full_text = "\n\n".join(full_text_parts)
-        
+
         # Detect sections
         sections = self._detect_sections(full_text)
-        
+
         # Extract tables (basic detection)
         tables = self._extract_table_hints(full_text)
-        
+
         # Calculate extraction quality
         quality = self._assess_extraction_quality(full_text, len(reader.pages))
-        
+
+        self.stats["pdf_pypdf_fallback"] += 1
         self.stats["pdf_parsed"] += 1
-        
+
         return ParsedDocument(
             filepath=filepath,
             filename=filename,
