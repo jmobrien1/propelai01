@@ -1,0 +1,366 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\froman\fcharset0 Times-Bold;\f2\froman\fcharset0 Times-Italic;
+\f3\froman\fcharset0 TimesNewRomanPSMT;\f4\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red109\green109\blue109;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\cssrgb\c50196\c50196\c50196;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid1\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid101\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid2}
+{\list\listtemplateid3\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid201\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid3}
+{\list\listtemplateid4\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid301\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid4}
+{\list\listtemplateid5\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid401\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid5}
+{\list\listtemplateid6\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid501\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid6}
+{\list\listtemplateid7\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid601\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid7}
+{\list\listtemplateid8\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid701\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid8}
+{\list\listtemplateid9\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid801\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid9}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}{\listoverride\listid3\listoverridecount0\ls3}{\listoverride\listid4\listoverridecount0\ls4}{\listoverride\listid5\listoverridecount0\ls5}{\listoverride\listid6\listoverridecount0\ls6}{\listoverride\listid7\listoverridecount0\ls7}{\listoverride\listid8\listoverridecount0\ls8}{\listoverride\listid9\listoverridecount0\ls9}}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\fs24 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 This document outlines the functional and technical requirements for an AI-driven 
+\f1\b Smart Proposal Outline Generator
+\f0\b0 . It draws on best practices from Shipley and Red Team Consulting, technical architectures from PropelAI, and specific edge cases identified in Federal (DoD/Civilian) and State (SLED) RFPs.\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa321\partightenfactor0
+
+\f1\b\fs48 \cf0 \strokec2 Product Requirements Document: The "Perfect" Annotated Outline Generator\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Target Audience:
+\f0\b0  AI Software Development Team / Prompt Engineers 
+\f1\b Goal:
+\f0\b0  Build an automated system that ingests raw RFP documents and outputs a structurally compliant, strategically annotated MS Word outline.\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f1\b\fs36 \cf0 \strokec2 1. Core Architecture: The "Iron Triangle" Mapping\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 To generate a "perfect" outline, the AI must not simply list headers. It must conceptually link the three critical sections of an RFP. Failure to link these results in non-compliance.\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Functional Requirement 1.1: Section Linking
+\f0\b0  The system must parse and map relationships between:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls1\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Section L (Instructions):
+\f0\b0  Dictates the 
+\f2\i structure
+\f0\i0  (Volume, Book, Tab organization).\
+\ls1\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Section M (Evaluation):
+\f0\b0  Dictates the 
+\f2\i content hierarchy
+\f0\i0  and scoring weights.\
+\ls1\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Section C (PWS/SOW):
+\f0\b0  Dictates the 
+\f2\i technical requirements
+\f0\i0  to be verified.\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Developer Note:
+\f0\b0  Priority must be given to Section L for structure. If Section L says "Organize by Factor," but Section C is organized by "Task," the outline 
+\f1\b must
+\f0\b0  follow Section L, mapping the C-Tasks under the L-Factors.\
+
+\f1\b Functional Requirement 1.2: Cross-Reference Injection
+\f0\b0  For every outline heading level (e.g., 1.1, 1.1.1), the system must inject:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls2\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Source Requirement:
+\f0\b0  The verbatim text from the RFP.\
+\ls2\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Evaluation Criteria:
+\f0\b0  How this specific section will be scored (e.g., Adjectival Rating vs. Pass/Fail).\
+\ls2\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 SOW Mapping:
+\f0\b0  The specific Performance Work Statement (PWS) paragraphs relevant to this section.\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f1\b\fs36 \cf0 \strokec2 2. RFP Format Agnosticism (Dynamic Parsing)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 The system must automatically detect the solicitation type and adjust the outline structure accordingly. Hard-coded "Section L" parsers will fail on non-standard RFPs.\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Functional Requirement 2.1: Format Detection & Adaptation
+\f0\b0  The AI must classify the input document into one of the following schemas and apply specific extraction logic:\
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrt\brdrnil \trbrdrl\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth2209\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2160
+\clvertalc \clshdrawnil \clwWidth4164\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx4320
+\clvertalc \clshdrawnil \clwWidth5444\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx6480
+\clvertalc \clshdrawnil \clwWidth1669\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 RFP Type\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Detection Logic\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Outline Structure Output\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Source Example\cell \row
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrl\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth2209\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2160
+\clvertalc \clshdrawnil \clwWidth4164\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx4320
+\clvertalc \clshdrawnil \clwWidth5444\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx6480
+\clvertalc \clshdrawnil \clwWidth1669\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Federal UCF
+\f0\b0 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Contains "Section L", "Section M"\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Vol 1: Tech, Vol 2: Mgmt, Vol 3: Cost\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f2\i \cf0 FAR 15.204-1
+\f0\i0 \cell \row
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrl\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth2209\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2160
+\clvertalc \clshdrawnil \clwWidth4164\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx4320
+\clvertalc \clshdrawnil \clwWidth5444\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx6480
+\clvertalc \clshdrawnil \clwWidth1669\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 DoD Source Selection
+\f0\b0 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 "Attachment 2: Placement Procedures"\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Vol 1: Exec Summary, Subfactor 1, Subfactor 2\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f2\i \cf0 FA880625RB003
+\f0\i0 \cell \row
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrl\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth2209\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2160
+\clvertalc \clshdrawnil \clwWidth4164\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx4320
+\clvertalc \clshdrawnil \clwWidth5444\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx6480
+\clvertalc \clshdrawnil \clwWidth1669\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 GSA / RFQ
+\f0\b0 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 "Schedule", "BPA", No "Section L"\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Factors: Tech, Past Perf, Price (No L/M sections)\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f2\i \cf0 USCA25Q0053
+\f0\i0 \cell \row
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrl\brdrnil \trbrdrt\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth2209\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2160
+\clvertalc \clshdrawnil \clwWidth4164\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx4320
+\clvertalc \clshdrawnil \clwWidth5444\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx6480
+\clvertalc \clshdrawnil \clwWidth1669\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 State/Local (SLED)
+\f0\b0 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 "Desirable Elements", "Mandatory Scored"\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Narrative response based on "Questionnaire" or "Forms"\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f2\i \cf0 IDES UI Portal
+\f0\i0 \cell \lastrow\row
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Functional Requirement 2.2: Hidden Constraint Extraction
+\f0\b0  The system must scan 
+\f2\i all
+\f0\i0  attachments (not just the main PDF) for structural constraints.\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls3\ilvl0
+\f2\i \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Edge Case:
+\f0\i0  In 
+\f2\i USCA25Q0053
+\f0\i0 , page limits were hidden in a "Transmittal Letter," not the main SOW.\
+\ls3\ilvl0
+\f2\i \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Edge Case:
+\f0\i0  In 
+\f2\i FA880625RB003
+\f0\i0 , page limits were listed in a table in Attachment 2, and conflicted (8 pages vs 20 pages). The AI must flag this conflict for the user.\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f1\b\fs36 \cf0 \strokec2 3. The Annotation Layer (Writer Guidance)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 A "perfect" outline guides the writer. The generated Word document must use specific styles and color-coding to differentiate instructions from writable space.\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Functional Requirement 3.1: Color-Coded Guidelines
+\f0\b0  The output must utilize standard industry color codes for annotations:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls4\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 RED TEXT:
+\f0\b0  Section L Instructions (Page limits, font size, formatting).\
+\ls4\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 BLUE TEXT:
+\f0\b0  Section M Evaluation Criteria (What earns strengths/points).\
+\ls4\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 PURPLE TEXT:
+\f0\b0  Section C/PWS Requirements (The work to be done).\
+\ls4\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 GREEN TEXT:
+\f0\b0  Win Themes & Strategy (Why us?).\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Functional Requirement 3.2: Strategic Placeholders
+\f0\b0  For every lowest-level subsection (the writing level), the AI must insert the following placeholders:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls5\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Win Theme:
+\f0\b0  A placeholder for the "Feature 
+\f3 \uc0\u8594 
+\f0  Benefit 
+\f3 \uc0\u8594 
+\f0  Proof" statement.\
+\ls5\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Proof Points:
+\f0\b0  A prompt to insert "Quantifiable evidence" (e.g., 
+\f2\i \'93Cite the 99.9% uptime metric from Project X\'94
+\f0\i0 ).\
+\ls5\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Graphics:
+\f0\b0  A placeholder for "Planned Graphics" and "Action Captions".\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f1\b\fs36 \cf0 \strokec2 4. Hard Constraint Enforcement\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 The outline must act as a compliance gate.\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Functional Requirement 4.1: Quantitative Constraints
+\f0\b0  The system must extract and display the following metadata at the top of every Volume:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls6\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Page Limit:
+\f0\b0  (e.g., "30 Pages excluding cover").\
+\ls6\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Font/Margin:
+\f0\b0  (e.g., "Times New Roman 12pt, 1-inch margins").\
+\ls6\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 File Naming Convention:
+\f0\b0  (e.g., "Volume_I_Tech_VendorName.pdf").\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Functional Requirement 4.2: Mandatory Forms Placeholder
+\f0\b0  The outline must automatically generate a "Contract Documentation" volume if the RFP requires forms (e.g., SF1449, OCI Mitigation Plan). These must be flagged as 
+\f1\b P0 (Pass/Fail)
+\f0\b0  requirements.\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f1\b\fs36 \cf0 \strokec2 5. Technical Implementation Specs (for Developers)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Input Data Structure (JSON Schema)
+\f0\b0  The outline generator should consume a structured object from the Compliance Matrix, not raw text.\
+\pard\pardeftab720\partightenfactor0
+
+\f4\fs26 \cf0 \{\
+  "volume_number": 1,\
+  "volume_title": "Technical Volume",\
+  "page_limit": 30,\
+  "formatting": \{"font": "Times New Roman", "size": 11\},\
+  "sections": [\
+    \{\
+      "section_id": "1.1",\
+      "title": "Management Approach",\
+      "associated_requirements": ["C.3.1", "C.3.2"],\
+      "evaluation_weight": "High / Critical",\
+      "instructions": "Describe staffing plan...",\
+      "keywords": ["Project Manager", "Agile", "Risk"],\
+      "subsections": [...]\
+    \}\
+  ]\
+\}\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b\fs24 \cf0 Output Generation (MS Word Construction)
+\f0\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls7\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Styles:
+\f0\b0  Use Word Styles (
+\f4\fs26 Heading 1
+\f0\fs24 , 
+\f4\fs26 Heading 2
+\f0\fs24 ) rather than manual formatting to ensure the Table of Contents generates automatically.\
+\ls7\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Boilerplate Injection:
+\f0\b0  If the user has a "Company Library" (as per PropelAI v2.11), the system should attempt to inject relevant boilerplate text into the body based on semantic matching (e.g., inserting the "Agile Methodology" boilerplate into the "Management Approach" section).\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f1\b\fs36 \cf0 6. User Story: The "Blinking Cursor" Problem\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls8\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 As a
+\f0\b0  Proposal Writer,\
+\ls8\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 I want
+\f0\b0  an outline that already contains the question I need to answer, the rule for how to answer it, and the score I will get for it,\
+\ls8\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 So that
+\f0\b0  I never stare at a blank page wondering where to start.\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b \cf0 Acceptance Criteria for "Perfect":
+\f0\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls9\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 No "Orphaned" Requirements:
+\f0\b0  Every "Shall" statement in the SOW is mapped to a section in the outline.\
+\ls9\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Visual Distinction:
+\f0\b0  Writers can instantly tell the difference between "Government Text" (Instructions) and "Writer Text" (Drafting area).\
+\ls9\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Hierarchy Integrity:
+\f0\b0  The outline hierarchy matches the RFP's evaluation structure exactly (evaluators score against their own checklist; the outline must match it).\
+}
