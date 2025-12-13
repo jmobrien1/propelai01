@@ -274,10 +274,20 @@ class SmartOutlineGenerator:
         for vol in volumes:
             if not vol.page_limit:
                 warnings.append(f"No page limit found for: {vol.name}")
-        
+
+        # CRITICAL: Populate sections with actual RFP content
+        # This is what makes the annotated outline useful
+        self._populate_section_content(
+            volumes,
+            section_l_requirements,
+            section_m_requirements,
+            technical_requirements,
+            eval_factors
+        )
+
         # Calculate total pages
         total_pages = sum(v.page_limit or 0 for v in volumes) or None
-        
+
         return ProposalOutline(
             rfp_format=rfp_format,
             volumes=volumes,
@@ -764,7 +774,194 @@ class SmartOutlineGenerator:
                         if vol_name_lower in text_lower or vol_type in text_lower:
                             volume.page_limit = page_limit
                             break
-    
+
+    def _populate_section_content(
+        self,
+        volumes: List[ProposalVolume],
+        section_l: List[Dict],
+        section_m: List[Dict],
+        technical: List[Dict],
+        eval_factors: List[EvaluationFactor]
+    ):
+        """
+        Populate proposal sections with actual RFP content.
+
+        This is critical for the annotated outline - without actual content,
+        the outline is just a generic template.
+
+        Per outline.rtf requirements:
+        - Section L → section.requirements (submission instructions)
+        - Section M → section.eval_criteria (evaluation criteria)
+        - Section C → mapped to sections based on topic
+        """
+        # Build factor profiles for semantic matching
+        factor_profiles = {
+            "experience": {
+                "keywords": ["experience", "years", "demonstrated", "prior", "relevant",
+                            "comparable", "similar", "contracts", "projects", "track record"],
+                "factor_nums": ["1"]
+            },
+            "management": {
+                "keywords": ["management", "project", "program", "schedule", "milestone",
+                            "deliverable", "coordination", "oversight", "control", "monitor",
+                            "quality", "risk", "communication", "stakeholder"],
+                "factor_nums": ["2"]
+            },
+            "technical": {
+                "keywords": ["technical", "approach", "methodology", "solution", "design",
+                            "develop", "implement", "architecture", "system", "software",
+                            "technology", "process", "innovation", "integration"],
+                "factor_nums": ["3"]
+            },
+            "personnel": {
+                "keywords": ["personnel", "staff", "team", "key", "principal", "lead",
+                            "resume", "qualifications", "credentials", "education",
+                            "certification", "skills", "expertise", "investigator"],
+                "factor_nums": ["4"]
+            },
+            "facilities": {
+                "keywords": ["facility", "facilities", "equipment", "resource",
+                            "infrastructure", "environment", "laboratory", "security",
+                            "clearance", "space", "hardware", "network"],
+                "factor_nums": ["5"]
+            },
+            "past_performance": {
+                "keywords": ["past performance", "performance", "reference", "cpars",
+                            "rating", "quality", "customer", "satisfaction", "successful"],
+                "factor_nums": ["6"]
+            }
+        }
+
+        def detect_factor_type(section_name: str) -> Optional[str]:
+            """Detect factor type from section name"""
+            name_lower = section_name.lower()
+            for ftype, profile in factor_profiles.items():
+                for kw in profile["keywords"][:3]:  # Use top keywords
+                    if kw in name_lower:
+                        return ftype
+            return None
+
+        def score_requirement(req_text: str, factor_type: str, factor_num: str = None) -> float:
+            """Score how relevant a requirement is to a factor"""
+            text_lower = req_text.lower()
+            score = 0.0
+
+            # Check for explicit factor mention (highest value)
+            if factor_num:
+                if re.search(rf"factor\s*{factor_num}\b", text_lower):
+                    score += 50
+
+            # Get profile for this factor type
+            profile = factor_profiles.get(factor_type)
+            if not profile:
+                return 0
+
+            # Check keyword matches
+            keyword_matches = sum(1 for kw in profile["keywords"] if kw in text_lower)
+            score += keyword_matches * 3
+
+            # Bonus for multiple matches
+            if keyword_matches >= 3:
+                score += 10
+
+            return score
+
+        # Process each volume and section
+        for volume in volumes:
+            vol_type_str = volume.volume_type.value.lower()
+
+            for section in volume.sections:
+                section_name = section.name or ""
+                section_id = section.id or ""
+
+                # Extract factor number if present
+                factor_num = None
+                id_match = re.search(r"SEC-F(\d+)", section_id)
+                name_match = re.search(r"Factor\s*(\d+)", section_name, re.IGNORECASE)
+                if id_match:
+                    factor_num = id_match.group(1)
+                elif name_match:
+                    factor_num = name_match.group(1)
+
+                # Detect factor type
+                factor_type = detect_factor_type(section_name)
+
+                # === POPULATE SECTION L REQUIREMENTS ===
+                # Look for submission instructions relevant to this section
+                for req in section_l:
+                    req_text = req.get("text", "") or req.get("full_text", "") or ""
+                    if not req_text.strip():
+                        continue
+
+                    # Check if this L requirement mentions this factor/section
+                    text_lower = req_text.lower()
+                    is_relevant = False
+
+                    if factor_num and f"factor {factor_num}" in text_lower:
+                        is_relevant = True
+                    elif vol_type_str in text_lower:
+                        is_relevant = True
+                    elif any(kw in text_lower for kw in ["technical", "volume"]) and volume.volume_type == VolumeType.TECHNICAL:
+                        is_relevant = True
+
+                    if is_relevant and req_text not in section.requirements:
+                        # Truncate very long requirements
+                        display_text = req_text[:500] + "..." if len(req_text) > 500 else req_text
+                        section.requirements.append(display_text)
+
+                # === POPULATE SECTION M EVALUATION CRITERIA ===
+                for req in section_m:
+                    req_text = req.get("text", "") or req.get("full_text", "") or ""
+                    if not req_text.strip():
+                        continue
+
+                    text_lower = req_text.lower()
+                    is_relevant = False
+
+                    # Check for factor mention
+                    if factor_num:
+                        if re.search(rf"factor\s*{factor_num}\b", text_lower):
+                            is_relevant = True
+
+                    # Check for factor type keywords
+                    if not is_relevant and factor_type:
+                        profile = factor_profiles.get(factor_type)
+                        if profile:
+                            keyword_hits = sum(1 for kw in profile["keywords"][:5] if kw in text_lower)
+                            if keyword_hits >= 2:
+                                is_relevant = True
+
+                    if is_relevant and req_text not in section.eval_criteria:
+                        display_text = req_text[:400] + "..." if len(req_text) > 400 else req_text
+                        section.eval_criteria.append(display_text)
+
+                # === MAP TECHNICAL REQUIREMENTS (Section C/PWS) ===
+                # Only for technical-type volumes
+                if factor_type and volume.volume_type == VolumeType.TECHNICAL:
+                    scored_reqs = []
+                    for req in technical:
+                        req_text = req.get("text", "") or req.get("full_text", "") or ""
+                        if not req_text.strip() or len(req_text) < 30:
+                            continue
+
+                        score = score_requirement(req_text, factor_type, factor_num)
+                        if score > 5:  # Relevance threshold
+                            scored_reqs.append((score, req_text, req.get("req_id", "REQ")))
+
+                    # Take top 5 most relevant
+                    scored_reqs.sort(key=lambda x: x[0], reverse=True)
+                    for _, req_text, req_id in scored_reqs[:5]:
+                        display_text = req_text[:400] + "..." if len(req_text) > 400 else req_text
+                        # Add to requirements with reference ID
+                        if display_text not in section.requirements:
+                            section.requirements.append(f"[{req_id}] {display_text}")
+
+                # If no content found, add a note
+                if not section.requirements and not section.eval_criteria:
+                    section.requirements.append(
+                        f"[Review RFP Section L for specific requirements for {section_name}]"
+                    )
+
     def _calculate_factor_weighting(
         self,
         eval_factors: List[EvaluationFactor],
@@ -1080,6 +1277,7 @@ class SmartOutlineGenerator:
                             "page_limit": sec.page_limit,
                             "content_requirements": sec.requirements,  # UI expects this name
                             "requirements": sec.requirements,
+                            "eval_criteria": sec.eval_criteria,  # Section M evaluation criteria
                             "compliance_checkpoints": [],  # Can be populated later
                             "content_strategy": {
                                 "target_rating": sec.content_strategy.target_rating.value,

@@ -321,6 +321,16 @@ class SectionAwareExtractor:
         r'\bbasis\s+for\s+(?:award|evaluation)',
         r'\badjectival\s+rating',
         r'\bstrength|weakness|deficien',
+        # Additional Section M patterns
+        r'\bfactor\s+\d+',            # "Factor 1", "Factor 2"
+        r'\bphase\s+[ivx\d]+\b',      # "Phase I", "Phase 1", "Phase II"
+        r'\bproposal(?:s)?\s+(?:will|shall)\s+be',  # "proposals will be"
+        r'\bofferor(?:s)?\s+(?:will|shall|must)',   # "offerors will"
+        r'\b(?:acceptable|unacceptable|marginal|outstanding)\b',  # Rating terms
+        r'\b(?:point|score)\s*(?:value|s|ing)',     # "point value", "scoring"
+        r'\bevaluat(?:e|ion|ing|ed|or)\b',          # Any form of "evaluate"
+        r'\b(?:go|no)[/-]?go\b',                     # "go/no-go"
+        r'\bpass[/-]?fail\b',                        # "pass/fail"
     ]
     
     # Pattern to find section/attachment references in text
@@ -701,37 +711,42 @@ class SectionAwareExtractor:
     def _detect_binding_level(self, text: str, is_evaluation_section: bool = False) -> Tuple[BindingLevel, str]:
         """
         Detect how binding this requirement is.
-        
+
         For Section M (evaluation), we use different patterns since evaluation
         criteria rarely use "shall" but are still critical requirements.
         """
         text_lower = text.lower()
-        
+
         # Check mandatory
         for pattern in self.MANDATORY_KEYWORDS:
             match = re.search(pattern, text_lower)
             if match:
                 return BindingLevel.MANDATORY, match.group(0)
-        
+
         # For evaluation sections, check evaluation-specific keywords
         if is_evaluation_section:
             for pattern in self.EVALUATION_KEYWORDS:
                 match = re.search(pattern, text_lower)
                 if match:
                     return BindingLevel.MANDATORY, match.group(0)  # Evaluation criteria are mandatory to address
-        
+
         # Check should
         for pattern in self.SHOULD_KEYWORDS:
             match = re.search(pattern, text_lower)
             if match:
                 return BindingLevel.HIGHLY_DESIRABLE, match.group(0)
-        
+
         # Check may
         for pattern in self.MAY_KEYWORDS:
             match = re.search(pattern, text_lower)
             if match:
                 return BindingLevel.DESIRABLE, match.group(0)
-        
+
+        # FALLBACK: For evaluation sections, default to HIGHLY_DESIRABLE
+        # rather than INFORMATIONAL since Section M items are always important
+        if is_evaluation_section:
+            return BindingLevel.HIGHLY_DESIRABLE, "evaluation"
+
         return BindingLevel.INFORMATIONAL, ""
     
     def _is_header_or_toc(self, text: str) -> bool:

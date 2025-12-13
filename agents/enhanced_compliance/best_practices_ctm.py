@@ -505,27 +505,30 @@ class BestPracticesCTMExporter:
     def _create_section_m_matrix(self, wb: "Workbook", requirements: List[StructuredRequirement]):
         """
         Create Section M Alignment Matrix.
-        
-        Per best practices: "Often optional, but powerful. Shows evaluators 
+
+        Per best practices: "Often optional, but powerful. Shows evaluators
         exactly where you meet or exceed their scoring criteria."
+
+        Now includes Priority and Binding Level columns for consistency with other sheets.
         """
         ws = wb.create_sheet("Section M Alignment")
-        
+
         headers = [
             "Evaluation Factor",        # M.1, M.2, etc.
             "Criterion Text",           # What they will evaluate
             "Page",
-            "Weight/Importance",        # If stated
+            "Priority",                 # High/Medium/Low based on binding level
+            "Binding Level",            # Mandatory/Desirable/etc.
             "Proposal Location",        # Where we address
             "Our Strength",             # What makes us strong here
             "Discriminator",            # How we stand out
             "Proof Points",             # Evidence to cite
             "Risk/Gap",                 # Any concerns
         ]
-        
+
         if not self.include_response_columns:
-            headers = headers[:4]
-        
+            headers = headers[:5]  # Include Priority and Binding
+
         # Write headers
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
@@ -534,7 +537,7 @@ class BestPracticesCTMExporter:
                                    end_color=self.COLORS['header'],
                                    fill_type='solid')
             cell.alignment = Alignment(wrap_text=True, vertical='center')
-        
+
         # Write requirements
         for row_num, req in enumerate(requirements, 2):
             ws.cell(row=row_num, column=1, value=self._safe_cell_value(req.rfp_reference))
@@ -543,28 +546,53 @@ class BestPracticesCTMExporter:
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
 
             ws.cell(row=row_num, column=3, value=req.page_number)
-            ws.cell(row=row_num, column=4, value="")  # Weight - team determines
 
-            if self.include_response_columns:
-                ws.cell(row=row_num, column=5, value="")  # Proposal Location
-                ws.cell(row=row_num, column=6, value="")  # Our Strength
-                ws.cell(row=row_num, column=7, value="")  # Discriminator
-                ws.cell(row=row_num, column=8, value="")  # Proof Points
-                ws.cell(row=row_num, column=9, value="")  # Risk/Gap
+            # Priority - highlight compliance gates with red
+            priority = self._get_priority(req.binding_level)
+            is_gate = getattr(req, 'is_compliance_gate', False)
 
-            # Light yellow for evaluation items
-            for col in range(1, len(headers) + 1):
-                ws.cell(row=row_num, column=col).fill = PatternFill(
-                    start_color=self.COLORS['m_section'],
-                    end_color=self.COLORS['m_section'],
+            if is_gate:
+                priority_cell = ws.cell(row=row_num, column=4, value=f"GATE: {priority}")
+                priority_cell.fill = PatternFill(
+                    start_color=self.COLORS['compliance_gate'],
+                    end_color=self.COLORS['compliance_gate'],
                     fill_type='solid'
                 )
-        
+                priority_cell.font = Font(bold=True, color='FFFFFF')
+            else:
+                priority_cell = ws.cell(row=row_num, column=4, value=priority)
+                priority_cell.fill = PatternFill(
+                    start_color=self._get_priority_color(priority),
+                    end_color=self._get_priority_color(priority),
+                    fill_type='solid'
+                )
+
+            # Binding Level
+            ws.cell(row=row_num, column=5, value=req.binding_level.value)
+
+            if self.include_response_columns:
+                ws.cell(row=row_num, column=6, value="")  # Proposal Location
+                ws.cell(row=row_num, column=7, value="")  # Our Strength
+                ws.cell(row=row_num, column=8, value="")  # Discriminator
+                ws.cell(row=row_num, column=9, value="")  # Proof Points
+                ws.cell(row=row_num, column=10, value="")  # Risk/Gap
+
+            # Light yellow for evaluation items (except priority cell which has its own color)
+            for col in range(1, len(headers) + 1):
+                if col != 4:  # Skip priority column - it has its own color
+                    cell = ws.cell(row=row_num, column=col)
+                    if not cell.fill or cell.fill.fgColor.rgb == '00000000':
+                        cell.fill = PatternFill(
+                            start_color=self.COLORS['m_section'],
+                            end_color=self.COLORS['m_section'],
+                            fill_type='solid'
+                        )
+
         # Column widths
-        widths = [15, 70, 8, 15, 20, 35, 35, 35, 30]
+        widths = [15, 70, 8, 12, 15, 20, 35, 35, 35, 30]
         for col, width in enumerate(widths[:len(headers)], 1):
             ws.column_dimensions[chr(64 + col)].width = width
-        
+
         ws.freeze_panes = 'A2'
     
     def _create_all_requirements_sheet(self, wb: "Workbook", requirements: List[StructuredRequirement]):
