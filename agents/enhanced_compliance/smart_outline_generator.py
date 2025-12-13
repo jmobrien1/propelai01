@@ -463,23 +463,49 @@ class SmartOutlineGenerator:
         """Extract volumes from GSA/BPA RFP"""
         volumes = []
         text_lower = text.lower()
-        
+
+        # Default sections by volume type for GSA format
+        section_templates = {
+            VolumeType.TECHNICAL: [
+                ProposalSection(id="SEC-TECH-1", name="Technical Approach"),
+                ProposalSection(id="SEC-TECH-2", name="Methodology"),
+                ProposalSection(id="SEC-TECH-3", name="Technical Solution"),
+            ],
+            VolumeType.PAST_PERFORMANCE: [
+                ProposalSection(id="SEC-PP-1", name="Past Performance"),
+                ProposalSection(id="SEC-PP-2", name="Relevant Experience"),
+            ],
+            VolumeType.COST_PRICE: [
+                ProposalSection(id="SEC-PRICE-1", name="Price Summary"),
+            ],
+            VolumeType.MANAGEMENT: [
+                ProposalSection(id="SEC-MGMT-1", name="Management Approach"),
+            ],
+        }
+
         # Look for Volume I, II, III structure
         volume_pattern = r"volume\s*([ivx\d]+)[:\s\-–]*([a-z\s]+?)(?=volume\s*[ivx\d]|$|\n)"
-        
+
         for match in re.finditer(volume_pattern, text_lower):
             vol_num = match.group(1).upper()
             vol_name = match.group(2).strip().title() if match.group(2) else f"Volume {vol_num}"
-            
+
             vol_type = self._classify_volume_type(vol_name)
-            
+
+            # Get sections for this volume type
+            sections = [
+                ProposalSection(id=s.id, name=s.name)
+                for s in section_templates.get(vol_type, [])
+            ]
+
             vol = ProposalVolume(
                 id=f"VOL-{vol_num}",
                 name=vol_name if vol_name else f"Volume {vol_num}",
-                volume_type=vol_type
+                volume_type=vol_type,
+                sections=sections
             )
             volumes.append(vol)
-        
+
         # If no explicit volumes, look for common GSA structure
         if not volumes:
             indicators = [
@@ -487,23 +513,61 @@ class SmartOutlineGenerator:
                 ("Past Performance", VolumeType.PAST_PERFORMANCE),
                 ("Price", VolumeType.COST_PRICE),
             ]
-            
+
             for name, vol_type in indicators:
                 if name.lower() in text_lower:
+                    sections = [
+                        ProposalSection(id=s.id, name=s.name)
+                        for s in section_templates.get(vol_type, [])
+                    ]
                     vol = ProposalVolume(
                         id=f"VOL-{len(volumes)+1}",
                         name=name,
-                        volume_type=vol_type
+                        volume_type=vol_type,
+                        sections=sections
                     )
                     volumes.append(vol)
-        
+
         return volumes
     
     def _extract_standard_volumes(self, text: str, section_l: List[Dict]) -> List[ProposalVolume]:
         """Extract volumes from standard UCF RFP"""
         volumes = []
         text_lower = text.lower()
-        
+
+        # Default sections by volume type - ensures sections exist for content population
+        section_templates = {
+            VolumeType.TECHNICAL: [
+                ProposalSection(id="SEC-TECH-1", name="Technical Approach"),
+                ProposalSection(id="SEC-TECH-2", name="Methodology and Solution"),
+                ProposalSection(id="SEC-TECH-3", name="Technical Excellence"),
+            ],
+            VolumeType.MANAGEMENT: [
+                ProposalSection(id="SEC-MGMT-1", name="Management Approach"),
+                ProposalSection(id="SEC-MGMT-2", name="Project Schedule"),
+                ProposalSection(id="SEC-MGMT-3", name="Risk Management"),
+                ProposalSection(id="SEC-MGMT-4", name="Quality Assurance"),
+            ],
+            VolumeType.PAST_PERFORMANCE: [
+                ProposalSection(id="SEC-PP-1", name="Past Performance Overview"),
+                ProposalSection(id="SEC-PP-2", name="Contract Reference 1"),
+                ProposalSection(id="SEC-PP-3", name="Contract Reference 2"),
+            ],
+            VolumeType.COST_PRICE: [
+                ProposalSection(id="SEC-COST-1", name="Cost Summary"),
+                ProposalSection(id="SEC-COST-2", name="Pricing Methodology"),
+            ],
+            VolumeType.STAFFING: [
+                ProposalSection(id="SEC-STAFF-1", name="Staffing Plan"),
+                ProposalSection(id="SEC-STAFF-2", name="Key Personnel"),
+                ProposalSection(id="SEC-STAFF-3", name="Organization Chart"),
+            ],
+            VolumeType.SMALL_BUSINESS: [
+                ProposalSection(id="SEC-SB-1", name="Small Business Participation"),
+                ProposalSection(id="SEC-SB-2", name="Subcontracting Plan"),
+            ],
+        }
+
         # Standard volume indicators
         indicators = [
             ("Technical", ["technical proposal", "technical volume", "technical approach"], VolumeType.TECHNICAL),
@@ -513,35 +577,106 @@ class SmartOutlineGenerator:
             ("Staffing", ["staffing", "key personnel", "personnel", "resumes"], VolumeType.STAFFING),
             ("Small Business", ["small business", "subcontracting plan"], VolumeType.SMALL_BUSINESS),
         ]
-        
+
         for name, keywords, vol_type in indicators:
             for kw in keywords:
                 if kw in text_lower:
+                    # Create deep copy of sections to avoid shared references
+                    sections = [
+                        ProposalSection(id=s.id, name=s.name)
+                        for s in section_templates.get(vol_type, [])
+                    ]
                     vol = ProposalVolume(
                         id=f"VOL-{name.upper().replace('/', '-').replace(' ', '-')}",
                         name=name,
-                        volume_type=vol_type
+                        volume_type=vol_type,
+                        sections=sections
                     )
                     volumes.append(vol)
                     break
-        
+
         return volumes
     
     def _create_default_volumes(self, rfp_format: str, section_m: List[Dict]) -> List[ProposalVolume]:
-        """Create default volumes if none were extracted"""
-        
+        """
+        Create default volumes if none were extracted.
+
+        CRITICAL: Must include sections within each volume so that
+        _populate_section_content() has sections to populate.
+        """
+
+        # Define default sections for each volume type
+        tech_sections = [
+            ProposalSection(id="SEC-TECH-1", name="Technical Approach"),
+            ProposalSection(id="SEC-TECH-2", name="Methodology and Solution Design"),
+            ProposalSection(id="SEC-TECH-3", name="Innovation and Technical Excellence"),
+        ]
+
+        mgmt_sections = [
+            ProposalSection(id="SEC-MGMT-1", name="Management Approach"),
+            ProposalSection(id="SEC-MGMT-2", name="Project Schedule and Milestones"),
+            ProposalSection(id="SEC-MGMT-3", name="Risk Management"),
+            ProposalSection(id="SEC-MGMT-4", name="Quality Assurance"),
+        ]
+
+        pp_sections = [
+            ProposalSection(id="SEC-PP-1", name="Past Performance Overview"),
+            ProposalSection(id="SEC-PP-2", name="Contract Reference 1"),
+            ProposalSection(id="SEC-PP-3", name="Contract Reference 2"),
+            ProposalSection(id="SEC-PP-4", name="Contract Reference 3"),
+        ]
+
+        staffing_sections = [
+            ProposalSection(id="SEC-STAFF-1", name="Staffing Plan"),
+            ProposalSection(id="SEC-STAFF-2", name="Key Personnel"),
+            ProposalSection(id="SEC-STAFF-3", name="Organization Chart"),
+        ]
+
+        cost_sections = [
+            ProposalSection(id="SEC-COST-1", name="Cost Summary"),
+            ProposalSection(id="SEC-COST-2", name="Pricing Methodology"),
+        ]
+
         if rfp_format in ["GSA_BPA", "GSA_RFQ"]:
             return [
-                ProposalVolume(id="VOL-1", name="Technical Approach", volume_type=VolumeType.TECHNICAL, order=0),
-                ProposalVolume(id="VOL-2", name="Past Performance", volume_type=VolumeType.PAST_PERFORMANCE, order=1),
-                ProposalVolume(id="VOL-3", name="Price", volume_type=VolumeType.COST_PRICE, order=2),
+                ProposalVolume(
+                    id="VOL-1", name="Technical Approach",
+                    volume_type=VolumeType.TECHNICAL, order=0,
+                    sections=tech_sections
+                ),
+                ProposalVolume(
+                    id="VOL-2", name="Past Performance",
+                    volume_type=VolumeType.PAST_PERFORMANCE, order=1,
+                    sections=pp_sections
+                ),
+                ProposalVolume(
+                    id="VOL-3", name="Price",
+                    volume_type=VolumeType.COST_PRICE, order=2,
+                    sections=cost_sections
+                ),
             ]
         else:
             return [
-                ProposalVolume(id="VOL-TECH", name="Technical Proposal", volume_type=VolumeType.TECHNICAL, order=0),
-                ProposalVolume(id="VOL-MGMT", name="Management Proposal", volume_type=VolumeType.MANAGEMENT, order=1),
-                ProposalVolume(id="VOL-PP", name="Past Performance", volume_type=VolumeType.PAST_PERFORMANCE, order=2),
-                ProposalVolume(id="VOL-COST", name="Cost/Price Proposal", volume_type=VolumeType.COST_PRICE, order=3),
+                ProposalVolume(
+                    id="VOL-TECH", name="Technical Proposal",
+                    volume_type=VolumeType.TECHNICAL, order=0,
+                    sections=tech_sections
+                ),
+                ProposalVolume(
+                    id="VOL-MGMT", name="Management Proposal",
+                    volume_type=VolumeType.MANAGEMENT, order=1,
+                    sections=mgmt_sections
+                ),
+                ProposalVolume(
+                    id="VOL-PP", name="Past Performance",
+                    volume_type=VolumeType.PAST_PERFORMANCE, order=2,
+                    sections=pp_sections
+                ),
+                ProposalVolume(
+                    id="VOL-COST", name="Cost/Price Proposal",
+                    volume_type=VolumeType.COST_PRICE, order=3,
+                    sections=cost_sections
+                ),
             ]
     
     def _classify_volume_type(self, name: str) -> VolumeType:
