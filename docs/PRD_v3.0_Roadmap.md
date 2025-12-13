@@ -400,6 +400,7 @@ PUT  /api/rfp/{id}/review/status           # Update review status
 | Database | In-memory | PostgreSQL + Redis |
 | AI/ML | None | Claude API / OpenAI |
 | Vector Search | None | Pinecone / Weaviate |
+| Document Processing | PyPDF2 / python-docx | Tensorlake (Gemini 3 OCR) |
 | Document Store | Local | S3 + CloudFront |
 | Auth | None | OAuth 2.0 / SAML |
 | Deployment | Local | Kubernetes / ECS |
@@ -442,6 +443,48 @@ class ReviewComment:
     created_at: datetime
     resolved_at: Optional[datetime]
 ```
+
+### 7.4 Tensorlake Integration (Document Processing Enhancement)
+
+**Rationale:** Current PDF extraction relies on basic text extraction which struggles with complex government RFP formats including scanned documents, complex tables, and multi-column layouts. Tensorlake's Gemini 3-powered OCR provides superior extraction for these challenging documents.
+
+**Key Capabilities:**
+
+| Feature | PropelAI Application | Phase |
+|---------|---------------------|-------|
+| Gemini 3 OCR | Extract requirements from scanned PDFs, complex tables, charts | Phase 1 |
+| DOCX Tracked Changes | Support collaborative Pink/Red/Gold team reviews with change tracking | Phase 3 |
+| Spatial Metadata | Preserve document structure for better section detection | Phase 1 |
+| RTF Support | Handle legacy government documents still in RTF format | Phase 2 |
+
+**Integration Points:**
+
+```python
+# Phase 1: Enhanced RFP Parsing
+class TensorlakeDocumentProcessor:
+    """Replace basic PDF extraction with Tensorlake pipeline"""
+
+    async def process_rfp_document(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
+        # Use Gemini 3 for complex visual reasoning
+        # Extract tables with preserved structure
+        # Handle scanned/image-based PDFs
+        pass
+
+# Phase 3: Collaborative Review
+class TrackedChangesProcessor:
+    """Process DOCX with tracked changes for color team reviews"""
+
+    def extract_review_changes(self, docx_bytes: bytes) -> List[ReviewChange]:
+        # Extract insertions, deletions, comments
+        # Map to review stages (Pink/Red/Gold)
+        # Generate change summary
+        pass
+```
+
+**Expected Impact:**
+- Requirement extraction accuracy: 85% → 95%+ (especially for scanned/complex documents)
+- Table extraction success rate: 60% → 90%+
+- Review workflow efficiency: 30% reduction in manual change tracking
 
 ---
 
