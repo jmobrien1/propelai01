@@ -100,7 +100,25 @@ class BestPracticesCTMExporter:
             "Low": self.COLORS['low_priority'],
         }
         return color_map.get(priority, self.COLORS['medium_priority'])
-    
+
+    def _safe_cell_value(self, value: str) -> str:
+        """
+        Escape cell values that Excel would interpret as formulas.
+
+        Excel treats cells starting with =, +, -, @, or tab as formulas.
+        Prefix with single quote to force text interpretation.
+        """
+        if not value or not isinstance(value, str):
+            return value
+
+        # Characters that Excel interprets as formula starters
+        formula_chars = ('=', '+', '-', '@', '\t')
+
+        if value.strip().startswith(formula_chars):
+            return "'" + value
+
+        return value
+
     def export(self, result: ExtractionResult, output_path: str, 
                solicitation_number: str = "", title: str = "") -> str:
         """
@@ -296,10 +314,10 @@ class BestPracticesCTMExporter:
         # Write requirements
         for row_num, req in enumerate(requirements, 2):
             # RFP Reference (preserve their numbering!)
-            ws.cell(row=row_num, column=1, value=req.rfp_reference)
-            
-            # Full text - VERBATIM
-            text_cell = ws.cell(row=row_num, column=2, value=req.full_text)
+            ws.cell(row=row_num, column=1, value=self._safe_cell_value(req.rfp_reference))
+
+            # Full text - VERBATIM (escaped to prevent Excel formula interpretation)
+            text_cell = ws.cell(row=row_num, column=2, value=self._safe_cell_value(req.full_text))
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
             
             # Page
@@ -392,12 +410,12 @@ class BestPracticesCTMExporter:
         
         # Write requirements
         for row_num, req in enumerate(requirements, 2):
-            ws.cell(row=row_num, column=1, value=req.rfp_reference)
-            
-            text_cell = ws.cell(row=row_num, column=2, value=req.full_text)
+            ws.cell(row=row_num, column=1, value=self._safe_cell_value(req.rfp_reference))
+
+            text_cell = ws.cell(row=row_num, column=2, value=self._safe_cell_value(req.full_text))
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
-            
-            ws.cell(row=row_num, column=3, value=req.source_subsection or req.source_section.value)
+
+            ws.cell(row=row_num, column=3, value=self._safe_cell_value(req.source_subsection or req.source_section.value))
             ws.cell(row=row_num, column=4, value=req.page_number)
             
             # Priority
@@ -476,21 +494,21 @@ class BestPracticesCTMExporter:
         
         # Write requirements
         for row_num, req in enumerate(requirements, 2):
-            ws.cell(row=row_num, column=1, value=req.rfp_reference)
-            
-            text_cell = ws.cell(row=row_num, column=2, value=req.full_text)
+            ws.cell(row=row_num, column=1, value=self._safe_cell_value(req.rfp_reference))
+
+            text_cell = ws.cell(row=row_num, column=2, value=self._safe_cell_value(req.full_text))
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
-            
+
             ws.cell(row=row_num, column=3, value=req.page_number)
             ws.cell(row=row_num, column=4, value="")  # Weight - team determines
-            
+
             if self.include_response_columns:
                 ws.cell(row=row_num, column=5, value="")  # Proposal Location
                 ws.cell(row=row_num, column=6, value="")  # Our Strength
                 ws.cell(row=row_num, column=7, value="")  # Discriminator
                 ws.cell(row=row_num, column=8, value="")  # Proof Points
                 ws.cell(row=row_num, column=9, value="")  # Risk/Gap
-            
+
             # Light yellow for evaluation items
             for col in range(1, len(headers) + 1):
                 ws.cell(row=row_num, column=col).fill = PatternFill(
@@ -530,18 +548,18 @@ class BestPracticesCTMExporter:
                                    fill_type='solid')
         
         for row_num, req in enumerate(requirements, 2):
-            ws.cell(row=row_num, column=1, value=req.generated_id)
-            ws.cell(row=row_num, column=2, value=req.rfp_reference)
-            
-            text_cell = ws.cell(row=row_num, column=3, value=req.full_text)
+            ws.cell(row=row_num, column=1, value=self._safe_cell_value(req.generated_id))
+            ws.cell(row=row_num, column=2, value=self._safe_cell_value(req.rfp_reference))
+
+            text_cell = ws.cell(row=row_num, column=3, value=self._safe_cell_value(req.full_text))
             text_cell.alignment = Alignment(wrap_text=True, vertical='top')
-            
+
             ws.cell(row=row_num, column=4, value=req.category.value)
             ws.cell(row=row_num, column=5, value=req.source_section.value)
             ws.cell(row=row_num, column=6, value=req.binding_level.value)
             ws.cell(row=row_num, column=7, value=req.page_number)
-            ws.cell(row=row_num, column=8, value=req.source_document or "")
-            ws.cell(row=row_num, column=9, value=", ".join(req.references_to))
+            ws.cell(row=row_num, column=8, value=self._safe_cell_value(req.source_document or ""))
+            ws.cell(row=row_num, column=9, value=self._safe_cell_value(", ".join(req.references_to)))
             
             # Color by category
             color = self.COLORS.get('att_section')
