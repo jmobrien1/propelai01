@@ -61,6 +61,7 @@ class BestPracticesCTMExporter:
         'high_priority': 'F8CBAD',   # Orange for HIGH
         'medium_priority': 'FFE699', # Yellow for MEDIUM
         'low_priority': 'C6EFCE',    # Green for LOW
+        'compliance_gate': 'FF6B6B', # Red for compliance gates (pass/fail)
     }
     
     # Priority mapping from binding level
@@ -243,7 +244,27 @@ class BestPracticesCTMExporter:
         ws[f'A{row}'] = "Desirable (MAY)"
         ws[f'B{row}'] = binding.get('desirable', 0)
         row += 2
-        
+
+        # Count compliance gates
+        compliance_gate_count = sum(
+            1 for req in result.all_requirements
+            if getattr(req, 'is_compliance_gate', False)
+        )
+
+        if compliance_gate_count > 0:
+            ws[f'A{row}'] = "COMPLIANCE GATES (Pass/Fail)"
+            ws[f'A{row}'].font = Font(bold=True, color='C00000')  # Dark red
+            row += 1
+
+            ws[f'A{row}'] = "Requirements with disqualification risk"
+            ws[f'B{row}'] = compliance_gate_count
+            ws[f'B{row}'].font = Font(bold=True, color='C00000')
+            row += 1
+
+            ws[f'A{row}'] = "These are highlighted in RED in the requirement sheets."
+            ws[f'A{row}'].font = Font(italic=True, color='666666')
+            row += 2
+
         # Navigation guide
         ws[f'A{row}'] = "WORKBOOK NAVIGATION"
         ws[f'A{row}'].font = Font(bold=True)
@@ -322,16 +343,27 @@ class BestPracticesCTMExporter:
             
             # Page
             ws.cell(row=row_num, column=3, value=req.page_number)
-            
-            # Priority
+
+            # Priority - highlight compliance gates with red
             priority = self._get_priority(req.binding_level)
-            priority_cell = ws.cell(row=row_num, column=4, value=priority)
-            priority_cell.fill = PatternFill(
-                start_color=self._get_priority_color(priority),
-                end_color=self._get_priority_color(priority),
-                fill_type='solid'
-            )
-            
+            is_gate = getattr(req, 'is_compliance_gate', False)
+
+            if is_gate:
+                priority_cell = ws.cell(row=row_num, column=4, value=f"GATE: {priority}")
+                priority_cell.fill = PatternFill(
+                    start_color=self.COLORS['compliance_gate'],
+                    end_color=self.COLORS['compliance_gate'],
+                    fill_type='solid'
+                )
+                priority_cell.font = Font(bold=True, color='FFFFFF')
+            else:
+                priority_cell = ws.cell(row=row_num, column=4, value=priority)
+                priority_cell.fill = PatternFill(
+                    start_color=self._get_priority_color(priority),
+                    end_color=self._get_priority_color(priority),
+                    fill_type='solid'
+                )
+
             # Binding level
             ws.cell(row=row_num, column=5, value=req.binding_level.value)
             
@@ -418,15 +450,26 @@ class BestPracticesCTMExporter:
             ws.cell(row=row_num, column=3, value=self._safe_cell_value(req.source_subsection or req.source_section.value))
             ws.cell(row=row_num, column=4, value=req.page_number)
             
-            # Priority
+            # Priority - highlight compliance gates with red
             priority = self._get_priority(req.binding_level)
-            priority_cell = ws.cell(row=row_num, column=5, value=priority)
-            priority_cell.fill = PatternFill(
-                start_color=self._get_priority_color(priority),
-                end_color=self._get_priority_color(priority),
-                fill_type='solid'
-            )
-            
+            is_gate = getattr(req, 'is_compliance_gate', False)
+
+            if is_gate:
+                priority_cell = ws.cell(row=row_num, column=5, value=f"GATE: {priority}")
+                priority_cell.fill = PatternFill(
+                    start_color=self.COLORS['compliance_gate'],
+                    end_color=self.COLORS['compliance_gate'],
+                    fill_type='solid'
+                )
+                priority_cell.font = Font(bold=True, color='FFFFFF')
+            else:
+                priority_cell = ws.cell(row=row_num, column=5, value=priority)
+                priority_cell.fill = PatternFill(
+                    start_color=self._get_priority_color(priority),
+                    end_color=self._get_priority_color(priority),
+                    fill_type='solid'
+                )
+
             ws.cell(row=row_num, column=6, value=req.binding_level.value)
             
             if self.include_response_columns:

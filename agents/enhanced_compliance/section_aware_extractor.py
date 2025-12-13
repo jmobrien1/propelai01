@@ -115,7 +115,10 @@ class StructuredRequirement:
     
     # Cross-references found in text
     references_to: List[str] = field(default_factory=list)  # Other sections/attachments referenced
-    
+
+    # Compliance gate flag - failure to comply results in disqualification
+    is_compliance_gate: bool = False
+
     # For deduplication
     text_hash: str = ""
     
@@ -622,17 +625,24 @@ class SectionAwareExtractor:
             # Skip if it looks like a header or table of contents
             if self._is_header_or_toc(para):
                 continue
-            
+
+            # Skip SF30 amendment form boilerplate
+            if self._is_sf30_boilerplate(para):
+                continue
+
             # Look for RFP's own reference in the paragraph
             rfp_reference = self._find_rfp_reference(para, parent_section.value)
-            
+
             # Generate ID if needed
             self.counters[category] = self.counters.get(category, 0) + 1
             generated_id = f"TW-{parent_section.value}-{self.counters[category]:04d}"
-            
+
             # Find cross-references
             cross_refs = self._find_cross_references(para)
-            
+
+            # Check if this is a compliance gate (pass/fail, disqualification risk)
+            is_gate = self._is_compliance_gate(para)
+
             # Create requirement
             req = StructuredRequirement(
                 rfp_reference=rfp_reference or (subsection_ref if subsection_ref else parent_section.value),
@@ -647,9 +657,10 @@ class SectionAwareExtractor:
                 source_document=source_document,
                 parent_title=subsection_title,
                 evaluation_factor=None,  # Will be linked later
-                references_to=cross_refs
+                references_to=cross_refs,
+                is_compliance_gate=is_gate
             )
-            
+
             requirements.append(req)
             
             # If paragraph is very long, it might contain multiple requirements
@@ -745,7 +756,83 @@ class SectionAwareExtractor:
                 return True
         
         return False
-    
+
+    def _is_sf30_boilerplate(self, text: str) -> bool:
+        """
+        Detect SF30 (Amendment of Solicitation/Modification of Contract) form boilerplate.
+
+        SF30 forms have standardized fields that should not be extracted as requirements.
+        These appear when amendments are parsed as standalone documents.
+        """
+        text_lower = text.lower()
+
+        # SF30 form field patterns - these are standardized government form fields
+        sf30_patterns = [
+            r'amendment of solicitation/modification of contract',
+            r'contract id code',
+            r'administered by.*if other than item',
+            r'item no\.\s*supplies/services\s*quantity\s*unit',
+            r'name of offeror or contractor',
+            r'continuation sheet',
+            r'reference no\. of document being contin',
+            r'accounting and appropriation data',
+            r'this change order is issued pursuant to',
+            r'check one\s*[a-z]\.\s*this change order',
+            r'copies of the amendment.*acknowledging receipt',
+            r'issued by\s*code',
+            r'page\s+of\s+pages',
+            r'(\d+[a-z]?\.\s*)?this\s+(?:change|modification)\s+is\s+issued',
+            r'14[a-c]\.\s*(?:this change order|modification)',
+            r'except as provided herein.*all terms and conditions',
+        ]
+
+        # Check for SF30 patterns
+        for pattern in sf30_patterns:
+            if re.search(pattern, text_lower):
+                return True
+
+        # Check for SF30-style block numbers (e.g., "1. CONTRACT ID CODE", "6. ISSUED BY")
+        if re.match(r'^\d+[a-z]?\.\s*[A-Z\s]+(?:CODE|BY|DATA|NO\.)', text.strip()):
+            return True
+
+        # Check for amendment acknowledgment boilerplate
+        if 'acknowledge receipt of this amendment' in text_lower:
+            return True
+
+        return False
+
+    def _is_compliance_gate(self, text: str) -> bool:
+        """
+        Detect if this requirement is a compliance gate (pass/fail, disqualification risk).
+
+        Compliance gates are requirements where failure to comply results in
+        immediate disqualification or proposal rejection.
+        """
+        text_lower = text.lower()
+
+        # Disqualification language
+        gate_patterns = [
+            r'immediate(?:ly)?\s+disqualif',
+            r'will\s+(?:be\s+)?(?:immediately\s+)?disqualif',
+            r'result(?:s|ing)?\s+in\s+(?:immediate\s+)?disqualif',
+            r'failure\s+to\s+(?:comply|provide|submit|meet).*(?:will|shall)\s+result',
+            r'proposals?\s+(?:will|shall)\s+(?:be\s+)?reject',
+            r'(?:will|shall)\s+not\s+be\s+(?:considered|evaluated|eligible)',
+            r'mandatory\s+(?:compliance|requirement).*pass[/-]?fail',
+            r'pass[/-]?fail\s+(?:requirement|criteria|evaluation)',
+            r'go[/-]?no[/-]?go\s+(?:requirement|criteria)',
+            r'must\s+(?:be\s+)?(?:met|satisfied|demonstrated)\s+(?:to|before|prior)',
+            r'prerequisite\s+(?:for|to)\s+(?:award|consideration|evaluation)',
+            r'minimum\s+(?:qualification|requirement).*must',
+            r'proof\s+of\s+certification\s+will\s+result\s+in.*disqualif',
+        ]
+
+        for pattern in gate_patterns:
+            if re.search(pattern, text_lower):
+                return True
+
+        return False
+
     def _find_rfp_reference(self, text: str, section_letter: str) -> Optional[str]:
         """Find the RFP's own reference number in the text"""
         # Look for patterns like L.4.B.2, C.3.1.a, M.2.b

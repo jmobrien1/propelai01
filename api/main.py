@@ -1322,9 +1322,27 @@ def _extract_rfp_metadata(rfp: Dict, rfp_id: str) -> Tuple[str, str]:
     # 2. From RFP name, but clean up if it looks like a filename
     if not rfp_title:
         name = rfp.get("name", rfp.get("title", ""))
-        # Check if name looks like a filename (contains extension or "Attachment")
-        if name and not ("." in name and name.split(".")[-1].lower() in ["pdf", "docx", "xlsx"]):
-            if "Attachment" not in name and "Placement Procedures" not in name:
+        if name:
+            # Reject if it looks like a filename
+            is_filename = False
+            # Check for file extensions
+            if "." in name:
+                ext = name.split(".")[-1].lower()
+                if ext in ["pdf", "docx", "xlsx", "doc", "xls", "csv", "txt", "zip"]:
+                    is_filename = True
+                # Check for timestamp suffixes like .1763761025326
+                if ext.isdigit() and len(ext) > 8:
+                    is_filename = True
+            # Check for common non-title patterns
+            non_title_patterns = [
+                "Attachment", "Placement Procedures", "Amendment", "Exhibit",
+                "Appendix", "Monthly Asset", "FY24 Monthly"
+            ]
+            for pattern in non_title_patterns:
+                if pattern in name:
+                    is_filename = True
+                    break
+            if not is_filename:
                 rfp_title = name
 
     # 3. Generate title from solicitation number and agency

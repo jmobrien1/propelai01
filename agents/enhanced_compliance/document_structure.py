@@ -299,16 +299,76 @@ class RFPStructureParser:
         return ""
     
     def _extract_title(self, text: str) -> str:
-        """Extract RFP title"""
+        """
+        Extract RFP title with smart filtering.
+
+        Priority order:
+        1. Look for explicit "Title:" or "Subject:" fields
+        2. Look for contract/project descriptions
+        3. Look for agency + service descriptions
+        4. Never use filenames (patterns like .pdf, .xlsx, timestamps)
+        """
+        # Patterns to try in order of preference
         patterns = [
-            r"(?:Title|Subject|For)\s*:\s*([^\n]+)",
-            r"SOLICITATION.*FOR\s+([^\n]+)",
+            # Explicit title/subject fields
+            r"(?:Title|Subject)\s*:\s*([^\n]+)",
+            # Description fields
+            r"(?:Description|Purpose)\s*:\s*([^\n]+)",
+            # Contract name
+            r"(?:Contract|Project)\s+(?:Name|Title)\s*:\s*([^\n]+)",
+            # Solicitation FOR something
+            r"SOLICITATION\s+(?:FOR|OF)\s+([^\n]+)",
+            # Request for Proposal/Quote for something
+            r"(?:REQUEST\s+FOR\s+(?:PROPOSAL|QUOTATION|QUOTE)|RFP|RFQ)\s+(?:FOR\s+)?([A-Z][^\n]{10,100})",
+            # Fair Opportunity for something (GSA)
+            r"FAIR\s+OPPORTUNITY\s+(?:FOR|TO\s+PROVIDE)\s+([^\n]+)",
+            # Task Order for something
+            r"TASK\s+ORDER\s+(?:FOR|TO\s+PROVIDE)\s+([^\n]+)",
         ]
+
         for pattern in patterns:
-            match = re.search(pattern, text[:10000], re.IGNORECASE)
+            match = re.search(pattern, text[:15000], re.IGNORECASE)
             if match:
-                return match.group(1).strip()[:200]
+                candidate = match.group(1).strip()
+                # Filter out filename-like values
+                if self._is_valid_title(candidate):
+                    return candidate[:200]
+
         return ""
+
+    def _is_valid_title(self, title: str) -> bool:
+        """
+        Validate that a candidate title is not a filename or garbage.
+        """
+        if not title or len(title) < 5:
+            return False
+
+        # Reject filenames (contain extensions)
+        filename_patterns = [
+            r'\.(pdf|xlsx?|docx?|csv|txt|zip|rar)(\s|$)',
+            r'\.\d{10,}',  # Timestamps like .1763761025326
+            r'^[A-Z0-9_-]+\.\d+',  # File IDs like "ABC123.1234567890"
+        ]
+        for pattern in filename_patterns:
+            if re.search(pattern, title, re.IGNORECASE):
+                return False
+
+        # Reject if it's mostly numbers/special characters
+        alpha_chars = sum(1 for c in title if c.isalpha())
+        if alpha_chars < len(title) * 0.3:
+            return False
+
+        # Reject common non-title phrases
+        reject_phrases = [
+            'attachment', 'exhibit', 'appendix', 'see section',
+            'amendment', 'modification', 'page of pages'
+        ]
+        title_lower = title.lower()
+        for phrase in reject_phrases:
+            if title_lower.startswith(phrase):
+                return False
+
+        return True
     
     def _find_section_boundaries(self, text: str) -> Dict[UCFSection, Tuple[int, int, str]]:
         """
