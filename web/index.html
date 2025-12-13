@@ -361,6 +361,10 @@
             
             async generateOutline(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/outline`, { method: 'POST' });
+                if (!res.ok) {
+                    const error = await res.json().catch(() => ({ detail: 'Unknown error' }));
+                    throw new Error(error.detail || `HTTP ${res.status}`);
+                }
                 return res.json();
             },
 
@@ -2174,8 +2178,11 @@
                 }
             };
             
+            const [error, setError] = useState(null);
+
             const generateOutline = async () => {
                 setGenerating(true);
+                setError(null);
                 try {
                     const data = await api.generateOutline(rfpId);
                     setOutline(data.outline);
@@ -2184,6 +2191,7 @@
                     }
                 } catch (e) {
                     console.error('Failed to generate outline:', e);
+                    setError(e.message || 'Failed to generate outline');
                 } finally {
                     setGenerating(false);
                 }
@@ -2219,7 +2227,19 @@
                             <h2>Proposal Outline</h2>
                             <p>Generate a proposal outline from Section L/M</p>
                         </div>
-                        
+
+                        {error && (
+                            <div className="card" style={{
+                                marginBottom: 24,
+                                padding: 16,
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                borderColor: 'var(--accent-red)',
+                                color: 'var(--accent-red)'
+                            }}>
+                                <strong>Error:</strong> {error}
+                            </div>
+                        )}
+
                         <div className="card" style={{ textAlign: 'center', padding: 60 }}>
                             <Icon name="FileText" size={48} />
                             <h3 style={{ marginTop: 16, marginBottom: 8 }}>Generate Proposal Outline</h3>
