@@ -301,6 +301,24 @@ class TensorlakeProcessor:
                 markdown = re.sub(r"PageFragment\([^)]+\)", "", markdown)
                 # Remove fragment_type
                 markdown = re.sub(r"fragment_type=<[^>]+>,?\s*", "", markdown)
+
+                # Convert HTML tables to plain text
+                # Remove table tags but keep content
+                markdown = re.sub(r'<table[^>]*>', '\n', markdown)
+                markdown = re.sub(r'</table>', '\n', markdown)
+                markdown = re.sub(r'<tr[^>]*>', '', markdown)
+                markdown = re.sub(r'</tr>', '\n', markdown)
+                markdown = re.sub(r'<th[^>]*>', '', markdown)
+                markdown = re.sub(r'</th>', ' | ', markdown)
+                markdown = re.sub(r'<td[^>]*>', '', markdown)
+                markdown = re.sub(r'</td>', ' | ', markdown)
+                # Clean up other HTML tags
+                markdown = re.sub(r'<[^>]+>', '', markdown)
+                # Clean up multiple pipes and whitespace
+                markdown = re.sub(r'\|\s*\|', '|', markdown)
+                markdown = re.sub(r'\|\s*\n', '\n', markdown)
+                markdown = re.sub(r'^\s*\|\s*', '', markdown, flags=re.MULTILINE)
+
                 # Clean up extra whitespace
                 markdown = re.sub(r'\n{3,}', '\n\n', markdown)
                 markdown = markdown.strip()
