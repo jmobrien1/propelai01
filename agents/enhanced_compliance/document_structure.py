@@ -531,16 +531,16 @@ class RFPStructureParser:
     def _parse_attachments(self, documents: List[Dict], structure: DocumentStructure) -> Dict[str, AttachmentInfo]:
         """Parse attachment information from documents"""
         attachments = {}
-        
+
         for doc in documents:
             filename = doc.get('filename', '').lower()
             text = doc.get('text', '')
             pages = doc.get('pages', [])
-            
+
             # Detect attachment type from filename
             att_id = None
             doc_type = "General"
-            
+
             if 'attachment' in filename:
                 match = re.search(r'attachment\s*(\d+|[a-z])', filename, re.IGNORECASE)
                 if match:
@@ -549,31 +549,22 @@ class RFPStructureParser:
                 match = re.search(r'exhibit\s*(\d+|[a-z])', filename, re.IGNORECASE)
                 if match:
                     att_id = f"Exhibit {match.group(1).upper()}"
-            
-            # Classify document type
-            if 'sow' in filename or 'statement of work' in filename.replace('_', ' '):
-                doc_type = "SOW"
-            elif 'pws' in filename or 'performance work' in filename.replace('_', ' '):
-                doc_type = "PWS"
-            elif 'budget' in filename or 'cost' in filename or 'pricing' in filename:
-                doc_type = "Budget Template"
-            elif 'experience' in filename or 'past performance' in filename.replace('_', ' '):
-                doc_type = "Past Performance"
-            elif 'resume' in filename or 'personnel' in filename:
-                doc_type = "Personnel"
-            elif 'amendment' in filename:
-                doc_type = "Amendment"
-                # Try to get amendment number
+
+            # Classify document type using robust detection
+            doc_type = self._classify_document_type(filename, text)
+
+            # Handle amendment ID extraction
+            if doc_type == "Amendment":
                 match = re.search(r'amendment\s*(\d+)', filename, re.IGNORECASE)
                 if match:
                     att_id = f"Amendment {match.group(1)}"
-            
+
             # Check content for requirements
             has_requirements = bool(re.search(
                 r'\b(?:shall|must|will\s+be\s+required|is\s+required)\b',
                 text[:20000], re.IGNORECASE
             ))
-            
+
             if att_id:
                 attachments[att_id] = AttachmentInfo(
                     id=att_id,
@@ -584,8 +575,69 @@ class RFPStructureParser:
                     document_type=doc_type,
                     contains_requirements=has_requirements
                 )
-        
+
         return attachments
+
+    def _classify_document_type(self, filename: str, text: str) -> str:
+        """
+        Classify document type using robust detection with:
+        1. Fuzzy filename matching (tolerates typos like "stament" for "statement")
+        2. Content-based detection as fallback
+        """
+        filename_lower = filename.lower().replace('_', ' ').replace('-', ' ')
+        text_preview = text[:10000].upper()  # First 10K chars for content detection
+
+        # SOW Detection - fuzzy filename matching
+        sow_filename_patterns = [
+            'sow',
+            'statement of work',
+            'stament of work',     # Common typo
+            'statment of work',    # Common typo
+            'statement work',
+            's.o.w',
+            'scope of work',
+        ]
+        for pattern in sow_filename_patterns:
+            if pattern in filename_lower:
+                return "SOW"
+
+        # SOW Detection - content-based (look for SOW header in document)
+        sow_content_patterns = [
+            r'STATEMENT\s+OF\s+WORK',
+            r'S\.?O\.?W\.?\s*\n',
+            r'SCOPE\s+OF\s+WORK',
+            r'\bSOW\b.*\b(?:SECTION|ARTICLE|PART)\s+\d',
+        ]
+        for pattern in sow_content_patterns:
+            if re.search(pattern, text_preview):
+                return "SOW"
+
+        # PWS Detection - fuzzy filename matching
+        pws_filename_patterns = [
+            'pws',
+            'performance work statement',
+            'performace work',     # Common typo
+            'p.w.s',
+        ]
+        for pattern in pws_filename_patterns:
+            if pattern in filename_lower:
+                return "PWS"
+
+        # PWS Detection - content-based
+        if re.search(r'PERFORMANCE\s+WORK\s+STATEMENT', text_preview):
+            return "PWS"
+
+        # Other document types
+        if 'budget' in filename_lower or 'cost' in filename_lower or 'pricing' in filename_lower:
+            return "Budget Template"
+        if 'experience' in filename_lower or 'past performance' in filename_lower:
+            return "Past Performance"
+        if 'resume' in filename_lower or 'personnel' in filename_lower:
+            return "Personnel"
+        if 'amendment' in filename_lower:
+            return "Amendment"
+
+        return "General"
     
     def get_section_content(self, structure: DocumentStructure, section: UCFSection) -> Optional[str]:
         """Get the full content of a specific section"""

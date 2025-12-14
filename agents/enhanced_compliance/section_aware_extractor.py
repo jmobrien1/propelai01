@@ -289,15 +289,18 @@ class SectionAwareExtractor:
     
     def _extract_from_attachment(self, att_info: AttachmentInfo) -> List[StructuredRequirement]:
         """Extract requirements from an attachment"""
-        # Determine category based on attachment type
+        # Determine category and section based on attachment type
+        # SOW/PWS are Section C requirements (Description/Specifications/Statement of Work)
         if att_info.document_type in ['SOW', 'PWS']:
             category = RequirementCategory.TECHNICAL_REQUIREMENT
+            parent_section = UCFSection.SECTION_C  # SOW/PWS belongs in Section C
         else:
             category = RequirementCategory.ATTACHMENT_REQUIREMENT
-        
+            parent_section = UCFSection.SECTION_J  # Other attachments are Section J
+
         return self._extract_from_text(
             text=att_info.content,
-            parent_section=UCFSection.SECTION_J,  # Attachments are technically Section J
+            parent_section=parent_section,
             subsection_ref=att_info.id,
             subsection_title=att_info.title,
             page_number=1,
