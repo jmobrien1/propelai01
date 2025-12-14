@@ -389,6 +389,13 @@ class RFPStructureParser:
             'pursuant to', 'in accordance', 'as described',
             'the contractor', 'the offeror', 'the government',
             'all offerors', 'each offeror',
+            # Conjunctions and articles - titles don't start with these
+            'and ', 'or ', 'but ', 'nor ', 'yet ', 'so ',
+            'a ', 'an ', 'the ',
+            # Prepositions
+            'for ', 'to ', 'from ', 'with ', 'of ', 'in ', 'on ', 'at ', 'by ',
+            # Partial sentence indicators
+            'see attached', 'see also', 'refer to', 'as per',
         ]
         title_lower = title.lower().strip()
         for phrase in reject_start_phrases:

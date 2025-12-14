@@ -1349,9 +1349,21 @@ def _extract_rfp_metadata(rfp: Dict, rfp_id: str) -> Tuple[str, str]:
                 "non-government advisors", "organizational conflict",
                 "far clause", "dfar clause"
             ]
-            name_lower = name.lower()
+            name_lower = name.lower().strip()
             for phrase in reject_phrases:
                 if phrase in name_lower:
+                    is_filename = True
+                    break
+
+            # Reject if starts with conjunction, article, or preposition
+            reject_start_words = [
+                "and ", "or ", "but ", "nor ", "yet ", "so ",
+                "a ", "an ", "the ",
+                "for ", "to ", "from ", "with ", "of ", "in ", "on ", "at ", "by ",
+                "see attached", "see also", "refer to", "as per",
+            ]
+            for word in reject_start_words:
+                if name_lower.startswith(word):
                     is_filename = True
                     break
 
