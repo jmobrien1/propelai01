@@ -44,7 +44,7 @@ class RequirementExtractor:
     # Noise patterns to filter out (TOC, headers, boilerplate)
     NOISE_PATTERNS = [
         r"^SECTION\s+[A-Z]\s*[-–]\s*",                    # Section headers
-        r"^ARTICLE\s+[A-Z]\.\d+",                         # Article headers  
+        r"^ARTICLE\s+[A-Z]\.\d+",                         # Article headers
         r"^TABLE\s+OF\s+CONTENTS",                        # TOC
         r"^\d+\s*$",                                      # Page numbers
         r"^[A-Z\s]+\.\.\.\.\.*\s*\d+$",                   # TOC entries with dots
@@ -68,6 +68,17 @@ class RequirementExtractor:
         r"^INSTRUCTIONS.*OFFERORS",                       # Section L header
         r"^\(\s*[a-z]\s*\)\s*$",                          # Subparagraph markers
         r"^\s*[ivx]+\.\s*$",                              # Roman numeral lists
+        # Added from audit recommendations
+        r"^See\s+(?:Section|Attachment|Exhibit)",         # Cross-reference only
+        r"^Note:",                                         # Notes as headers
+        r"^(?:Refer|Reference)\s+to",                     # Reference-only lines
+        r"^End\s+of\s+(?:Section|Document|Clause)",       # Section terminators
+        r"^[A-Z][A-Z\s]{0,30}:$",                         # All-caps labels ending with colon
+        r"^\[.*\]$",                                       # Bracketed placeholders
+        r"^TBD\s*$",                                       # TBD placeholders
+        r"^N/A\s*$",                                       # N/A placeholders
+        r"^Reserved\s*\.?$",                               # Reserved sections
+        r"^This\s+(?:section|page)\s+intentionally",      # Intentionally blank
     ]
     
     # ============================================================================
