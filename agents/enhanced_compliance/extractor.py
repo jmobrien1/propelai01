@@ -34,9 +34,12 @@ class RequirementExtractor:
     
     # === QUALITY TUNING PARAMETERS ===
     MIN_SENTENCE_LENGTH = 100         # Minimum chars for a valid requirement (increased)
-    MAX_SENTENCE_LENGTH = 1000        # Maximum chars (avoid capturing paragraphs)
+    MAX_SENTENCE_LENGTH = 500         # Maximum chars (reduced from 1000 to avoid multi-shall bundles)
     MIN_WORDS = 15                    # Minimum words in a requirement (increased)
     REQUIRE_ACTOR = True              # Require "contractor/offeror/government" for high confidence
+
+    # Obligation words that must be present for a valid requirement
+    OBLIGATION_WORDS = ['shall', 'must', 'will', 'required', 'should', 'may', 'can']
     
     # Noise patterns to filter out (TOC, headers, boilerplate)
     NOISE_PATTERNS = [
@@ -808,15 +811,20 @@ class RequirementExtractor:
                 # Skip noise (TOC, headers, boilerplate)
                 if self._is_noise(sentence):
                     continue
-                
+
                 # Skip duplicates
                 if self._is_duplicate(sentence):
+                    continue
+
+                # Skip sentences without obligation words (reduces false positives by ~25%)
+                has_obligation, obligation_word = self._has_obligation_word(sentence)
+                if not has_obligation:
                     continue
             else:
                 # Basic filter for non-strict mode
                 if len(sentence.strip()) < 20:
                     continue
-            
+
             # Check for requirement indicators
             req_type, keyword_match = self._classify_sentence(sentence)
             
@@ -1479,6 +1487,11 @@ class RequirementExtractor:
             if self.strict_mode:
                 if self._is_section_noise(sentence, section_config):
                     continue
+
+                # Skip sentences without obligation words
+                has_obligation, _ = self._has_obligation_word(sentence)
+                if not has_obligation:
+                    continue
             else:
                 min_len = section_config.get("min_sentence_length", 20)
                 if len(sentence.strip()) < min_len:
@@ -1534,19 +1547,148 @@ class RequirementExtractor:
         return requirements
     
     def _split_into_sentences(self, text: str) -> List[str]:
-        """Split text into sentences"""
+        """Split text into sentences and then split multi-shall paragraphs"""
         # Handle common abbreviations
         text = re.sub(r'(?<=[A-Z])\.(?=[A-Z])', '<DOT>', text)  # Abbreviations
         text = re.sub(r'(?<=\d)\.(?=\d)', '<DOT>', text)  # Numbers
         text = re.sub(r'(?<=\s[A-Z])\.(?=\s)', '<DOT>', text)  # Initials
-        
+
         # Split on sentence boundaries
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
-        
+
         # Restore dots
         sentences = [s.replace('<DOT>', '.') for s in sentences]
-        
-        return sentences
+
+        # Apply multi-shall splitting to each sentence
+        result = []
+        for sentence in sentences:
+            split_sentences = self._split_multi_shall(sentence)
+            result.extend(split_sentences)
+
+        return result
+
+    def _split_multi_shall(self, text: str) -> List[str]:
+        """
+        Split paragraphs containing multiple shall/must statements into separate requirements.
+
+        This addresses the audit finding that ~100 requirements per matrix contain
+        multiple "shall" statements bundled together.
+
+        Args:
+            text: Potentially multi-shall paragraph
+
+        Returns:
+            List of individual requirements (may be single item if no split needed)
+        """
+        # Count obligation words in text
+        obligation_pattern = r'\b(?:shall|must|will\s+be\s+required)\b'
+        obligation_matches = list(re.finditer(obligation_pattern, text, re.IGNORECASE))
+
+        # If only 0-1 obligation words, no split needed
+        if len(obligation_matches) <= 1:
+            return [text]
+
+        # Strategy 1: Split on sentence boundaries (period + space + capital letter)
+        # This handles: "Sentence one shall X. Sentence two shall Y."
+        sentence_split_pattern = r'(?<=[.!?])\s+(?=[A-Z])'
+        parts = re.split(sentence_split_pattern, text)
+
+        if len(parts) > 1:
+            # Filter parts that contain obligation words
+            requirements = []
+            pending_context = ""
+
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+
+                # Check if this part has an obligation word
+                if re.search(obligation_pattern, part, re.IGNORECASE):
+                    # Prepend any pending context
+                    if pending_context:
+                        part = pending_context + " " + part
+                        pending_context = ""
+                    requirements.append(part)
+                elif len(requirements) > 0 and len(part) < 150:
+                    # Short clause without obligation word - could be context for next
+                    pending_context = part
+                elif len(requirements) > 0:
+                    # Append to previous requirement
+                    requirements[-1] = requirements[-1] + " " + part
+
+            if requirements and len(requirements) > 1:
+                return requirements
+
+        # Strategy 2: Split on semicolons (common in legal text)
+        # This handles: "The fee shall be X; the percent shall be Y; payment shall be Z."
+        if len(obligation_matches) > 1:
+            semicolon_parts = text.split(';')
+            if len(semicolon_parts) > 1:
+                requirements = []
+                for part in semicolon_parts:
+                    part = part.strip()
+                    if part and re.search(obligation_pattern, part, re.IGNORECASE):
+                        # Add period for proper sentence structure
+                        if not part.endswith('.'):
+                            part = part + '.'
+                        requirements.append(part)
+
+                if len(requirements) > 1:
+                    return requirements
+
+        # Strategy 3: Split on "shall" boundaries as last resort
+        # This handles run-on sentences: "...shall X and shall Y and shall Z"
+        if len(obligation_matches) >= 3:
+            # Find positions of each "shall"
+            shall_positions = [m.start() for m in obligation_matches]
+
+            # Try to split between shall statements if they're far apart
+            if shall_positions[-1] - shall_positions[0] > 200:
+                requirements = []
+                for i, pos in enumerate(shall_positions):
+                    # Find the start of this clause (go back to previous punctuation)
+                    start = pos
+                    while start > 0 and text[start - 1] not in '.;':
+                        start -= 1
+
+                    # Find the end (next shall or end of text)
+                    if i < len(shall_positions) - 1:
+                        end = shall_positions[i + 1]
+                        # Go back to find punctuation before next shall
+                        while end > pos and text[end - 1] not in '.;':
+                            end -= 1
+                    else:
+                        end = len(text)
+
+                    clause = text[start:end].strip()
+                    if clause and len(clause) > 50:
+                        requirements.append(clause)
+
+                if len(requirements) > 1:
+                    return requirements
+
+        # Return original if no successful split
+        return [text]
+
+    def _has_obligation_word(self, text: str) -> Tuple[bool, str]:
+        """
+        Check if text contains an obligation word.
+
+        This addresses the audit finding that 24-30% of extractions lack
+        obligation words (false positives).
+
+        Args:
+            text: Requirement text to check
+
+        Returns:
+            Tuple of (has_obligation: bool, matched_word: str or "informational")
+        """
+        text_lower = text.lower()
+        for word in self.OBLIGATION_WORDS:
+            if word in text_lower:
+                return True, word
+        return False, "informational"
     
     def _find_page_number(self, sentence: str, doc: ParsedDocument) -> int:
         """Find which page contains this sentence"""
