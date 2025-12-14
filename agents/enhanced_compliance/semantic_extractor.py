@@ -167,9 +167,12 @@ class SemanticRequirementExtractor:
     
     # Minimum quality thresholds
     MIN_CHARS = 50               # Minimum characters for a requirement
-    MAX_CHARS = 2000             # Maximum (avoid capturing entire sections)
+    MAX_CHARS = 500              # Maximum (reduced from 2000 to avoid multi-shall bundles)
     MIN_WORDS = 10               # Minimum words
     MIN_ALPHA_RATIO = 0.5        # At least 50% alphabetic characters
+
+    # Obligation words for validation
+    OBLIGATION_WORDS = ['shall', 'must', 'will', 'required', 'should', 'may', 'can']
     
     # Section detection patterns
     SECTION_PATTERNS = {
@@ -377,7 +380,7 @@ class SemanticRequirementExtractor:
         return candidates
     
     def _split_sentences(self, text: str) -> List[str]:
-        """Split text into sentences, handling abbreviations"""
+        """Split text into sentences, handling abbreviations and multi-shall paragraphs"""
         # Protect common abbreviations
         protected = text
         abbreviations = [
@@ -386,20 +389,83 @@ class SemanticRequirementExtractor:
             (r'(Mr|Mrs|Ms|Dr|Prof|Jr|Sr|Inc|Corp|Ltd|etc|vs|i\.e|e\.g)\.', r'\1<DOT>'),
             (r'(FAR|DFARS|CFR|U\.S|U\.S\.C)\.', r'\1<DOT>'),
         ]
-        
+
         for pattern, replacement in abbreviations:
             protected = re.sub(pattern, replacement, protected)
-        
+
         # Split on sentence boundaries
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', protected)
-        
+
         # Restore dots
         sentences = [s.replace('<DOT>', '.').strip() for s in sentences]
-        
+
+        # Apply multi-shall splitting to each sentence
+        result = []
+        for sentence in sentences:
+            split_sentences = self._split_multi_shall(sentence)
+            result.extend(split_sentences)
+
         # Filter by length
-        sentences = [s for s in sentences if len(s) >= self.MIN_CHARS]
-        
-        return sentences
+        result = [s for s in result if len(s) >= self.MIN_CHARS]
+
+        return result
+
+    def _split_multi_shall(self, text: str) -> List[str]:
+        """
+        Split paragraphs containing multiple shall/must statements.
+
+        This addresses bundled requirements where multiple obligations
+        are combined in a single extraction.
+        """
+        obligation_pattern = r'\b(?:shall|must|will\s+be\s+required)\b'
+        obligation_matches = list(re.finditer(obligation_pattern, text, re.IGNORECASE))
+
+        # If only 0-1 obligation words, no split needed
+        if len(obligation_matches) <= 1:
+            return [text]
+
+        # Strategy 1: Split on sentence boundaries
+        sentence_split_pattern = r'(?<=[.!?])\s+(?=[A-Z])'
+        parts = re.split(sentence_split_pattern, text)
+
+        if len(parts) > 1:
+            requirements = []
+            pending_context = ""
+
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+
+                if re.search(obligation_pattern, part, re.IGNORECASE):
+                    if pending_context:
+                        part = pending_context + " " + part
+                        pending_context = ""
+                    requirements.append(part)
+                elif len(requirements) > 0 and len(part) < 150:
+                    pending_context = part
+                elif len(requirements) > 0:
+                    requirements[-1] = requirements[-1] + " " + part
+
+            if requirements and len(requirements) > 1:
+                return requirements
+
+        # Strategy 2: Split on semicolons
+        if len(obligation_matches) > 1:
+            semicolon_parts = text.split(';')
+            if len(semicolon_parts) > 1:
+                requirements = []
+                for part in semicolon_parts:
+                    part = part.strip()
+                    if part and re.search(obligation_pattern, part, re.IGNORECASE):
+                        if not part.endswith('.'):
+                            part = part + '.'
+                        requirements.append(part)
+
+                if len(requirements) > 1:
+                    return requirements
+
+        return [text]
     
     def _extract_section_reference(self, sentence: str, context: str) -> str:
         """Extract section reference (e.g., L.4.B.2, C.3.1, PWS 2.1)"""
