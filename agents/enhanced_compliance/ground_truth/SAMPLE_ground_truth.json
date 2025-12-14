@@ -1,0 +1,46 @@
+{
+  "rfp_id": "75N96025R00004",
+  "rfp_title": "NIH Sample RFP Ground Truth",
+  "source_files": ["75N96025R00004.pdf", "SOW.pdf"],
+  "created_date": "2024-12-14T00:00:00",
+  "last_updated": "2024-12-14T00:00:00",
+  "verified_by": ["reviewer@example.com"],
+  "requirements": [
+    {
+      "id": "GT-75N96025-0001",
+      "rfp_reference": "L.4.B.1",
+      "full_text": "The Contractor shall submit a technical proposal not exceeding 25 pages in length.",
+      "binding_level": "Mandatory",
+      "category": "L_COMPLIANCE",
+      "source_page": 42,
+      "verified_by": "reviewer@example.com",
+      "verification_date": "2024-12-14",
+      "notes": "Page limit requirement",
+      "is_split_from": null
+    },
+    {
+      "id": "GT-75N96025-0002",
+      "rfp_reference": "C.3.1.a",
+      "full_text": "The Contractor shall provide monthly progress reports to the Contracting Officer's Representative.",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "source_page": 18,
+      "verified_by": "reviewer@example.com",
+      "verification_date": "2024-12-14",
+      "notes": "Reporting requirement",
+      "is_split_from": null
+    },
+    {
+      "id": "GT-75N96025-0003",
+      "rfp_reference": "M.2.1",
+      "full_text": "Technical proposals will be evaluated based on the offeror's demonstrated understanding of the requirements.",
+      "binding_level": "Mandatory",
+      "category": "EVALUATION",
+      "source_page": 55,
+      "verified_by": "reviewer@example.com",
+      "verification_date": "2024-12-14",
+      "notes": "Evaluation criterion",
+      "is_split_from": null
+    }
+  ]
+}

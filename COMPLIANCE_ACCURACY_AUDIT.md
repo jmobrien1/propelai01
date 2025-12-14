@@ -281,9 +281,93 @@ for req in result.all_requirements:
 
 ---
 
+## Ground Truth Validation Framework (Implemented December 14, 2024)
+
+A framework for validating extraction accuracy against human-verified datasets.
+
+### Metrics Calculated
+
+| Metric | Description |
+|--------|-------------|
+| **Precision** | % of extracted requirements that are correct (TP / (TP + FP)) |
+| **Recall** | % of ground truth requirements that were extracted (TP / (TP + FN)) |
+| **F1 Score** | Harmonic mean of precision and recall |
+| **Binding Level Accuracy** | % of requirements with correct binding level |
+| **Confidence Correlation** | Precision for HIGH vs LOW confidence items |
+
+### Usage
+
+```python
+from agents.enhanced_compliance.ground_truth_validator import (
+    GroundTruthValidator, validate_extraction
+)
+from agents.enhanced_compliance.section_aware_extractor import extract_requirements_structured
+
+# Run extraction
+result = extract_requirements_structured(documents)
+
+# Validate against ground truth
+validation = validate_extraction(result, "ground_truth/rfp_123.json")
+
+# View metrics
+print(f"Precision: {validation.precision:.2%}")
+print(f"Recall: {validation.recall:.2%}")
+print(f"F1 Score: {validation.f1_score:.2%}")
+print(f"Missed requirements: {len(validation.missed_requirements)}")
+
+# Generate detailed report
+validator = GroundTruthValidator()
+report = validator.generate_report(validation)
+print(report)
+```
+
+### Creating Ground Truth Datasets
+
+1. **From extraction results** (recommended for efficiency):
+```python
+validator = GroundTruthValidator()
+template = validator.create_ground_truth_template(
+    extraction_result=result,
+    rfp_id="75N96025R00004",
+    rfp_title="NIH Research Support Services",
+    reviewer="analyst@company.com"
+)
+validator.save_ground_truth(template, "ground_truth/nih_draft.json")
+# Then manually review and verify each requirement
+```
+
+2. **Manual creation**: Copy `ground_truth/SAMPLE_ground_truth.json` and populate
+
+### Ground Truth JSON Schema
+
+```json
+{
+  "rfp_id": "string",
+  "rfp_title": "string",
+  "source_files": ["file1.pdf", "file2.pdf"],
+  "verified_by": ["reviewer@email.com"],
+  "requirements": [
+    {
+      "id": "GT-XXX-0001",
+      "rfp_reference": "L.4.B.1",
+      "full_text": "The Contractor shall...",
+      "binding_level": "Mandatory|Highly Desirable|Desirable|Informational",
+      "category": "L_COMPLIANCE|TECHNICAL|EVALUATION|ADMINISTRATIVE|ATTACHMENT",
+      "source_page": 42,
+      "verified_by": "reviewer@email.com",
+      "verification_date": "2024-12-14",
+      "notes": "Optional notes"
+    }
+  ]
+}
+```
+
+---
+
 ## Appendix: Code References
 
 - Extractor: `agents/enhanced_compliance/extractor.py:36-68` (quality tuning params)
 - Semantic extractor: `agents/enhanced_compliance/semantic_extractor.py`
 - CTM extractor: `agents/enhanced_compliance/ctm_extractor.py`
 - Section-aware extractor: `agents/enhanced_compliance/section_aware_extractor.py`
+- Ground truth validator: `agents/enhanced_compliance/ground_truth_validator.py`
