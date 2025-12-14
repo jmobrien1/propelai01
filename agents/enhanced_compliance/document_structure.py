@@ -271,6 +271,8 @@ class RFPStructureParser:
         # More specific patterns that require proper solicitation number format
         # Must contain at least one digit to avoid matching prose like "requires delivery"
         patterns = [
+            # VA format: 36C10B26Q0064 (VA Technology Acquisition Center)
+            r"\b(36C\d{2}[A-Z]\d{2}[QR]\d{4})\b",
             # NIH format: 75N96025R00004
             r"75N\d{5}[A-Z]\d{5}",
             # DoD Navy format: N0017826R30020003
@@ -285,6 +287,8 @@ class RFPStructureParser:
             r"\b(GS[-][A-Z0-9]{2,}[-][A-Z0-9]+)\b",
             # Explicit solicitation number with colon/separator (flexible hyphens)
             r"(?:Solicitation|RFP|RFQ|IFB)\s*(?:No\.?|Number|#)\s*[:.]?\s*([A-Z0-9]+(?:[-][A-Z0-9]+)*)",
+            # SOLICITATION NUMBER* pattern (VA SAM.gov format)
+            r"SOLICITATION\s+NUMBER\*?\s*\|?\s*([A-Z0-9]+(?:[-][A-Z0-9]+)*)",
             # Generic federal format: alphanumeric with hyphens, must have digit
             r"(?:Solicitation|RFP|RFQ|IFB)\s*[:#]\s*([A-Z0-9]+(?:[-][A-Z0-9]+)*)",
         ]
@@ -310,6 +314,8 @@ class RFPStructureParser:
         """
         # Patterns to try in order of preference
         patterns = [
+            # VA SAM.gov format: SUBJECT* | Title Here
+            r"SUBJECT\*?\s*\|?\s*([A-Z][^\n|]{10,100})",
             # Explicit title/subject fields
             r"(?:Title|Subject)\s*:\s*([^\n]+)",
             # Description fields
@@ -324,6 +330,8 @@ class RFPStructureParser:
             r"FAIR\s+OPPORTUNITY\s+(?:FOR|TO\s+PROVIDE)\s+([^\n]+)",
             # Task Order for something
             r"TASK\s+ORDER\s+(?:FOR|TO\s+PROVIDE)\s+([^\n]+)",
+            # VA VAMC + Service pattern
+            r"([A-Z][a-z]+\s+VAMC\s+[^\n]{10,80})",
         ]
 
         for pattern in patterns:
