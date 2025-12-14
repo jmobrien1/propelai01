@@ -1189,15 +1189,21 @@ class SmartOutlineGenerator:
         """
         constraints = []
 
+        def get_field(obj, field: str, default: str = '') -> str:
+            """Get field from either dict or object"""
+            if isinstance(obj, dict):
+                return obj.get(field, default) or default
+            return getattr(obj, field, default) or default
+
         # Use OASIS+ constraints if provided
         if oasis_constraints:
             for c in oasis_constraints:
                 constraints.append(P0Constraint(
-                    constraint_type=getattr(c, 'constraint_type', 'UNKNOWN'),
-                    description=getattr(c, 'description', ''),
-                    value=getattr(c, 'value', ''),
-                    applies_to=getattr(c, 'applies_to', 'All'),
-                    consequence=getattr(c, 'consequence', 'May cause disqualification')
+                    constraint_type=get_field(c, 'constraint_type', 'UNKNOWN'),
+                    description=get_field(c, 'description', ''),
+                    value=get_field(c, 'value', ''),
+                    applies_to=get_field(c, 'applies_to', 'All'),
+                    consequence=get_field(c, 'consequence', 'May cause disqualification')
                 ))
             return constraints
 
