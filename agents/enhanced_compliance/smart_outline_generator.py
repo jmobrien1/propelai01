@@ -1189,17 +1189,23 @@ class SmartOutlineGenerator:
         """
         constraints = []
 
-        def get_field(obj, field: str, default: str = '') -> str:
-            """Get field from either dict or object"""
+        def get_field(obj, field: str, default: str = '', alt_field: str = None) -> str:
+            """Get field from either dict or object, with optional alternate field name"""
             if isinstance(obj, dict):
-                return obj.get(field, default) or default
-            return getattr(obj, field, default) or default
+                # Try primary field first, then alternate
+                value = obj.get(field) or (obj.get(alt_field) if alt_field else None)
+                return value if value else default
+            # For objects, use getattr
+            value = getattr(obj, field, None) or (getattr(obj, alt_field, None) if alt_field else None)
+            return value if value else default
 
         # Use OASIS+ constraints if provided
         if oasis_constraints:
             for c in oasis_constraints:
+                # constraint_type in object, but 'type' in serialized JSON
+                ctype = get_field(c, 'constraint_type', 'UNKNOWN', alt_field='type')
                 constraints.append(P0Constraint(
-                    constraint_type=get_field(c, 'constraint_type', 'UNKNOWN'),
+                    constraint_type=ctype,
                     description=get_field(c, 'description', ''),
                     value=get_field(c, 'value', ''),
                     applies_to=get_field(c, 'applies_to', 'All'),
