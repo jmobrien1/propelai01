@@ -344,9 +344,12 @@ class SectionAwareExtractor:
     
     # Minimum requirement length (characters) - shorter is likely not a real requirement
     MIN_REQUIREMENT_LENGTH = 40
-    
-    # Maximum requirement length - if longer, it's probably multiple requirements
-    MAX_REQUIREMENT_LENGTH = 2000
+
+    # Maximum requirement length (reduced from 2000 to avoid multi-shall bundles)
+    MAX_REQUIREMENT_LENGTH = 500
+
+    # Obligation words that must be present for a valid requirement
+    OBLIGATION_WORDS = ['shall', 'must', 'will', 'required', 'should', 'may', 'can']
     
     def __init__(self, preserve_rfp_ids: bool = True, agency_type: Optional[str] = None):
         """
@@ -614,66 +617,78 @@ class SectionAwareExtractor:
         
         for para in paragraphs:
             para = para.strip()
-            
-            # Skip if too short or too long
+
+            # Skip if too short
             if len(para) < self.MIN_REQUIREMENT_LENGTH:
                 continue
-            
-            # Check for binding language
-            binding_level, binding_keyword = self._detect_binding_level(para, is_evaluation_section)
-            
-            # Skip purely informational paragraphs UNLESS we're in L or M sections
-            # and the paragraph contains important structural info
-            if binding_level == BindingLevel.INFORMATIONAL:
-                if not include_informational:
+
+            # Split multi-shall paragraphs into separate requirements
+            para_parts = self._split_multi_shall(para)
+
+            for part in para_parts:
+                part = part.strip()
+
+                # Skip if too short after splitting
+                if len(part) < self.MIN_REQUIREMENT_LENGTH:
                     continue
-                # Even for L/M, skip if it's generic text without submission/evaluation language
-                if not re.search(r'(submit|proposal|factor|evaluat|volume|page|format|attachment)', 
-                                para.lower()):
+
+                # Skip if too long (likely multiple requirements not split)
+                if len(part) > self.MAX_REQUIREMENT_LENGTH:
                     continue
-            
-            # Skip if it looks like a header or table of contents
-            if self._is_header_or_toc(para):
-                continue
 
-            # Skip SF30 amendment form boilerplate
-            if self._is_sf30_boilerplate(para):
-                continue
+                # Check for binding language
+                binding_level, binding_keyword = self._detect_binding_level(part, is_evaluation_section)
 
-            # Look for RFP's own reference in the paragraph
-            rfp_reference = self._find_rfp_reference(para, parent_section.value)
+                # Skip purely informational paragraphs UNLESS we're in L or M sections
+                # and the paragraph contains important structural info
+                if binding_level == BindingLevel.INFORMATIONAL:
+                    if not include_informational:
+                        continue
+                    # Even for L/M, skip if it's generic text without submission/evaluation language
+                    if not re.search(r'(submit|proposal|factor|evaluat|volume|page|format|attachment)',
+                                    part.lower()):
+                        continue
 
-            # Generate ID if needed
-            self.counters[category] = self.counters.get(category, 0) + 1
-            generated_id = f"TW-{parent_section.value}-{self.counters[category]:04d}"
+                # Skip if it looks like a header or table of contents
+                if self._is_header_or_toc(part):
+                    continue
 
-            # Find cross-references
-            cross_refs = self._find_cross_references(para)
+                # Skip SF30 amendment form boilerplate
+                if self._is_sf30_boilerplate(part):
+                    continue
 
-            # Check if this is a compliance gate (pass/fail, disqualification risk)
-            is_gate = self._is_compliance_gate(para)
+                # Look for RFP's own reference in the paragraph
+                rfp_reference = self._find_rfp_reference(part, parent_section.value)
 
-            # Create requirement
-            req = StructuredRequirement(
-                rfp_reference=rfp_reference or (subsection_ref if subsection_ref else parent_section.value),
-                generated_id=generated_id,
-                full_text=para,
-                category=category,
-                binding_level=binding_level,
-                binding_keyword=binding_keyword,
-                source_section=parent_section,
-                source_subsection=subsection_ref,
-                page_number=page_number,
-                source_document=source_document,
-                parent_title=subsection_title,
-                evaluation_factor=None,  # Will be linked later
-                references_to=cross_refs,
-                is_compliance_gate=is_gate
-            )
+                # Generate ID if needed
+                self.counters[category] = self.counters.get(category, 0) + 1
+                generated_id = f"TW-{parent_section.value}-{self.counters[category]:04d}"
 
-            requirements.append(req)
-            
-            # If paragraph is very long, it might contain multiple requirements
+                # Find cross-references
+                cross_refs = self._find_cross_references(part)
+
+                # Check if this is a compliance gate (pass/fail, disqualification risk)
+                is_gate = self._is_compliance_gate(part)
+
+                # Create requirement
+                req = StructuredRequirement(
+                    rfp_reference=rfp_reference or (subsection_ref if subsection_ref else parent_section.value),
+                    generated_id=generated_id,
+                    full_text=part,
+                    category=category,
+                    binding_level=binding_level,
+                    binding_keyword=binding_keyword,
+                    source_section=parent_section,
+                    source_subsection=subsection_ref,
+                    page_number=page_number,
+                    source_document=source_document,
+                    parent_title=subsection_title,
+                    evaluation_factor=None,  # Will be linked later
+                    references_to=cross_refs,
+                    is_compliance_gate=is_gate
+                )
+
+                requirements.append(req)
             # But per best practices, we should NOT split - extract verbatim
         
         return requirements
@@ -707,7 +722,64 @@ class SectionAwareExtractor:
                 result.append(para)
         
         return result
-    
+
+    def _split_multi_shall(self, text: str) -> List[str]:
+        """
+        Split paragraphs containing multiple shall/must statements.
+
+        This addresses bundled requirements where multiple obligations
+        are combined in a single extraction.
+        """
+        obligation_pattern = r'\b(?:shall|must|will\s+be\s+required)\b'
+        obligation_matches = list(re.finditer(obligation_pattern, text, re.IGNORECASE))
+
+        # If only 0-1 obligation words, no split needed
+        if len(obligation_matches) <= 1:
+            return [text]
+
+        # Strategy 1: Split on sentence boundaries
+        sentence_split_pattern = r'(?<=[.!?])\s+(?=[A-Z])'
+        parts = re.split(sentence_split_pattern, text)
+
+        if len(parts) > 1:
+            requirements = []
+            pending_context = ""
+
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+
+                if re.search(obligation_pattern, part, re.IGNORECASE):
+                    if pending_context:
+                        part = pending_context + " " + part
+                        pending_context = ""
+                    requirements.append(part)
+                elif len(requirements) > 0 and len(part) < 150:
+                    pending_context = part
+                elif len(requirements) > 0:
+                    requirements[-1] = requirements[-1] + " " + part
+
+            if requirements and len(requirements) > 1:
+                return requirements
+
+        # Strategy 2: Split on semicolons
+        if len(obligation_matches) > 1:
+            semicolon_parts = text.split(';')
+            if len(semicolon_parts) > 1:
+                requirements = []
+                for part in semicolon_parts:
+                    part = part.strip()
+                    if part and re.search(obligation_pattern, part, re.IGNORECASE):
+                        if not part.endswith('.'):
+                            part = part + '.'
+                        requirements.append(part)
+
+                if len(requirements) > 1:
+                    return requirements
+
+        return [text]
+
     def _detect_binding_level(self, text: str, is_evaluation_section: bool = False) -> Tuple[BindingLevel, str]:
         """
         Detect how binding this requirement is.
