@@ -46,6 +46,13 @@ class BindingLevel(Enum):
     INFORMATIONAL = "Informational"  # No binding language
 
 
+class ConfidenceLevel(Enum):
+    """How confident are we this is a valid, correctly-extracted requirement?"""
+    HIGH = "High"       # Clear obligation word + actor + section reference
+    MEDIUM = "Medium"   # Has obligation word but missing context
+    LOW = "Low"         # Inferred from evaluation criteria or uncertain
+
+
 @dataclass
 class FormattingConstraint:
     """
@@ -118,6 +125,11 @@ class StructuredRequirement:
 
     # Compliance gate flag - failure to comply results in disqualification
     is_compliance_gate: bool = False
+
+    # Confidence scoring - how confident are we this extraction is correct?
+    confidence_level: ConfidenceLevel = ConfidenceLevel.MEDIUM
+    confidence_reasons: List[str] = field(default_factory=list)
+    confidence_score: float = 0.75  # 0.0-1.0 numeric score
 
     # For deduplication
     text_hash: str = ""
@@ -670,6 +682,17 @@ class SectionAwareExtractor:
                 # Check if this is a compliance gate (pass/fail, disqualification risk)
                 is_gate = self._is_compliance_gate(part)
 
+                # Calculate confidence score
+                confidence_level, confidence_reasons, confidence_score = self._calculate_confidence(
+                    text=part,
+                    binding_level=binding_level,
+                    binding_keyword=binding_keyword,
+                    category=category,
+                    rfp_reference=rfp_reference,
+                    cross_refs=cross_refs,
+                    is_compliance_gate=is_gate
+                )
+
                 # Create requirement
                 req = StructuredRequirement(
                     rfp_reference=rfp_reference or (subsection_ref if subsection_ref else parent_section.value),
@@ -685,7 +708,10 @@ class SectionAwareExtractor:
                     parent_title=subsection_title,
                     evaluation_factor=None,  # Will be linked later
                     references_to=cross_refs,
-                    is_compliance_gate=is_gate
+                    is_compliance_gate=is_gate,
+                    confidence_level=confidence_level,
+                    confidence_reasons=confidence_reasons,
+                    confidence_score=confidence_score
                 )
 
                 requirements.append(req)
@@ -820,7 +846,104 @@ class SectionAwareExtractor:
             return BindingLevel.HIGHLY_DESIRABLE, "evaluation"
 
         return BindingLevel.INFORMATIONAL, ""
-    
+
+    def _calculate_confidence(self, text: str, binding_level: BindingLevel,
+                              binding_keyword: str, category: RequirementCategory,
+                              rfp_reference: Optional[str], cross_refs: List[str],
+                              is_compliance_gate: bool) -> Tuple[ConfidenceLevel, List[str], float]:
+        """
+        Calculate confidence score for an extracted requirement.
+
+        Confidence scoring criteria:
+        - HIGH (0.85-1.0): Clear obligation word + identified actor + section reference
+        - MEDIUM (0.60-0.84): Has obligation word but missing some context
+        - LOW (0.0-0.59): Inferred from evaluation criteria or uncertain
+
+        Returns:
+            Tuple of (ConfidenceLevel, reasons list, numeric score 0.0-1.0)
+        """
+        reasons = []
+        score = 0.5  # Base score
+
+        # Factor 1: Binding keyword presence (+0.20)
+        if binding_level == BindingLevel.MANDATORY:
+            score += 0.20
+            reasons.append(f"Strong obligation word: '{binding_keyword}'")
+        elif binding_level == BindingLevel.HIGHLY_DESIRABLE:
+            score += 0.15
+            reasons.append(f"Moderate obligation word: '{binding_keyword}'")
+        elif binding_level == BindingLevel.DESIRABLE:
+            score += 0.10
+            reasons.append(f"Weak obligation word: '{binding_keyword}'")
+        else:
+            score -= 0.10
+            reasons.append("No explicit obligation word")
+
+        # Factor 2: Actor identification (+0.15)
+        # Look for "contractor", "offeror", "vendor", "government", etc.
+        actor_pattern = r'\b(contractor|offeror|vendor|government|agency|grantee|recipient|awardee|proposer)\b'
+        if re.search(actor_pattern, text.lower()):
+            score += 0.15
+            actor_match = re.search(actor_pattern, text.lower())
+            reasons.append(f"Clear actor identified: '{actor_match.group(1)}'")
+        else:
+            # Check for implicit actor (passive voice with shall)
+            if re.search(r'\bshall\s+be\s+(?:provided|submitted|included|demonstrated)', text.lower()):
+                score += 0.10
+                reasons.append("Implicit actor (passive voice requirement)")
+
+        # Factor 3: Section/RFP reference (+0.10)
+        if rfp_reference and len(rfp_reference) > 1:
+            score += 0.10
+            reasons.append(f"Has RFP reference: '{rfp_reference}'")
+
+        # Factor 4: Cross-references (+0.05)
+        if cross_refs:
+            score += 0.05
+            reasons.append(f"Cross-references: {len(cross_refs)} found")
+
+        # Factor 5: Length appropriateness (+0.05 / -0.10)
+        text_len = len(text)
+        if 50 <= text_len <= 400:
+            score += 0.05
+            reasons.append("Appropriate length for single requirement")
+        elif text_len > 450:
+            score -= 0.05
+            reasons.append("Longer text - may contain multiple requirements")
+        elif text_len < 50:
+            score -= 0.10
+            reasons.append("Very short - may be incomplete")
+
+        # Factor 6: Compliance gate (+0.05)
+        if is_compliance_gate:
+            score += 0.05
+            reasons.append("Compliance gate (pass/fail)")
+
+        # Factor 7: Category confidence
+        if category == RequirementCategory.EVALUATION_FACTOR:
+            if binding_level == BindingLevel.INFORMATIONAL:
+                score -= 0.05
+                reasons.append("Evaluation criteria without explicit binding language")
+
+        # Factor 8: Sentence structure quality (+0.05)
+        # Check for complete sentence (starts with capital, ends with period)
+        if text[0].isupper() and text.rstrip()[-1] in '.;':
+            score += 0.05
+            reasons.append("Complete sentence structure")
+
+        # Clamp score between 0.0 and 1.0
+        score = max(0.0, min(1.0, score))
+
+        # Determine confidence level from score
+        if score >= 0.85:
+            confidence_level = ConfidenceLevel.HIGH
+        elif score >= 0.60:
+            confidence_level = ConfidenceLevel.MEDIUM
+        else:
+            confidence_level = ConfidenceLevel.LOW
+
+        return confidence_level, reasons, round(score, 2)
+
     def _is_header_or_toc(self, text: str) -> bool:
         """Check if this looks like a header rather than a requirement"""
         # Very short
@@ -951,6 +1074,16 @@ class SectionAwareExtractor:
     
     def _build_stats(self, result: ExtractionResult) -> Dict[str, Any]:
         """Build extraction statistics"""
+        # Confidence statistics
+        high_confidence = [r for r in result.all_requirements if r.confidence_level == ConfidenceLevel.HIGH]
+        medium_confidence = [r for r in result.all_requirements if r.confidence_level == ConfidenceLevel.MEDIUM]
+        low_confidence = [r for r in result.all_requirements if r.confidence_level == ConfidenceLevel.LOW]
+
+        avg_confidence = (
+            sum(r.confidence_score for r in result.all_requirements) / len(result.all_requirements)
+            if result.all_requirements else 0.0
+        )
+
         stats = {
             'total': len(result.all_requirements),
             'section_l': len(result.section_l_requirements),
@@ -963,6 +1096,16 @@ class SectionAwareExtractor:
                 'highly_desirable': sum(1 for r in result.all_requirements if r.binding_level == BindingLevel.HIGHLY_DESIRABLE),
                 'desirable': sum(1 for r in result.all_requirements if r.binding_level == BindingLevel.DESIRABLE),
             },
+            'by_confidence': {
+                'high': len(high_confidence),
+                'medium': len(medium_confidence),
+                'low': len(low_confidence),
+                'high_pct': round(len(high_confidence) / len(result.all_requirements) * 100, 1) if result.all_requirements else 0,
+                'medium_pct': round(len(medium_confidence) / len(result.all_requirements) * 100, 1) if result.all_requirements else 0,
+                'low_pct': round(len(low_confidence) / len(result.all_requirements) * 100, 1) if result.all_requirements else 0,
+                'avg_score': round(avg_confidence, 2),
+            },
+            'needs_human_review': len(low_confidence),  # Flag for QA workflow
             'sections_found': [s.value for s in result.structure.sections.keys()] if result.structure else [],
             'sow_location': result.structure.sow_location if result.structure else None,
         }

@@ -231,11 +231,53 @@ r"^(?:Refer|Reference)\s+to",  # Reference-only lines
 
 ## Next Steps
 
-1. **Implement multi-shall splitting** - Highest impact, addresses 100+ issues per matrix
-2. **Add obligation word validation** - Reduces false positives by 20%+
-3. **Reduce max length** - Improves requirement granularity
-4. **Manual spot-check** - Verify 50 random requirements against source RFPs
-5. **A/B test** - Run extraction with fixes on same RFPs, compare metrics
+1. ~~**Implement multi-shall splitting**~~ - ✅ COMPLETED
+2. ~~**Add obligation word validation**~~ - ✅ COMPLETED
+3. ~~**Reduce max length**~~ - ✅ COMPLETED
+4. ~~**Confidence scoring**~~ - ✅ COMPLETED (December 14, 2024)
+5. **Manual spot-check** - Verify 50 random requirements against source RFPs
+6. **Ground truth validation** - Create validation framework with human-verified RFPs
+7. **Source traceability** - Link requirements to source page/paragraph
+
+---
+
+## Confidence Scoring (Implemented December 14, 2024)
+
+Each extracted requirement now includes a confidence score to flag items needing human review:
+
+| Confidence Level | Score Range | Criteria |
+|-----------------|-------------|----------|
+| **HIGH** | 0.85-1.0 | Strong obligation word + identified actor + section reference |
+| **MEDIUM** | 0.60-0.84 | Has obligation word but missing some context |
+| **LOW** | 0.0-0.59 | Inferred from evaluation criteria or uncertain |
+
+### Scoring Factors
+
+1. **Binding keyword presence** (+0.20 for SHALL/MUST, +0.15 for SHOULD, +0.10 for MAY)
+2. **Actor identification** (+0.15 for "contractor", "offeror", "government", etc.)
+3. **Section/RFP reference** (+0.10 if present)
+4. **Cross-references** (+0.05 if found)
+5. **Length appropriateness** (+0.05 for 50-400 chars, -0.05 for >450 chars)
+6. **Compliance gate** (+0.05 for pass/fail requirements)
+7. **Sentence structure** (+0.05 for complete sentences)
+
+### Usage
+
+```python
+from agents.enhanced_compliance.section_aware_extractor import extract_requirements_structured
+
+result = extract_requirements_structured(documents)
+
+# Get stats
+print(f"High confidence: {result.stats['by_confidence']['high_pct']}%")
+print(f"Needs human review: {result.stats['needs_human_review']}")
+
+# Filter low-confidence for QA
+for req in result.all_requirements:
+    if req.confidence_level.value == "Low":
+        print(f"[LOW] {req.full_text[:80]}...")
+        print(f"  Reasons: {req.confidence_reasons}")
+```
 
 ---
 
