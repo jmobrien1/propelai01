@@ -79,6 +79,28 @@ except ImportError as e:
     print(f"Warning: Annotated outline exporter not available: {e}")
     ANNOTATED_OUTLINE_AVAILABLE = False
 
+# v3.0: Resilient Extraction Pipeline (Extract-First Architecture)
+try:
+    from agents.enhanced_compliance.resilient_extractor import (
+        ResilientExtractor,
+        create_resilient_extractor,
+    )
+    from agents.enhanced_compliance.extraction_models import (
+        ExtractionResult as ResilientExtractionResult,
+        ConfidenceLevel,
+    )
+    from agents.enhanced_compliance.extraction_validator import (
+        ExtractionValidator,
+        ReproducibilityTester,
+    )
+    RESILIENT_EXTRACTION_AVAILABLE = True
+    resilient_extractor = create_resilient_extractor()
+    print("v3.0 Resilient Extraction Pipeline loaded")
+except ImportError as e:
+    print(f"Warning: Resilient extraction not available: {e}")
+    RESILIENT_EXTRACTION_AVAILABLE = False
+    resilient_extractor = None
+
 
 # ============== Configuration ==============
 
@@ -955,6 +977,205 @@ async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTa
         "rfp_id": rfp_id,
         "files_count": len(rfp["file_paths"]),
         "mode": "best_practices"
+    }
+
+
+# ============== v3.0: Resilient Extraction Pipeline ==============
+
+def process_rfp_resilient_background(rfp_id: str):
+    """
+    Background task to process RFP with Resilient Extraction Pipeline (v3.0).
+
+    Key features:
+    - Extract First, Classify Later architecture
+    - Multi-layer SOW detection (never misses due to typos)
+    - Graduated confidence scores (never binary found/not-found)
+    - Quality metrics and anomaly detection
+    - Review queue for low-confidence items
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        return
+
+    if not resilient_extractor:
+        store.set_status(rfp_id, "error", 0, "Resilient extractor not available")
+        store.update(rfp_id, {"status": "error"})
+        return
+
+    try:
+        import time
+        start_time = time.time()
+
+        store.set_status(rfp_id, "processing", 10, "Initializing resilient extraction...")
+        store.update(rfp_id, {"status": "processing"})
+
+        file_paths = rfp["file_paths"]
+        if not file_paths:
+            store.set_status(rfp_id, "error", 0, "No files to process")
+            store.update(rfp_id, {"status": "error"})
+            return
+
+        # Parse documents
+        store.set_status(rfp_id, "processing", 20, "Parsing documents...")
+        from agents.enhanced_compliance import MultiFormatParser, DocumentType
+        parser = MultiFormatParser()
+
+        documents = []
+        for file_path in file_paths:
+            try:
+                import os
+                filename = os.path.basename(file_path)
+                parsed = parser.parse_file(file_path)
+                if parsed:
+                    documents.append({
+                        'text': parsed.full_text,
+                        'filename': parsed.filename,
+                        'pages': parsed.pages if parsed.pages else [parsed.full_text],
+                    })
+            except Exception as e:
+                print(f"Warning: Could not parse {file_path}: {e}")
+
+        if not documents:
+            store.set_status(rfp_id, "error", 0, "No documents could be parsed")
+            store.update(rfp_id, {"status": "error"})
+            return
+
+        # Run resilient extraction
+        store.set_status(rfp_id, "processing", 40, "Extracting requirements (resilient mode)...")
+        result = resilient_extractor.extract_from_parsed(documents, rfp_id)
+
+        store.set_status(rfp_id, "processing", 70, "Building compliance data...")
+
+        # Convert to API format
+        requirements = []
+        for req in result.requirements:
+            priority = "medium"
+            if req.binding_level == "SHALL":
+                priority = "high"
+            elif req.binding_level == "MAY":
+                priority = "low"
+
+            requirements.append({
+                "id": req.id,
+                "text": req.text,
+                "section": req.assigned_section or "UNASSIGNED",
+                "type": req.category or "general",
+                "priority": priority,
+                "confidence": req.confidence_score,
+                "confidence_level": req.confidence.value,
+                "source_page": req.source_page,
+                "source_doc": req.source_document,
+                "rfp_reference": req.rfp_reference,
+                "binding_level": req.binding_level,
+                "needs_review": req.needs_review,
+                "review_reasons": req.review_reasons,
+            })
+
+        # Build stats with quality metrics
+        metrics = result.quality_metrics
+        stats = {
+            "total": len(requirements),
+            "by_section": metrics.section_counts,
+            "by_confidence": {
+                "high": metrics.high_confidence_count,
+                "medium": metrics.medium_confidence_count,
+                "low": metrics.low_confidence_count,
+                "uncertain": metrics.uncertain_count,
+            },
+            "by_priority": {
+                "high": len([r for r in requirements if r["priority"] == "high"]),
+                "medium": len([r for r in requirements if r["priority"] == "medium"]),
+                "low": len([r for r in requirements if r["priority"] == "low"])
+            },
+            "processing_time": round(time.time() - start_time, 2),
+            "pages_processed": metrics.total_pages,
+            "documents_processed": metrics.total_documents,
+            "sow_detected": metrics.sow_detected,
+            "sow_source": metrics.sow_source,
+            "review_queue_size": len(result.review_queue),
+            "anomalies": metrics.anomalies,
+            "warnings": metrics.warnings,
+        }
+
+        store.set_status(rfp_id, "processing", 95, "Finalizing...")
+
+        # Store results
+        store.update(rfp_id, {
+            "status": "completed",
+            "requirements": requirements,
+            "resilient_result": result.to_dict(),
+            "stats": stats,
+            "extraction_mode": "resilient_v3"
+        })
+
+        # Log quality summary
+        if metrics.anomalies:
+            print(f"RFP {rfp_id} ANOMALIES: {metrics.anomalies}")
+        if metrics.warnings:
+            print(f"RFP {rfp_id} WARNINGS: {metrics.warnings}")
+
+        store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
+        store.update(rfp_id, {"status": "error"})
+
+
+@app.post("/api/rfp/{rfp_id}/process-resilient")
+async def process_rfp_resilient(rfp_id: str, background_tasks: BackgroundTasks):
+    """
+    Start Resilient Extraction processing of RFP documents (v3.0)
+
+    This uses the Extract-First architecture that:
+    - Never loses requirements due to classification failures
+    - Provides graduated confidence scores
+    - Detects quality anomalies automatically
+    - Flags low-confidence items for review
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    if not rfp["file_paths"]:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    if not RESILIENT_EXTRACTION_AVAILABLE or not resilient_extractor:
+        raise HTTPException(
+            status_code=501,
+            detail="Resilient extraction not available. Use /process endpoint instead."
+        )
+
+    background_tasks.add_task(process_rfp_resilient_background, rfp_id)
+
+    return {
+        "status": "processing_started",
+        "rfp_id": rfp_id,
+        "files_count": len(rfp["file_paths"]),
+        "mode": "resilient_v3"
+    }
+
+
+@app.get("/api/rfp/{rfp_id}/quality")
+async def get_extraction_quality(rfp_id: str):
+    """Get extraction quality metrics and anomalies"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    stats = rfp.get("stats", {})
+
+    return {
+        "rfp_id": rfp_id,
+        "extraction_mode": rfp.get("extraction_mode", "unknown"),
+        "sow_detected": stats.get("sow_detected", False),
+        "sow_source": stats.get("sow_source"),
+        "section_counts": stats.get("by_section", {}),
+        "confidence_distribution": stats.get("by_confidence", {}),
+        "review_queue_size": stats.get("review_queue_size", 0),
+        "anomalies": stats.get("anomalies", []),
+        "warnings": stats.get("warnings", []),
     }
 
 

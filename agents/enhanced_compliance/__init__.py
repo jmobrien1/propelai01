@@ -174,3 +174,34 @@ except ImportError as e:
     AnnotatedOutlineExporter = None
     AnnotatedOutlineConfig = None
     generate_annotated_outline = None
+
+# =============================================================================
+# v3.0: Resilient Extraction Pipeline (Extract-First Architecture)
+# =============================================================================
+try:
+    from .extraction_models import (
+        ConfidenceLevel,
+        DetectionMethod,
+        SectionCandidate,
+        RequirementCandidate,
+        ExtractionQualityMetrics,
+        ExtractionResult as ResilientExtractionResult,
+    )
+    from .universal_extractor import UniversalExtractor
+    from .section_classifier import SectionClassifier, DocumentSOWInfo
+    from .resilient_extractor import ResilientExtractor, create_resilient_extractor
+    from .extraction_validator import (
+        ExtractionValidator,
+        ValidationMetrics,
+        DiffResult,
+        ReproducibilityTester,
+    )
+    RESILIENT_EXTRACTION_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Resilient extraction pipeline not available: {e}")
+    RESILIENT_EXTRACTION_AVAILABLE = False
+    ConfidenceLevel = DetectionMethod = SectionCandidate = RequirementCandidate = None
+    ExtractionQualityMetrics = ResilientExtractionResult = None
+    UniversalExtractor = SectionClassifier = DocumentSOWInfo = None
+    ResilientExtractor = create_resilient_extractor = None
+    ExtractionValidator = ValidationMetrics = DiffResult = ReproducibilityTester = None
