@@ -1,0 +1,488 @@
+{
+  "rfp_id": "SENTRA_FA2377-25-R-B009",
+  "title": "TEMPEST Call 06: Simulation Environment for Technology Research and Assessments (SENTRA)",
+  "agency": "Air Force Research Laboratory (AFRL/RY Sensors Directorate)",
+  "naics": "541715",
+  "set_aside": "Unrestricted",
+  "contract_type": "IDIQ with CPFF Task Orders",
+  "solicitation_number": "FA2377-25-R-B009",
+  "basic_ara_number": "FA8650-20-S-1958",
+  "estimated_value": "$32,000,000",
+  "annotation_date": "2024-12-14",
+  "annotator": "PropelAI Validation Framework",
+  "annotation_version": "1.0",
+  "source_documents": [
+    {
+      "filename": "TEMPEST ARA Call 06_SENTRA.pdf",
+      "type": "ARA_Solicitation",
+      "pages": 10
+    },
+    {
+      "filename": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf",
+      "type": "Labor_Categories",
+      "pages": 2
+    },
+    {
+      "filename": "Attachment 9 - SENTRA Ordering Instructions.pdf",
+      "type": "Ordering_Instructions",
+      "pages": 2
+    }
+  ],
+  "notes": "This is an Advanced Research Announcement (ARA) format RFP. The main Statement of Objectives (SOO) documents (Attachments 1, 2, 5) are CUI and not publicly available. Requirements extracted here are from the public solicitation documents only. This tests PropelAI's ability to handle Section L/M requirements rather than traditional Section C SOW requirements.",
+  "requirements": [
+    {
+      "gt_id": "GT-SENTRA-001",
+      "text": "Proposals must be submitted electronically to the Contracting Points of Contact (POCs).",
+      "rfp_section": "L",
+      "document_reference": "Page 1, Submission",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 1,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-002",
+      "text": "Offerors should email the Contracting POCs at the emails indicated above indicating the desire to submit a proposal and include their company CAGE code.",
+      "rfp_section": "L",
+      "document_reference": "Page 1, Submission",
+      "binding_level": "Highly_Desirable",
+      "category": "L_SUBMISSION",
+      "page_number": 1,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-003",
+      "text": "The Offeror should use a DoD SAFE link to 'drop off' the proposal.",
+      "rfp_section": "L",
+      "document_reference": "Page 2, Submission",
+      "binding_level": "Highly_Desirable",
+      "category": "L_SUBMISSION",
+      "page_number": 2,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-004",
+      "text": "Offerors are required to have emailed the Contracting POCs and request the DoD SAFE link by 16 February 2026, 12:00PM (NOON) Eastern Time.",
+      "rfp_section": "L",
+      "document_reference": "Page 2, Submission",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 2,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-005",
+      "text": "Cost reimbursement contracts require successful offerors to have an accounting system considered adequate for tracking costs applicable to the contract.",
+      "rfp_section": "L",
+      "document_reference": "Page 2, Type of Contract",
+      "binding_level": "Mandatory",
+      "category": "L_ELIGIBILITY",
+      "page_number": 2,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-006",
+      "text": "The Contractor will deliver the following prototype software outputs developed or acquired under the experimentation and test effort: Models (including source code), integration interfaces (ICDs), algorithms, simulation viewers (including source code), run-scripts, MATLAB tools, and script tools.",
+      "rfp_section": "C",
+      "document_reference": "Page 3, Section I.3.b Software",
+      "binding_level": "Mandatory",
+      "category": "DELIVERABLES",
+      "page_number": 3,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-007",
+      "text": "The contractor shall deliver all hardware equipment and non-consumed materials developed and/or acquired under this contract to the Government at the conclusion of this effort.",
+      "rfp_section": "C",
+      "document_reference": "Page 3-4, Section I.3.c Hardware",
+      "binding_level": "Mandatory",
+      "category": "DELIVERABLES",
+      "page_number": 4,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-008",
+      "text": "Individuals must be US citizens and have a security classification level of TS/SCI and SAP eligibility.",
+      "rfp_section": "L",
+      "document_reference": "Page 4, Section I.5.a Program Security Classification",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 4,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-009",
+      "text": "Offerors must verify their Cognizant Security Office information is current with Defense Counterintelligence and Security Agency (DCSA) at www.dcsa.mil.",
+      "rfp_section": "L",
+      "document_reference": "Page 4, Section I.5.a Program Security Classification",
+      "binding_level": "Mandatory",
+      "category": "L_ELIGIBILITY",
+      "page_number": 4,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-010",
+      "text": "A Certified DD Form 2345, Militarily Critical Technical Data Agreement, is required to be submitted with the proposal.",
+      "rfp_section": "L",
+      "document_reference": "Page 4, Section I.5.b Export Control",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 4,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-011",
+      "text": "The Contractor shall identify their proposed labor categories and labor rates by submitting Attachment 10 of the Call.",
+      "rfp_section": "L",
+      "document_reference": "Page 4, Section I.5.e Unique Personnel Requirements",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 4,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-012",
+      "text": "The Contractor shall adhere to the personnel qualifications as those shall be incorporated into the SOW Supplemental requirements.",
+      "rfp_section": "C",
+      "document_reference": "Page 4, Section I.5.e Unique Personnel Requirements",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 4,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-013",
+      "text": "The contractor should use the clause to assure that appropriate shipping documentation is used and reference the contract number to prevent incurring duties.",
+      "rfp_section": "C",
+      "document_reference": "Page 5, Section I.5.l Duty-Free Entry",
+      "binding_level": "Highly_Desirable",
+      "category": "COMPLIANCE",
+      "page_number": 5,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-014",
+      "text": "If an OCI is anticipated, the contractor should provide the appropriate mitigation plan for Government review as part of the Business Proposal.",
+      "rfp_section": "L",
+      "document_reference": "Page 5, Section I.6.d Organizational Conflict of Interest",
+      "binding_level": "Highly_Desirable",
+      "category": "L_SUBMISSION",
+      "page_number": 5,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-015",
+      "text": "Data Rights desired by the contractor should be included with submission as part of the Section K (Certs and Reps – Attachment 6).",
+      "rfp_section": "L",
+      "document_reference": "Page 5, Section I.6.e Data Rights",
+      "binding_level": "Highly_Desirable",
+      "category": "L_SUBMISSION",
+      "page_number": 5,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-016",
+      "text": "Foreign Participation is not authorized on this call due to the sensitive nature of the technology and its level of classification.",
+      "rfp_section": "L",
+      "document_reference": "Page 6, Section III.2.a Foreign Participation",
+      "binding_level": "Mandatory",
+      "category": "L_ELIGIBILITY",
+      "page_number": 6,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-017",
+      "text": "Offeror must submit a copy of their approved DD Form 2345, Military Critical Technical Data agreement with their proposal.",
+      "rfp_section": "L",
+      "document_reference": "Page 6, Section III.2.b Export Control",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 6,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-018",
+      "text": "Proposals submitted under this call shall be in accordance with the instructions provided both herein and within the basic ARA announcement.",
+      "rfp_section": "L",
+      "document_reference": "Page 7, Section IV.1 Overview",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 7,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-019",
+      "text": "Technical/Management Proposal shall be limited to 25 pages for the Basic IDIQ.",
+      "rfp_section": "L",
+      "document_reference": "Page 7, Section IV.2.a(1)",
+      "binding_level": "Mandatory",
+      "category": "L_PAGE_LIMITS",
+      "page_number": 7,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-020",
+      "text": "Technical/Management Proposal shall be limited to 25 pages for each Task Order.",
+      "rfp_section": "L",
+      "document_reference": "Page 7, Section IV.2.a(2)",
+      "binding_level": "Mandatory",
+      "category": "L_PAGE_LIMITS",
+      "page_number": 7,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-021",
+      "text": "Statement of Work (SOW) shall be limited to 10 pages for the Basic IDIQ.",
+      "rfp_section": "L",
+      "document_reference": "Page 7, Section IV.2.b(1)",
+      "binding_level": "Mandatory",
+      "category": "L_PAGE_LIMITS",
+      "page_number": 7,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-022",
+      "text": "Statement of Work (SOW) shall be limited to 5 pages for each Task Order.",
+      "rfp_section": "L",
+      "document_reference": "Page 7, Section IV.2.b(2)",
+      "binding_level": "Mandatory",
+      "category": "L_PAGE_LIMITS",
+      "page_number": 7,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-023",
+      "text": "For efforts exceeding $900,000.00, Subcontracting Plans shall be submitted in the cost/business proposal.",
+      "rfp_section": "L",
+      "document_reference": "Page 7, Section IV.2.c Subcontracting Plans",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 7,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-024",
+      "text": "Labor rates for these labor categories shall be submitted with the proposal and will be negotiated at the IDIQ level.",
+      "rfp_section": "L",
+      "document_reference": "Page 8, Section V.1.b Cost/Price",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 8,
+      "source_document": "TEMPEST ARA Call 06_SENTRA.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-025",
+      "text": "The Contractor shall then submit to the Contracting Officer a technical proposal.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 9, Page 1, Section 1.a.i",
+      "binding_level": "Mandatory",
+      "category": "ORDERING",
+      "page_number": 1,
+      "source_document": "Attachment 9 - SENTRA Ordering Instructions.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-026",
+      "text": "The Contractor shall submit a cost proposal identifying labor categories and hours within each category required for the performance of the proposed work. The Contractor shall utilize the labor categories and labor rates agreed to on the SENTRA IDIQ.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 9, Page 1, Section 1.a.ii",
+      "binding_level": "Mandatory",
+      "category": "ORDERING",
+      "page_number": 1,
+      "source_document": "Attachment 9 - SENTRA Ordering Instructions.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-027",
+      "text": "The Contractor is not authorized to commence performance prior to issuance of the Order by the Contracting Officer.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 9, Page 1, Section 2",
+      "binding_level": "Mandatory",
+      "category": "ORDERING",
+      "page_number": 1,
+      "source_document": "Attachment 9 - SENTRA Ordering Instructions.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-028",
+      "text": "The Contractor's failure to notify the Contracting Officer of its intent to reject the Order within 7 business days after receipt of a unilaterally issued Order shall constitute Contractor acceptance of the terms and conditions of the Order as written.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 9, Page 1, Section 3",
+      "binding_level": "Mandatory",
+      "category": "ORDERING",
+      "page_number": 1,
+      "source_document": "Attachment 9 - SENTRA Ordering Instructions.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-029",
+      "text": "The Contractor shall then submit the following within five (5) business days of receiving a RAC Request for Estimate: submit to the Contracting Officer a technical proposal and RAC Statement of Work (SOW).",
+      "rfp_section": "C",
+      "document_reference": "Attachment 9, Page 2, RAC Section 1.a.i",
+      "binding_level": "Mandatory",
+      "category": "ORDERING",
+      "page_number": 2,
+      "source_document": "Attachment 9 - SENTRA Ordering Instructions.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-030",
+      "text": "The Contractor shall utilize prior agreed upon labor categories and labor rates identified in the basic SENTRA IDIQ.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 9, Page 2, RAC Section 1.a.ii",
+      "binding_level": "Mandatory",
+      "category": "ORDERING",
+      "page_number": 2,
+      "source_document": "Attachment 9 - SENTRA Ordering Instructions.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-031",
+      "text": "The Contractor is not authorized to commence performance prior to issuance of a modification by the Contracting Officer.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 9, Page 2, RAC Section 2",
+      "binding_level": "Mandatory",
+      "category": "ORDERING",
+      "page_number": 2,
+      "source_document": "Attachment 9 - SENTRA Ordering Instructions.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-032",
+      "text": "The Contractor shall provide the nomenclature for proposed labor categories that correlate to the Government labor category and proposed resumes.",
+      "rfp_section": "L",
+      "document_reference": "Attachment 8, Page 1",
+      "binding_level": "Mandatory",
+      "category": "L_SUBMISSION",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-033",
+      "text": "Aerospace/Astronautical Engineering personnel shall have expertise in High-Fidelity Modeling, Software Experimentation and Testing, Model Configuration Management with 10+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 1, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-034",
+      "text": "Electrical/Electronics Engineering personnel shall have expertise in Cyber physical, Communication, Satellite, Active Sensing, Passive Sensing, non-kinetic effects systems modeling with 5+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 1, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-035",
+      "text": "Mechanical Engineering personnel shall have expertise in High-Fidelity Coding, Code Testing, Configuration Management with 5+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 1, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-036",
+      "text": "Systems Engineering personnel shall have expertise in Digital Engineering, Model Based Systems Engineering, Designing, analyzing and Documenting Complex Systems with 5+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 1, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-037",
+      "text": "MS&A Engineering personnel shall have expertise in Model and Simulation Development, Analysis and Interpretation with 5+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 1, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-038",
+      "text": "General Engineering personnel shall have expertise in M&S, Data Analyst, Code Development, Software Development, Programming, Documentation with 0+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 1, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-039",
+      "text": "Computer Scientist/Software Developer personnel shall have expertise in Software Development, Software Architecture, Software Documentation, Deployment, Configuration Management with 5+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 1, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 1,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-040",
+      "text": "Analyst personnel shall have expertise in M&S, Software, Data, Intelligence, Operational Analysis with 2+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 2, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 2,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-041",
+      "text": "Physicist personnel shall have expertise in Kinematics Modeling, Performance Modeling with 2+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 2, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 2,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    },
+    {
+      "gt_id": "GT-SENTRA-042",
+      "text": "Statistics/Mathematician personnel shall have expertise in Design of Experiments, Statistical Methods, Algorithm Development with 2+ years directly related experience.",
+      "rfp_section": "C",
+      "document_reference": "Attachment 8, Page 2, Labor Categories Table",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 2,
+      "source_document": "Attachment 8 - SENTRA Proposed Labor Category Mapping.pdf"
+    }
+  ],
+  "statistics": {
+    "total_requirements": 42,
+    "by_binding_level": {
+      "Mandatory": 37,
+      "Highly_Desirable": 5,
+      "Desirable": 0
+    },
+    "by_category": {
+      "L_SUBMISSION": 12,
+      "L_ELIGIBILITY": 4,
+      "L_PAGE_LIMITS": 4,
+      "PERSONNEL": 11,
+      "ORDERING": 7,
+      "DELIVERABLES": 2,
+      "COMPLIANCE": 1,
+      "EVALUATION": 0
+    },
+    "by_section": {
+      "L": 24,
+      "C": 17,
+      "M": 0
+    }
+  },
+  "validation_notes": {
+    "document_type": "Advanced Research Announcement (ARA)",
+    "missing_documents": "Attachments 1, 2, and 5 (SOO and DD254) are CUI and not publicly available",
+    "extraction_challenges": [
+      "Requirements spread across multiple attachments",
+      "Mix of Section L (Instructions) and Section C (SOW) requirements",
+      "Implied requirements from labor category tables",
+      "Less explicit SHALL language than traditional RFPs"
+    ],
+    "test_value": "Tests PropelAI ability to extract requirements from non-traditional RFP formats"
+  }
+}
