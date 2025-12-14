@@ -1342,6 +1342,24 @@ def _extract_rfp_metadata(rfp: Dict, rfp_id: str) -> Tuple[str, str]:
                 if pattern in name:
                     is_filename = True
                     break
+
+            # Additional filter: reject regulatory/clause language
+            reject_phrases = [
+                "procedures in providing", "written objection",
+                "non-government advisors", "organizational conflict",
+                "far clause", "dfar clause"
+            ]
+            name_lower = name.lower()
+            for phrase in reject_phrases:
+                if phrase in name_lower:
+                    is_filename = True
+                    break
+
+            # Reject if starts with lowercase (partial sentence)
+            first_alpha = next((c for c in name if c.isalpha()), None)
+            if first_alpha and first_alpha.islower():
+                is_filename = True
+
             if not is_filename:
                 rfp_title = name
 

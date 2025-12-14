@@ -338,7 +338,13 @@ class RFPStructureParser:
 
     def _is_valid_title(self, title: str) -> bool:
         """
-        Validate that a candidate title is not a filename or garbage.
+        Validate that a candidate title is not a filename, clause, or garbage.
+
+        Enhanced filtering to catch:
+        - Filenames and timestamps
+        - FAR/regulatory clause language
+        - Procedural phrases that aren't titles
+        - Partial sentences (lowercase starts)
         """
         if not title or len(title) < 5:
             return False
@@ -358,15 +364,55 @@ class RFPStructureParser:
         if alpha_chars < len(title) * 0.3:
             return False
 
-        # Reject common non-title phrases
-        reject_phrases = [
+        # Reject if doesn't start with capital letter (partial sentence)
+        # Skip leading numbers/punctuation and check first meaningful alpha char
+        # But allow patterns like "24x7" where lowercase is part of alphanumeric token
+        title_stripped = title.strip()
+        if title_stripped:
+            # Find first word (sequence of alphanumeric chars)
+            import re as regex
+            first_word_match = regex.match(r'^[\d\W]*([a-zA-Z][\w]*)', title_stripped)
+            if first_word_match:
+                first_word = first_word_match.group(1)
+                # If first word is all lowercase and not a common abbreviation/code, reject
+                if first_word.islower() and len(first_word) > 3:
+                    # Allow technical terms like "24x7" by checking if preceded by digits
+                    preceded_by_digit = regex.match(r'^\d', title_stripped)
+                    if not preceded_by_digit:
+                        return False
+
+        # Reject common non-title phrases (start with)
+        reject_start_phrases = [
             'attachment', 'exhibit', 'appendix', 'see section',
-            'amendment', 'modification', 'page of pages'
+            'amendment', 'modification', 'page of pages',
+            'procedures', 'requirements', 'instructions',
+            'pursuant to', 'in accordance', 'as described',
+            'the contractor', 'the offeror', 'the government',
+            'all offerors', 'each offeror',
         ]
-        title_lower = title.lower()
-        for phrase in reject_phrases:
+        title_lower = title.lower().strip()
+        for phrase in reject_start_phrases:
             if title_lower.startswith(phrase):
                 return False
+
+        # Reject FAR/regulatory clause language (contains)
+        reject_contains = [
+            'non-government advisors',
+            'written objection',
+            'organizational conflict',
+            'far clause', 'dfar clause',
+            'shall be provided',
+            'must be submitted',
+            'are required to',
+            'in providing written',
+        ]
+        for phrase in reject_contains:
+            if phrase in title_lower:
+                return False
+
+        # Reject if too long (likely a sentence, not a title)
+        if len(title) > 150:
+            return False
 
         return True
     
