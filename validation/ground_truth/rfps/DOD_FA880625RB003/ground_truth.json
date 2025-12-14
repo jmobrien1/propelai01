@@ -1,0 +1,1074 @@
+{
+  "rfp_id": "DOD_FA880625RB003",
+  "title": "24/7 Network Operations Center (NOC) Statement of Work",
+  "agency": "United States Space Force (USSF) - Space Systems Command (SSC)",
+  "naics": "541330",
+  "set_aside": "WOSB",
+  "contract_type": "CPFF",
+  "solicitation_number": "FA880625RB003",
+  "annotation_date": "2024-12-14",
+  "annotator": "PropelAI Validation Framework",
+  "annotation_version": "1.0",
+  "source_documents": [
+    {
+      "filename": "Attachment 1. Stament Of Work.pdf",
+      "type": "SOW",
+      "pages": 21
+    },
+    {
+      "filename": "Solicitation - FA880625RB003.pdf",
+      "type": "Solicitation",
+      "pages": 15
+    }
+  ],
+  "requirements": [
+    {
+      "gt_id": "GT-FA880625RB003-001",
+      "text": "The Contractor shall provide program management and staffing resources necessary to plan, manage, direct, control, and report on all activities contributing to requirements identified herein.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.1",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-002",
+      "text": "The Contractor shall utilize government-furnished communication tools to include, but not limited to: Google Electronic Mail (e-mail) (Impact Level (IL)-4 e-mail), Microsoft (MS) Teams, Mattermost, Jira, Jira Align, and Confluence.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.2",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-003",
+      "text": "The Contractor shall utilize government-furnished common services identified within the current Service Description Document managed via the Space C2 Configuration Management Board (CMB). Exceptions to use of specified common services shall be approved by the Government.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.3",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-004",
+      "text": "The Contractor shall maintain awareness of the Space C2 Development Teams implementation of a Development, Security, and Operations (DevSecOps) approach as managed by the Space C2 CMB.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.4",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-005",
+      "text": "The Contractor shall proactively support collaborative root cause analysis and incorporate results in future processes, tooling, instrumentation, procedural changes, and/or software development to minimize reoccurrence of cyber, operational, and/or development disruptions.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.5",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-006",
+      "text": "The Contractor shall provide contract status information for SPO management purposes. This includes SPO level reviews, executive reviews, independent program reviews and assessments, inspections, milestone events, budget excursions, and user conferences.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.6",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-007",
+      "text": "The Contractor shall define conditions and process in writing for notifying the SPO of significant events to include security violations, cyber/network intrusions, criminal investigations, adverse financial and schedule information, and mishap reports regarding hardware or personnel. The contractor shall report significant events to the Government Lead, or their designee, within 24 hours of the event.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.7",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-008",
+      "text": "The Contractor shall notify the Government Lead, or their designee, of Government Senior Leadership or other stakeholder program visits as well as program media exposures. The contractor shall report events within 48 hours of identification or within 24 hours of the event, whichever comes sooner.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.8",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-009",
+      "text": "The Contractor shall establish necessary subcontracts and ensure the flow down of Intellectual Property assertions, Program Management requirements, and Personnel and Staffing requirements. The Contractor shall ensure that subcontractor data available to the Contractor is also available to the Government (to be delivered in the DAL).",
+      "rfp_section": "C",
+      "sow_reference": "2.1.9",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 8,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-010",
+      "text": "The Contractor shall maintain an Organizational Conflict of Interest (OCI) plan as applicable.",
+      "rfp_section": "C",
+      "sow_reference": "2.1.10",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-011",
+      "text": "The Contractor shall support Agile team planning and provide input for dependencies between expected product support and software and development, as well as on-prem infrastructure impacts to external development.",
+      "rfp_section": "C",
+      "sow_reference": "2.2.1",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-012",
+      "text": "The Contractor shall collect metrics to include, but not limited to, System uptime, Cost per incident, Mean time between critical failures and mean time to restore.",
+      "rfp_section": "C",
+      "sow_reference": "2.2.2",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-013",
+      "text": "The Contractor shall maintain a quarterly, one-year, and five-year roadmap forecast within the SPO-provided Jira instance that includes at a minimum: major upgrades, technology changes, significant concept of operations changes, and product end-of-life.",
+      "rfp_section": "C",
+      "sow_reference": "2.2.3",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-014",
+      "text": "The Contractor shall coordinate and gain approval of product technical baseline changes and the timing of any migration / adoption through the Space C2 CMB ahead of change implementation. This includes, but is not limited to, changes to product resourcing, security, interfaces (i.e., connections, data, messaging), commercial tooling, and any major product revisions.",
+      "rfp_section": "C",
+      "sow_reference": "2.2.4",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-015",
+      "text": "The Contractor shall provide weekly activity reports summarizing key milestones, activities, and operational benefits (e.g., removed X-hours of manual tasks with automated function).",
+      "rfp_section": "C",
+      "sow_reference": "2.2.5",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-016",
+      "text": "The Contractor shall conduct a Kick-off Meeting within 30 days of contract award to include, at a minimum: special topics, roadmap review, and risk and mitigation plans. Meeting read ahead materials shall be made available NLT 7 days prior to meeting.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.1",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-017",
+      "text": "The Contractor shall develop post-meeting minutes and respond to post-meeting action items as requested by the SPO within 24 hours of the meeting ending.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.2",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-018",
+      "text": "The Contractor shall conduct a monthly Program Management Review (PMR) alternating each month between an Executive-level PMR and a Program Manager-level PMR. The PMR shall be virtual, unless otherwise specified by the Government Lead, or their designee. The PMR draft agenda shall sent to the Government Lead no less than five (5) business days prior to the PMR and the agenda shall be approved by the Government Lead.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.3",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-019",
+      "text": "The Contractor shall develop post-PMR minutes and respond to post-PMR action items.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.4",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-020",
+      "text": "The Contractor shall obtain written approval by the Government Lead, or their designee, ahead of travel that is already authorized in the contract.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.5",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 9,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-021",
+      "text": "The Contractor shall support quarterly, multi-day (nominally three-day), in-person Program Increment events in Colorado Springs, Colorado. The location, duration, and frequency may change as requested by the SPO.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.6",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 10,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-022",
+      "text": "The Contractor shall support quarterly, two-week long, in-person test events at operator location(s). Initial operator location will be at Vandenberg Space Force Base, CA; alternative locations may include, but are not limited to, Dahlgren Naval Support Facility, VA and Schriever SFB, CO. The duration and frequency may change as requested by the SPO.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.7",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 10,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-023",
+      "text": "The Contractor shall make their own travel and lodging arrangements and shall ensure all required security requirements (e.g., Visit Requests) required for access to installations and/or facilities are completed prior to travel. Compact Cars and Economy seats shall be used when available.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.8",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 10,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-024",
+      "text": "The Contractor shall support meetings with mission partners and stakeholders as needed at required classification levels at a minimum Quarterly.",
+      "rfp_section": "C",
+      "sow_reference": "2.3.9",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 10,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-025",
+      "text": "The Contractor shall provide the CDRLs identified in Table 2. The SPO will review the submission of data per the CDRL prior to acceptance, acceptance criteria will include verification of appropriate intellectual property markings.",
+      "rfp_section": "C",
+      "sow_reference": "2.4.1",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 10,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-026",
+      "text": "The Contractor shall enter into ACAs with the contractors listed at Vandenberg Space Force Base (VSFB) to support cross-project integration for accomplishment of the SPO's requirement. Additional contractors requiring ACAs may be identified by the SPO throughout the duration of the contract.",
+      "rfp_section": "C",
+      "sow_reference": "2.4.6",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 11,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-027",
+      "text": "The Contractor shall establish ACAs with new vendors within 45 days of notification by the Government.",
+      "rfp_section": "C",
+      "sow_reference": "2.4.7",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 11,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-028",
+      "text": "The Contractor shall provide a copy of the ACA(s) to the Contracting Officer(s) for review before execution of the document by the cooperating contractors.",
+      "rfp_section": "C",
+      "sow_reference": "2.4.10",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-029",
+      "text": "The Contractor shall not be relieved of contract requirements or entitled to adjustments to the contract terms because of a failure to resolve a disagreement with an associate contractor.",
+      "rfp_section": "C",
+      "sow_reference": "2.4.11",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-030",
+      "text": "The contractor shall cooperate with Federally Funded Research and Development Center (FFRDC) contracts, as identified within the Space C2 contractors list.",
+      "rfp_section": "C",
+      "sow_reference": "2.4.14",
+      "binding_level": "Mandatory",
+      "category": "PROGRAM_MANAGEMENT",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-031",
+      "text": "The Contractor direct support personnel shall be located on-site at VSFB.",
+      "rfp_section": "C",
+      "sow_reference": "3.1.1",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-032",
+      "text": "The Contractor shall provide coverage to provide on-site 24/7 support.",
+      "rfp_section": "C",
+      "sow_reference": "3.1.2",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-033",
+      "text": "The Contractor shall provide infrastructure support on a 5-days-a-week, 12-hours-a-day (5/12) basis, as well as limited weekend and late-night support during test events, with on-call support for non-duty hours and weekends. See Section 5.1 for further details.",
+      "rfp_section": "C",
+      "sow_reference": "3.1.3",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-034",
+      "text": "The Contractor shall establish and maintain an organizational team structure possessing the knowledge, skills, and experience capable of performing all requirements.",
+      "rfp_section": "C",
+      "sow_reference": "3.2.1",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-035",
+      "text": "The Contractor shall assign to the contract those persons, whose resumes, were submitted in their proposal as required in the Request for Proposal (RFP) to fill the Key Personnel requirements of the contract. These persons shall fill the Key Personnel positions for not less than one year from the contract effective date.",
+      "rfp_section": "C",
+      "sow_reference": "3.2.2",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-036",
+      "text": "The Contractor shall ensure that during the first year of contract performance period; no Key Personnel substitutions will be permitted unless such substitutions are necessitated by an individual's sudden illness, death, or termination of employment. In any of these events, the Contractor shall promptly notify the Contracting Officer and provide the information required by paragraph below.",
+      "rfp_section": "C",
+      "sow_reference": "3.2.3",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 12,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-037",
+      "text": "The Contractor shall propose a substitution of such Key Personnel if Key Personnel for whatever reason become unavailable for work under the contract for a continuous period exceeding 30 working days.",
+      "rfp_section": "C",
+      "sow_reference": "3.2.4",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 13,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-038",
+      "text": "All Contractor direct support personnel shall be TS/SCI eligible.",
+      "rfp_section": "C",
+      "sow_reference": "3.3.1",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 13,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-039",
+      "text": "All Contractor direct support personnel shall be US citizens and shall obtain and maintain a Common Access Card (CAC) (see DoD Manual (DoDM-1000.13-M-V1) for CAC issuance criteria).",
+      "rfp_section": "C",
+      "sow_reference": "3.3.2",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 13,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-040",
+      "text": "All Contractor direct support personnel shall obtain and maintain Secret Internet Protocol Router Network (SIPRNet) access.",
+      "rfp_section": "C",
+      "sow_reference": "3.3.3",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 13,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-041",
+      "text": "A minimum of 25% of contractor direct support personnel shall obtain and maintain Joint Worldwide Intelligence Communications System (JWICS) access.",
+      "rfp_section": "C",
+      "sow_reference": "3.3.4",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 13,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-042",
+      "text": "The Contractor shall obtain the latest facility/installation and IT requirements for network access from the applicable local Security Office. Granting of logical and physical access privileges remains a local policy and business operation function of the local facility.",
+      "rfp_section": "C",
+      "sow_reference": "3.3.7",
+      "binding_level": "Mandatory",
+      "category": "PERSONNEL",
+      "page_number": 14,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-043",
+      "text": "The Contractor shall establish and maintain a 24/7 NOC at VSFB.",
+      "rfp_section": "C",
+      "sow_reference": "4.1.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 14,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-044",
+      "text": "The Contractor shall modify and maintain Government provided procedures, training, call trees, and other product support material as needed. Where necessary, the Contractor shall coordinate and build call tree procedures, troubleshooting procedures, and training products to support the 24/7 NOC operations. This includes modifications in support of added applications and/or systems.",
+      "rfp_section": "C",
+      "sow_reference": "4.1.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 14,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-045",
+      "text": "The Contractor shall coordinate with platform, data, and application teams to modify monitoring / operational dashboards as needed to support the Contractor's ability to efficiently run through troubleshooting procedures. This includes modifications in support of added applications and/or systems.",
+      "rfp_section": "C",
+      "sow_reference": "4.1.3",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 14,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-046",
+      "text": "The Contractor shall develop a consolidated training plan for 24/7 NOC team member certification.",
+      "rfp_section": "C",
+      "sow_reference": "4.1.4",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 14,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-047",
+      "text": "The Contractor shall develop and implement 24/7 NOC crew facility layout in coordination with 18 SDS, Space C2 platform teams, and other Contractor-identified units. Note: The SPO anticipates the 24/7 support team will sit on the TS/SCI operational floor in VSFB Building 8401.",
+      "rfp_section": "C",
+      "sow_reference": "4.1.5",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 14,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-048",
+      "text": "The Contractor shall provide 24/7 Tier 1 support to Space C2 software products, network interfaces, network infrastructure, infrastructure, and platform services. Tier 1 support can be generally defined as: Account/password resets, Simple restores, System response, Service request ticket submissions via KM Jira helpdesk, Initiation of Tier 2 after hour support recalls / call trees, Enablement of 2-minute system support and roll back procedures as required, Initiation of rollback or failover procedures if procedures dictate such actions, System status documentation by shift, End of shift reporting.",
+      "rfp_section": "C",
+      "sow_reference": "4.2.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-049",
+      "text": "The Contractor shall provide system health utilizing dashboards and call tree procedures.",
+      "rfp_section": "C",
+      "sow_reference": "4.2.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-050",
+      "text": "The Contractor shall utilize screen captures, user-reported symptoms, and any other available information to document off nominal conditions.",
+      "rfp_section": "C",
+      "sow_reference": "4.2.3",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-051",
+      "text": "The Contractor shall report deviations from nominal system conditions in an end of shift report, to include what software or systems are showing off nominal conditions, the symptoms, and the time of such symptoms. All end of shift reports shall be consolidated and stored on a Government designated platform.",
+      "rfp_section": "C",
+      "sow_reference": "4.2.4",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-052",
+      "text": "The Contractor shall relay off-nominal conditions to Tier 2 and/or Tier 3 product support tiers based on documented procedures. The information shall be relayed at the lowest security level possible, while still providing meaningful data.",
+      "rfp_section": "C",
+      "sow_reference": "4.2.5",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-053",
+      "text": "The Contractor shall coordinate with the Space C2 configuration management and cyber teams to disposition any system configuration changes required to respond to system outages.",
+      "rfp_section": "C",
+      "sow_reference": "4.2.6",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-054",
+      "text": "The Contractor shall provide 24/7 on-site support for Space C2 software capabilities. This includes monitoring at Secret for on-prem and cloud-hosted (Impact Level-6) software applications and will include monitoring at TS/SCI for cloud-hosted software applications in the future.",
+      "rfp_section": "C",
+      "sow_reference": "4.3.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-055",
+      "text": "The Contractor shall resolve basic user system access issues identified in Section 4.2.",
+      "rfp_section": "C",
+      "sow_reference": "4.3.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-056",
+      "text": "The Contractor shall track system status and trends from the provided dashboards to predict and restore system operational capabilities in a Government approved report.",
+      "rfp_section": "C",
+      "sow_reference": "4.3.3",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-057",
+      "text": "The Contractor shall execute workflows to inform and track Tier 2 support regarding a failure mode or degradation of service pertaining to that system. In the case of unclear cause of degradation, the Contractor shall perform initial contact to multiple Tier 2 contacts to further identify the source of the failure.",
+      "rfp_section": "C",
+      "sow_reference": "4.3.4",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 15,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-058",
+      "text": "The Contractor shall provide 24/7 on-call software support to include reach-back capabilities for all Commercial-Off-The-Shelf (COTS) and Government-Off-The-Shelf (GOTS) software.",
+      "rfp_section": "C",
+      "sow_reference": "4.3.5",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-059",
+      "text": "The Contractor shall serve as a 24/7 help desk. This includes assisting users with resolving basic system access issues and maintaining track of system status to understand which systems are up/down to support users who are having problems with system access.",
+      "rfp_section": "C",
+      "sow_reference": "4.3.6",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-060",
+      "text": "The Contractor shall provide 24/7 on-site support for Space C2 networking capabilities. This includes network monitoring across Secret and TS/SCI for the following systems: SPARTAN (network), SDANet (network), SDIN (network), MeshOne-T (network), CPS (network), WarpCore (data layer), NDPP (software and external hardware system).",
+      "rfp_section": "C",
+      "sow_reference": "4.4.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-061",
+      "text": "The Contractor shall leverage the SPO JIRA ticketing system to track and close all networking issues regarding system failures.",
+      "rfp_section": "C",
+      "sow_reference": "4.4.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-062",
+      "text": "The Contractor shall provide trained personnel that are continuously observing delivered dashboards, executing procedures that have been approved by the Government, and notifying Tier 2 and 3 teams of unusual behavior which could eventually lead to system failure or degradations in network connectivity.",
+      "rfp_section": "C",
+      "sow_reference": "4.4.3",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-063",
+      "text": "The Contractor shall respond to inquiries from operators, developers, and stakeholders.",
+      "rfp_section": "C",
+      "sow_reference": "4.4.4",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-064",
+      "text": "The Contractor shall execute tier 1 support directly for SPARTAN and SDANet.",
+      "rfp_section": "C",
+      "sow_reference": "4.5.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-065",
+      "text": "The Contractor shall execute additional network connectivity checks to validate all network failures and to further identify the source of failed connection.",
+      "rfp_section": "C",
+      "sow_reference": "4.5.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-066",
+      "text": "The Contractor shall monitor networking metrics to identify network congestion or other aspects of network degradation and report to the appropriate.",
+      "rfp_section": "C",
+      "sow_reference": "4.5.3",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-067",
+      "text": "The Contractor shall continuously analyze workflow of metrics to further identify root causes in order to support reduction in cost latency, and increased throughput quarterly.",
+      "rfp_section": "C",
+      "sow_reference": "4.5.4",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 16,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-068",
+      "text": "The Contractor shall execute pre-determined contingency plans in the case of significant degradation to restore network service to critical operations.",
+      "rfp_section": "C",
+      "sow_reference": "4.5.5",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-069",
+      "text": "The Contractor shall notify affected operators regarding a degradation in capability of network connectivity and perform pre-determined workflows.",
+      "rfp_section": "C",
+      "sow_reference": "4.5.6",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-070",
+      "text": "The Contractor shall notify affected operators when network capabilities are restored or improved to nominal capabilities.",
+      "rfp_section": "C",
+      "sow_reference": "4.5.7",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-071",
+      "text": "The Contractor shall provide Tier 1 24/7 support to include monitoring dashboards, performing trend analysis using key data parameters from dashboards, notification of 'yellow' system state, rapid escalation of 'red' system state to Tier 2, and executing pre-canned procedures to include potentially failing over from Side A to Side B if failure is significant.",
+      "rfp_section": "C",
+      "sow_reference": "4.6.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-072",
+      "text": "The Contractor shall execute workflows to inform and track Tier 2 support regarding a failure mode or degradation of platform or infrastructure service. In the case of unclear cause of degradation, the contractor shall perform initial contact to multiple Tier 2 contacts to further identify the source of the failure.",
+      "rfp_section": "C",
+      "sow_reference": "4.6.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-073",
+      "text": "The Contractor shall provide 5/12 support as specified in Section 3.1.3. This support shall include: One primary and one secondary technician on call via telecom, 2-hour response time from initial contact and acknowledgement.",
+      "rfp_section": "C",
+      "sow_reference": "5.1.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-074",
+      "text": "The Contractor shall document discrepancies using three categories: Routine: no impact to operational mission, can be resolved during normal duty hours; Urgent: results in limited system degradation, mission essential operations are not affected; Emergency: directly impacts mission capability and requires immediate action.",
+      "rfp_section": "C",
+      "sow_reference": "5.1.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-075",
+      "text": "The Contractor shall maintain the below Space C2 Infrastructure items located in VSFB Building 8401: Firewalls, Switches, Linux and Windows VMs, Cloud/Blade server configurations, Desktop support, Storage arrays, Edge Devices, Last mile connectivity to KM environment(s), Manage external data feeds to Space C2 environments.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 17,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-076",
+      "text": "The Contractor shall provide support to transition Space C2 mission operations from existing systems to modern products through scheduled and unscheduled support actions that maintain the status and health of the system and enable quick restoral of service once a failure occurs. This support includes, but is not limited to: Fault detection and isolation, Replacement of failed Line Replaceable Units (LRUs), Accomplishment of scheduled/preventive maintenance actions, Identification of system improvements and modifications, Obsolescence management, Configuration control of system network and software within the boundary, File and database administration, Installation of approved updates, Stock control of on-site spares, miscellaneous parts, and work order residue.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-077",
+      "text": "The Contractor shall train and provide on-prem support to the Space C2 Hardware as a Service (HaaS) team.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.3",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-078",
+      "text": "The Contractor shall deliver hands-on expertise and configuration as well as maintain admin and super user accounts for each.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.4",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-079",
+      "text": "The Contractor shall ensure each of the items are properly documented, configuration controlled through Space C2 CMB process, and up to date with security relevant software/firmware upgrades.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.5",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-080",
+      "text": "The Contractor shall conduct and support system level troubleshooting and fault isolation.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.6",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-081",
+      "text": "The Contractor shall maintain an operational relevant spare posture for on-prem infrastructure.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.7",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-082",
+      "text": "The Contractor shall manage software licenses and warranties required to run and support all on-prem infrastructure. This includes managing license and certificate expirations, ensuring that expiration dates are not hit.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.8",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-083",
+      "text": "The Contractor shall coordinate with Base IT, Infrastructure Teams, the SPO, and other relevant organizations for connections and approvals for changes.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.9",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-084",
+      "text": "The Contractor shall participate in local area and Space C2 change boards when they impact or have the potential to impact Space C2 efforts.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.10",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 18,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-085",
+      "text": "The Contractor shall coordinate and support the execution of various cybersecurity analyses to include both hands-on vulnerability tests as well as passive cyber analyses.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.11",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-086",
+      "text": "The Contractor shall maintain appropriate on-prem expertise to complete all urgent and non-urgent tasking to include on-boarding and training new members of the team.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.12",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-087",
+      "text": "The Contractor shall work with the SPO and HaaS teams to determine and prioritize tasking.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.13",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-088",
+      "text": "The Contractor shall inform the SPO and HaaS teams in a timely manner for high-risk tasks or those to which the on-prem team does not have the full scope or skills required to complete the task safely and efficiently.",
+      "rfp_section": "C",
+      "sow_reference": "5.2.14",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-089",
+      "text": "The Contractor shall serve as an extension of Space C2 teams, acting as a standalone service desk to users during regular hours.",
+      "rfp_section": "C",
+      "sow_reference": "5.3.1",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-090",
+      "text": "The Contractor shall assist with access and visit requests to the facility with Government coordination and approval.",
+      "rfp_section": "C",
+      "sow_reference": "5.3.2",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-091",
+      "text": "The Contractor shall perform file transfers from low to high side to support tests and/or operations with Government approval.",
+      "rfp_section": "C",
+      "sow_reference": "5.3.3",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-092",
+      "text": "The Contractor shall establish and maintain user accounts and role-based access controls (RBAC).",
+      "rfp_section": "C",
+      "sow_reference": "5.3.4",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-093",
+      "text": "The Contractor shall assign, renew, and change account passwords (also discussed in Section 4.2).",
+      "rfp_section": "C",
+      "sow_reference": "5.3.5",
+      "binding_level": "Mandatory",
+      "category": "TECHNICAL",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-094",
+      "text": "The Contractor shall develop and ensure the successful implementation of a transition-in plan and identify dependencies which will require government acceptance.",
+      "rfp_section": "C",
+      "sow_reference": "7.1.1",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 19,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-095",
+      "text": "The Contractor shall develop and maintain a checklist and schedule of actions that must be accomplished by the end of the on-ramp period, not to exceed a 60-day duration.",
+      "rfp_section": "C",
+      "sow_reference": "7.1.5",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-096",
+      "text": "The Contractor shall identify within the first 30 days of the on-ramp period all the government property, information, and/or data that the Contractor plans to transition for use on this effort.",
+      "rfp_section": "C",
+      "sow_reference": "7.1.6",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-097",
+      "text": "The Contractor shall manage and execute the on-ramp plan to support transition of sustainment responsibilities, ensuring mission requirements are met without interruption.",
+      "rfp_section": "C",
+      "sow_reference": "7.1.7",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-098",
+      "text": "The Contractor shall assume management responsibility for all government property, information, and/or data identified and approved by the SPO by the end of the on-ramp period.",
+      "rfp_section": "C",
+      "sow_reference": "7.1.8",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-099",
+      "text": "The Contractor shall perform an accounting inventory during the on-ramp period to transfer equipment accountability.",
+      "rfp_section": "C",
+      "sow_reference": "7.1.9",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-100",
+      "text": "The Contractor shall conduct an initial kick-off meeting and bi-weekly management reviews, during the on-ramp period, to provide status of the transition tasks, risks, and issues. The Contractor shall conduct more frequent reviews if needed to ensure successful completion of all transition tasks needed to support full transference from the various incumbents to the 24/7 NOC contract by the end of the on-ramp period.",
+      "rfp_section": "C",
+      "sow_reference": "7.1.11",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-101",
+      "text": "The Contractor shall support a transition to a new contract(s) and/or new contractor(s) upon period of performance completion. Transition support shall begin up to 6-months prior to contract end or as specified by the SPO.",
+      "rfp_section": "C",
+      "sow_reference": "7.2.1",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-102",
+      "text": "The Contractor shall ensure the successful implementation of a transition plan and identify dependencies which will require government acceptance.",
+      "rfp_section": "C",
+      "sow_reference": "7.2.2",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 20,
+      "source_document": "SOW"
+    },
+    {
+      "gt_id": "GT-FA880625RB003-103",
+      "text": "The Contractor shall manage and execute the transition, ensuring mission requirements are met without interruption.",
+      "rfp_section": "C",
+      "sow_reference": "7.2.4",
+      "binding_level": "Mandatory",
+      "category": "TRANSITION",
+      "page_number": 21,
+      "source_document": "SOW"
+    }
+  ],
+  "statistics": {
+    "total_requirements": 103,
+    "by_binding_level": {
+      "Mandatory": 103,
+      "Highly_Desirable": 0,
+      "Desirable": 0
+    },
+    "by_category": {
+      "PROGRAM_MANAGEMENT": 30,
+      "PERSONNEL": 12,
+      "TECHNICAL": 51,
+      "TRANSITION": 10
+    },
+    "by_section": {
+      "C": 103
+    }
+  },
+  "notes": "This ground truth dataset was created from the Statement of Work (SOW) for FA880625RB003 - 24/7 Network Operations Center (NOC). All requirements are from SOW Section C (Statement of Work). The SOW is well-structured with clear SHALL statements making it an excellent test case for PropelAI's extraction accuracy. Key domains covered: Program Management, Personnel & Staffing, 24/7 NOC Operations, Infrastructure Support, and Transition Planning."
+}
