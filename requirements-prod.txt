@@ -11,5 +11,8 @@ pypdf>=3.0.0
 python-docx>=0.8.11
 openpyxl>=3.0.10
 
+# Enhanced OCR (Optional)
+tensorlake>=0.1.0  # Gemini 3 OCR for scanned PDFs
+
 # Utils
 httpx>=0.24.0
