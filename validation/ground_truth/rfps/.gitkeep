@@ -1,0 +1,5 @@
+# Ground truth RFP directories will be created here
+# Each directory contains:
+#   - ground_truth.json: Annotated requirements
+#   - metadata.json: RFP metadata
+#   - documents/: Original RFP documents (PDF, DOCX, etc.)

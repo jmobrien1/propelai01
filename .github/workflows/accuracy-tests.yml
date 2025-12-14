@@ -1,0 +1,147 @@
+name: Accuracy Regression Tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly Monday at 6am UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      run_full_suite:
+        description: 'Run full accuracy test suite'
+        required: false
+        default: 'false'
+
+jobs:
+  accuracy-tests:
+    name: Accuracy Regression Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true  # Ground truth may include PDFs
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-html pytest-json-report
+
+      - name: Run unit tests
+        run: |
+          pytest tests/test_accuracy.py::TestMatchingAlgorithms \
+            tests/test_accuracy.py::TestMetricsCalculation \
+            -v --tb=short
+
+      - name: Run accuracy tests
+        id: accuracy-tests
+        run: |
+          pytest tests/test_accuracy.py::TestExtractionAccuracy \
+            --json-report \
+            --json-report-file=accuracy_report.json \
+            -v --tb=short || true
+
+      - name: Check for regression
+        if: hashFiles('.accuracy_baseline.json') != ''
+        run: |
+          python scripts/check_accuracy_regression.py \
+            --current accuracy_report.json \
+            --baseline .accuracy_baseline.json \
+            --threshold 0.02
+
+      - name: Upload accuracy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: accuracy-report
+          path: |
+            accuracy_report.json
+            accuracy_report.html
+          retention-days: 30
+
+      - name: Post accuracy summary to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let summary = '## Accuracy Test Results\n\n';
+
+            try {
+              const report = JSON.parse(fs.readFileSync('accuracy_report.json', 'utf8'));
+
+              if (report.summary) {
+                summary += `**Tests:** ${report.summary.passed} passed, ${report.summary.failed} failed\n\n`;
+              }
+
+              // Check thresholds
+              const thresholds = {
+                precision: { min: 0.85, label: 'Precision' },
+                recall: { min: 0.90, label: 'Recall' },
+                f1_score: { min: 0.87, label: 'F1 Score' },
+                section_accuracy: { min: 0.90, label: 'Section Accuracy' },
+                mandatory_recall: { min: 0.99, label: 'Mandatory Recall' }
+              };
+
+              summary += '| Metric | Value | Target | Status |\n';
+              summary += '|--------|-------|--------|--------|\n';
+
+              for (const [key, config] of Object.entries(thresholds)) {
+                const value = report[key] || 'N/A';
+                const status = typeof value === 'number' && value >= config.min ? '✅' : '❌';
+                summary += `| ${config.label} | ${typeof value === 'number' ? value.toFixed(3) : value} | ≥${config.min} | ${status} |\n`;
+              }
+
+            } catch (e) {
+              summary += `\n_Could not parse accuracy report: ${e.message}_\n`;
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.run_full_suite == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-benchmark
+
+      - name: Run performance benchmarks
+        run: |
+          pytest tests/test_accuracy.py::TestPerformanceBenchmarks \
+            --benchmark-json=benchmark.json \
+            -v || true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark.json
+          retention-days: 30
