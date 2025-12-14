@@ -18,7 +18,7 @@ import uuid
 import json
 import shutil
 import tempfile
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
@@ -789,11 +789,16 @@ def process_rfp_best_practices_background(rfp_id: str):
             return
         
         # Parse documents into text
-        store.set_status(rfp_id, "processing", 20, "Parsing documents...")
-        
+        # Check if enhanced OCR (Tensorlake) was requested
+        use_enhanced_ocr = rfp.get("use_enhanced_ocr", False)
+        if use_enhanced_ocr:
+            store.set_status(rfp_id, "processing", 20, "Parsing documents with enhanced OCR (Tensorlake)...")
+        else:
+            store.set_status(rfp_id, "processing", 20, "Parsing documents...")
+
         from agents.enhanced_compliance import MultiFormatParser, DocumentType
-        parser = MultiFormatParser()
-        
+        parser = MultiFormatParser(use_tensorlake=use_enhanced_ocr)
+
         def infer_doc_type(filename: str) -> DocumentType:
             """Infer document type from filename"""
             fname_lower = filename.lower()
@@ -922,39 +927,52 @@ def process_rfp_best_practices_background(rfp_id: str):
 
 
 @app.post("/api/rfp/{rfp_id}/process-best-practices")
-async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTasks):
+async def process_rfp_best_practices(
+    rfp_id: str,
+    background_tasks: BackgroundTasks,
+    use_enhanced_ocr: bool = False
+):
     """
     Start Best Practices CTM processing of RFP documents (v2.9)
-    
+
     Per federal proposal best practices:
     - Analyzes document structure FIRST (identifies Section L, M, C boundaries)
     - Preserves RFP's own numbering scheme (L.4.B.2, C.3.1.a)
     - Creates THREE distinct matrices: L Compliance, Technical (C/PWS), M Alignment
     - Extracts complete requirement paragraphs (never fragments)
     - Maintains evaluator-friendly formatting
+
+    Args:
+        use_enhanced_ocr: Enable Tensorlake (Gemini 3 OCR) for scanned PDFs, complex tables,
+                          or image-based documents. NOTE: Additional cost ~$0.01/page.
+                          Only recommended for scanned/image PDFs or documents with complex tables.
     """
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     if not rfp["file_paths"]:
         raise HTTPException(status_code=400, detail="No files uploaded")
-    
+
     if not best_practices_extractor:
         raise HTTPException(
-            status_code=501, 
+            status_code=501,
             detail="Best practices extraction not available. Use /process-semantic or /process endpoint instead."
         )
-    
+
+    # Store the OCR preference for the background task
+    store.update(rfp_id, {"use_enhanced_ocr": use_enhanced_ocr})
+
     # Start background processing
     store.set_status(rfp_id, "starting", 0, "Starting best practices extraction...")
     background_tasks.add_task(process_rfp_best_practices_background, rfp_id)
-    
+
     return {
         "status": "processing_started",
         "rfp_id": rfp_id,
         "files_count": len(rfp["file_paths"]),
-        "mode": "best_practices"
+        "mode": "best_practices",
+        "enhanced_ocr": use_enhanced_ocr
     }
 
 
@@ -1041,6 +1059,152 @@ async def get_requirement(rfp_id: str, req_id: str):
 
 # ============== Export ==============
 
+def _detect_agency_from_solicitation(sol_num: str) -> str:
+    """Detect federal agency from solicitation number format"""
+    if not sol_num:
+        return ""
+
+    sol_upper = sol_num.upper()
+
+    # NIH format: 75N + 5 digits + letter + 5 digits (e.g., 75N96025R00004)
+    if sol_upper.startswith("75N"):
+        return "NIH"
+
+    # Navy format: N + 5 digits + 2 digits + R/Q + digits (e.g., N0017826R30020)
+    if sol_upper.startswith("N") and len(sol_upper) >= 10:
+        import re
+        if re.match(r'^N\d{5}', sol_upper):
+            return "Navy"
+
+    # Army format: W + contract code (e.g., W912HQ-24-R-0001)
+    if sol_upper.startswith("W"):
+        return "Army"
+
+    # Air Force format: FA + digits (e.g., FA8730-24-R-0001)
+    if sol_upper.startswith("FA"):
+        return "AirForce"
+
+    # GSA format: GS- prefix
+    if sol_upper.startswith("GS"):
+        return "GSA"
+
+    # VA format: 36C prefix
+    if sol_upper.startswith("36C"):
+        return "VA"
+
+    # DHS format: 70CDCR prefix or HSCG prefix
+    if sol_upper.startswith("70") or sol_upper.startswith("HSC"):
+        return "DHS"
+
+    # HHS/CMS format: 75
+    if sol_upper.startswith("75"):
+        return "HHS"
+
+    return ""
+
+
+def _extract_rfp_metadata(rfp: Dict, rfp_id: str) -> Tuple[str, str]:
+    """
+    Extract solicitation number and title from RFP data.
+
+    Tries multiple sources in priority order to find the best values.
+
+    Returns:
+        Tuple of (solicitation_number, title)
+    """
+    import re
+
+    sol_num = None
+    rfp_title = None
+
+    # 1. Best practices extraction result (most reliable)
+    if rfp.get("best_practices_result"):
+        result = rfp["best_practices_result"]
+        if hasattr(result, 'structure') and result.structure:
+            if result.structure.solicitation_number and result.structure.solicitation_number not in ["", "UNKNOWN", "null"]:
+                sol_num = result.structure.solicitation_number
+            if result.structure.title and result.structure.title not in ["", "UNKNOWN", "null"]:
+                rfp_title = result.structure.title
+
+    # 2. Stats from extraction
+    if not sol_num:
+        stats = rfp.get("stats", {})
+        if stats.get("solicitation_number") and stats.get("solicitation_number") not in ["", "null", "UNKNOWN"]:
+            sol_num = stats["solicitation_number"]
+        elif stats.get("document_structure", {}).get("solicitation_number"):
+            sol_num = stats["document_structure"]["solicitation_number"]
+
+    # 3. Direct field on RFP
+    if not sol_num:
+        if rfp.get("solicitation_number") and rfp.get("solicitation_number") not in [None, "null", "UNKNOWN", rfp_id]:
+            sol_num = rfp["solicitation_number"]
+
+    # 4. Try to extract from RFP name if it looks like a solicitation number
+    if not sol_num:
+        name = rfp.get("name", "")
+        # Check if name contains a solicitation number pattern
+        sol_patterns = [
+            r"(FA\d{6}[RQ][A-Z]?\d{3,})",  # Air Force
+            r"(W\d{3}[A-Z]{2}\d{2}[RQ]\d{4,})",  # Army
+            r"(N\d{5}\d{2}[RQ]\d+)",  # Navy
+            r"(75N\d{5}[A-Z]\d{5})",  # NIH
+        ]
+        for pattern in sol_patterns:
+            match = re.search(pattern, name, re.IGNORECASE)
+            if match:
+                sol_num = match.group(1)
+                break
+
+    # Title extraction
+    # 1. From extraction result (already done above)
+
+    # 2. From RFP name, but clean up if it looks like a filename
+    if not rfp_title:
+        name = rfp.get("name", rfp.get("title", ""))
+        # Check if name looks like a filename (contains extension or "Attachment")
+        if name and not ("." in name and name.split(".")[-1].lower() in ["pdf", "docx", "xlsx"]):
+            if "Attachment" not in name and "Placement Procedures" not in name:
+                rfp_title = name
+
+    # 3. Generate title from solicitation number and agency
+    if not rfp_title and sol_num:
+        agency = _detect_agency_from_solicitation(sol_num)
+        if agency:
+            rfp_title = f"{agency} Solicitation {sol_num}"
+        else:
+            rfp_title = f"Solicitation {sol_num}"
+
+    # 4. Final fallbacks
+    if not sol_num:
+        sol_num = rfp_id
+    if not rfp_title:
+        rfp_title = "RFP Analysis"
+
+    return sol_num, rfp_title
+
+
+def _build_export_filename(rfp: Dict, rfp_id: str) -> str:
+    """Build a meaningful filename for the compliance matrix export"""
+    sol_num, _ = _extract_rfp_metadata(rfp, rfp_id)
+
+    # If still no solicitation number, fall back to rfp_id
+    if not sol_num or sol_num == rfp_id or sol_num == "UNKNOWN":
+        return f"{rfp_id}_ComplianceMatrix.xlsx"
+
+    # Detect agency
+    agency = _detect_agency_from_solicitation(sol_num)
+
+    # Clean the solicitation number for filename (remove special chars)
+    import re
+    clean_sol = re.sub(r'[^\w\-]', '', sol_num)
+
+    # Build filename
+    if agency:
+        return f"{clean_sol}_{agency}_ComplianceMatrix.xlsx"
+    else:
+        return f"{clean_sol}_ComplianceMatrix.xlsx"
+
+
 @app.get("/api/rfp/{rfp_id}/export")
 async def export_rfp(rfp_id: str, format: str = "xlsx"):
     """Export RFP to Excel"""
@@ -1059,21 +1223,24 @@ async def export_rfp(rfp_id: str, format: str = "xlsx"):
     # Check extraction mode and use appropriate exporter
     extraction_mode = rfp.get("extraction_mode", "legacy")
     
+    # Extract proper metadata for export
+    sol_num, rfp_title = _extract_rfp_metadata(rfp, rfp_id)
+
     if extraction_mode == "best_practices" and rfp.get("best_practices_result") and best_practices_exporter:
         # v2.9: Use Best Practices CTM Exporter
         best_practices_exporter.export(
             rfp["best_practices_result"],
             str(output_path),
-            solicitation_number=rfp.get("solicitation_number", rfp_id),
-            title=rfp.get("name", "RFP Analysis")
+            solicitation_number=sol_num,
+            title=rfp_title
         )
     elif extraction_mode == "semantic" and rfp.get("semantic_result") and semantic_ctm_exporter:
         # v2.8: Use semantic CTM exporter
         semantic_ctm_exporter.export(
             rfp["semantic_result"],
             str(output_path),
-            solicitation_number=rfp.get("solicitation_number", rfp_id),
-            title=rfp.get("name", "RFP Analysis")
+            solicitation_number=sol_num,
+            title=rfp_title
         )
     else:
         # Legacy export path
@@ -1110,12 +1277,12 @@ async def export_rfp(rfp_id: str, format: str = "xlsx"):
                     self.compliance_matrix.append(row)
         
         result = ExportResult(rfp["requirements"], rfp.get("requirements_graph", {}), rfp["stats"])
-        
+
         export_to_excel(
             result,
             str(output_path),
-            solicitation_number=rfp.get("solicitation_number", rfp_id),
-            title=rfp.get("name", "RFP Analysis")
+            solicitation_number=sol_num,
+            title=rfp_title
         )
     
     return FileResponse(

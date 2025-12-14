@@ -317,8 +317,11 @@
                 return res.json();
             },
             
-            async processRFPBestPractices(rfpId) {
-                const res = await fetch(`${API_BASE}/rfp/${rfpId}/process-best-practices`, { method: 'POST' });
+            async processRFPBestPractices(rfpId, useEnhancedOcr = false) {
+                const url = useEnhancedOcr
+                    ? `${API_BASE}/rfp/${rfpId}/process-best-practices?use_enhanced_ocr=true`
+                    : `${API_BASE}/rfp/${rfpId}/process-best-practices`;
+                const res = await fetch(url, { method: 'POST' });
                 return res.json();
             },
             
@@ -387,8 +390,16 @@
             const [rawFiles, setRawFiles] = useState([]);
             const [processing, setProcessing] = useState(false);
             const [processingStatus, setProcessingStatus] = useState({ status: '', progress: 0, message: '' });
-            const [extractionMode, setExtractionMode] = useState('standard'); // v2.9: Default to best practices
-            
+            const [extractionMode, setExtractionMode] = useState('best_practices');
+            const [useEnhancedOcr, setUseEnhancedOcr] = useState(false);
+
+            // Recent Projects (localStorage)
+            const [recentProjects, setRecentProjects] = useState(() => {
+                try {
+                    return JSON.parse(localStorage.getItem('propelai_recent_projects') || '[]');
+                } catch { return []; }
+            });
+
             // Requirements State
             const [requirements, setRequirements] = useState([]);
             const [stats, setStats] = useState(null);
@@ -482,7 +493,7 @@
                     
                     // Start processing
                     if (extractionMode === 'best_practices') {
-                        await api.processRFPBestPractices(rfp.id);
+                        await api.processRFPBestPractices(rfp.id, useEnhancedOcr);
                     } else if (extractionMode === 'semantic') {
                         await api.processRFPSemantic(rfp.id);
                     } else {
@@ -598,7 +609,7 @@
                         )}
                         
                         {currentView === 'upload' && (
-                            <UploadView 
+                            <UploadView
                                 files={files}
                                 setFiles={setFiles}
                                 rawFiles={rawFiles}
@@ -607,6 +618,8 @@
                                 apiConnected={apiConnected}
                                 extractionMode={extractionMode}
                                 setExtractionMode={setExtractionMode}
+                                useEnhancedOcr={useEnhancedOcr}
+                                setUseEnhancedOcr={setUseEnhancedOcr}
                             />
                         )}
                         
@@ -659,7 +672,7 @@
         }
         
         // Upload View
-        function UploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected, extractionMode, setExtractionMode }) {
+        function UploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected, extractionMode, setExtractionMode, useEnhancedOcr, setUseEnhancedOcr }) {
             const [dragging, setDragging] = useState(false);
             const fileInputRef = useRef(null);
             
@@ -793,12 +806,12 @@
                                         <option value="legacy">Legacy</option>
                                     </select>
                                     {extractionMode === 'best_practices' && (
-                                        <span 
-                                            style={{ 
-                                                fontSize: 10, 
-                                                background: 'var(--accent-green)', 
-                                                color: 'black', 
-                                                padding: '2px 6px', 
+                                        <span
+                                            style={{
+                                                fontSize: 10,
+                                                background: 'var(--accent-green)',
+                                                color: 'black',
+                                                padding: '2px 6px',
                                                 borderRadius: 4,
                                                 fontWeight: 600
                                             }}
@@ -808,6 +821,64 @@
                                     )}
                                 </div>
                             </div>
+
+                            {/* Enhanced OCR Option */}
+                            {extractionMode === 'best_practices' && (
+                                <div style={{
+                                    marginTop: 16,
+                                    padding: '12px 16px',
+                                    background: useEnhancedOcr ? 'rgba(251, 191, 36, 0.1)' : 'var(--bg-tertiary)',
+                                    borderRadius: 8,
+                                    border: useEnhancedOcr ? '1px solid rgba(251, 191, 36, 0.3)' : '1px solid var(--border-color)'
+                                }}>
+                                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={useEnhancedOcr}
+                                            onChange={(e) => setUseEnhancedOcr(e.target.checked)}
+                                            style={{
+                                                width: 18,
+                                                height: 18,
+                                                marginTop: 2,
+                                                accentColor: 'var(--accent-blue)',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                        <div>
+                                            <div style={{
+                                                fontWeight: 600,
+                                                color: 'var(--text-primary)',
+                                                fontSize: 14,
+                                                marginBottom: 4
+                                            }}>
+                                                Enhanced OCR (Tensorlake)
+                                                <span style={{
+                                                    marginLeft: 8,
+                                                    fontSize: 10,
+                                                    background: 'rgba(251, 191, 36, 0.2)',
+                                                    color: '#fbbf24',
+                                                    padding: '2px 6px',
+                                                    borderRadius: 4,
+                                                    fontWeight: 600
+                                                }}>
+                                                    PAID
+                                                </span>
+                                            </div>
+                                            <div style={{
+                                                color: 'var(--text-secondary)',
+                                                fontSize: 12,
+                                                lineHeight: 1.5
+                                            }}>
+                                                Use Gemini 3 OCR for scanned PDFs, image-based documents, or complex tables.
+                                                <br/>
+                                                <span style={{ color: '#fbbf24', fontWeight: 500 }}>
+                                                    Additional cost: ~$0.01 per page
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

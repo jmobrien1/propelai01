@@ -3,43 +3,84 @@ PropelAI Cycle 5: Multi-Format Document Parser
 Parses PDF, DOCX, XLSX with section boundary detection
 
 Preserves page numbers and section references for traceability
+
+Enhanced with Tensorlake integration for:
+- Gemini 3 OCR for scanned/complex PDFs
+- Better table extraction
+- Improved handling of multi-column layouts
 """
 
 import os
 import re
+import logging
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
 from .models import ParsedDocument, DocumentType, RFPBundle
 
+logger = logging.getLogger(__name__)
+
 
 class MultiFormatParser:
     """
     Parse PDF, DOCX, XLSX into unified format with section detection
-    
+
     Uses:
-    - pypdf for PDFs
+    - Tensorlake (Gemini 3 OCR) for enhanced PDF extraction (if configured)
+    - pypdf for PDFs (fallback)
     - python-docx for DOCX
     - openpyxl for XLSX
     - markitdown as fallback for complex layouts
+
+    To enable Tensorlake:
+        Set TENSORLAKE_API_KEY environment variable
+        parser = MultiFormatParser(use_tensorlake=True)
     """
     
-    # Section header patterns (federal RFP standard)
+    # Enhanced section header patterns (federal RFP standard + variants)
+    # Each pattern includes primary and alternative detection methods
     SECTION_PATTERNS = {
-        # FAR standard sections
-        "section_a": r"SECTION\s*A[\s:\-–]+|SOLICITATION.*FORM",
-        "section_b": r"SECTION\s*B[\s:\-–]+|SUPPLIES\s*OR\s*SERVICES",
-        "section_c": r"SECTION\s*C[\s:\-–]+|DESCRIPTION.*SPECIFICATIONS|STATEMENT\s*OF\s*WORK",
-        "section_d": r"SECTION\s*D[\s:\-–]+|PACKAGING.*MARKING",
-        "section_e": r"SECTION\s*E[\s:\-–]+|INSPECTION.*ACCEPTANCE",
-        "section_f": r"SECTION\s*F[\s:\-–]+|DELIVERIES.*PERFORMANCE",
-        "section_g": r"SECTION\s*G[\s:\-–]+|CONTRACT\s*ADMINISTRATION",
-        "section_h": r"SECTION\s*H[\s:\-–]+|SPECIAL\s*CONTRACT",
-        "section_i": r"SECTION\s*I[\s:\-–]+|CONTRACT\s*CLAUSES",
-        "section_j": r"SECTION\s*J[\s:\-–]+|ATTACHMENTS",
-        "section_k": r"SECTION\s*K[\s:\-–]+|REPRESENTATIONS",
-        "section_l": r"SECTION\s*L[\s:\-–]+|INSTRUCTIONS.*OFFERORS",
-        "section_m": r"SECTION\s*M[\s:\-–]+|EVALUATION\s*FACTORS",
+        # FAR standard sections with expanded patterns
+        "section_a": r"SECTION\s*A[\s:\-–—]+|SOLICITATION.*FORM|SF[- ]?(?:33|1449)",
+        "section_b": r"SECTION\s*B[\s:\-–—]+|SUPPLIES?\s*(?:OR\s+)?SERVICES?\s*AND\s*PRICES?|CONTRACT\s+LINE\s+ITEMS?|CLIN\s+(?:STRUCTURE|PRICING)",
+        "section_c": r"SECTION\s*C[\s:\-–—]+|DESCRIPTION[/\s]+SPECIFICATIONS?|STATEMENT\s+OF\s+(?:WORK|OBJECTIVES?)|SCOPE\s+OF\s+(?:WORK|CONTRACT)|C\.\d+\s+[-–—]",
+        "section_d": r"SECTION\s*D[\s:\-–—]+|PACKAGING\s+(?:AND\s+)?MARKING",
+        "section_e": r"SECTION\s*E[\s:\-–—]+|INSPECTION\s+(?:AND\s+)?ACCEPTANCE",
+        "section_f": r"SECTION\s*F[\s:\-–—]+|DELIVERIES?\s+(?:OR\s+)?PERFORMANCE|PERIOD\s+OF\s+PERFORMANCE",
+        "section_g": r"SECTION\s*G[\s:\-–—]+|CONTRACT\s+ADMINISTRATION\s+DATA",
+        "section_h": r"SECTION\s*H[\s:\-–—]+|SPECIAL\s+CONTRACT\s+REQUIREMENTS?",
+        "section_i": r"SECTION\s*I[\s:\-–—]+|CONTRACT\s+CLAUSES",
+        "section_j": r"SECTION\s*J[\s:\-–—]+|(?:LIST\s+OF\s+)?ATTACHMENTS?|EXHIBITS?",
+        "section_k": r"SECTION\s*K[\s:\-–—]+|REPRESENTATIONS?\s*(?:,\s*)?(?:AND\s+)?CERTIFICATIONS?",
+        "section_l": r"SECTION\s*L[\s:\-–—]+|INSTRUCTIONS?\s*(?:,\s*CONDITIONS?\s*(?:,\s*)?)?(?:AND\s+)?(?:NOTICES?\s+)?TO\s+OFFERORS?|PROPOSAL\s+(?:SUBMISSION\s+)?(?:REQUIREMENTS?|INSTRUCTIONS?)|L\.\d+\s+[-–—]",
+        "section_m": r"SECTION\s*M[\s:\-–—]+|EVALUATION\s+(?:FACTORS?|CRITERIA)\s*(?:FOR\s+AWARD)?|BASIS\s+(?:FOR\s+)?(?:CONTRACT\s+)?AWARD|SOURCE\s+SELECTION\s+(?:CRITERIA|FACTORS?)|M\.\d+\s+[-–—]",
+        # Additional document types
+        "pws": r"PERFORMANCE\s+WORK\s+STATEMENT|PWS[\s:\-–—]+",
+        "sow": r"STATEMENT\s+OF\s+WORK|SOW[\s:\-–—]+",
+    }
+
+    # Content-based heuristics for section inference when headers aren't found
+    SECTION_CONTENT_HEURISTICS = {
+        "section_l": [
+            r'\b(?:offeror|proposer)s?\s+(?:shall|must|should)\s+(?:submit|provide|include|describe)',
+            r'\b(?:technical|business|cost|price)\s+(?:proposal|volume)',
+            r'\bpage\s+limit(?:ation)?s?\b',
+            r'\bproposal\s+(?:format|organization|structure)',
+            r'\bsubmission\s+(?:requirements?|instructions?)',
+        ],
+        "section_m": [
+            r'\b(?:government|agency)\s+(?:will|shall)\s+(?:evaluate|assess|review)',
+            r'\bevaluation\s+(?:factor|criteria)',
+            r'\b(?:adjectival|color)\s+ratings?\b',
+            r'\b(?:strengths?|weaknesses?|deficienc)',
+            r'\bbest\s+value\b',
+        ],
+        "section_c": [
+            r'\bcontractor\s+(?:shall|must|will)\s+(?:provide|perform|deliver|maintain)',
+            r'\bthe\s+work\s+(?:shall|will)',
+            r'\b(?:scope|objective)s?\s+of\s+(?:work|services?)',
+            r'\bdeliverable(?:s)?\s+(?:shall|will)',
+        ],
     }
     
     # Article patterns within sections
@@ -48,14 +89,44 @@ class MultiFormatParser:
     # Subsection patterns: C.3.1, L.4.a.2, etc.
     SUBSECTION_PATTERN = r"([A-Z])\.(\d+)(?:\.(\d+|[a-z]))?(?:\.(\d+|[a-z]))?"
     
-    def __init__(self, use_markitdown_fallback: bool = True):
+    def __init__(self, use_markitdown_fallback: bool = True, use_tensorlake: bool = True):
         self.use_markitdown_fallback = use_markitdown_fallback
+        self.use_tensorlake = use_tensorlake
+        self._tensorlake_processor = None
+        self._tensorlake_checked = False
         self.stats = {
             "pdf_parsed": 0,
+            "pdf_tensorlake": 0,
+            "pdf_pypdf_fallback": 0,
             "docx_parsed": 0,
             "xlsx_parsed": 0,
             "parse_failures": 0,
         }
+
+    def _get_tensorlake_processor(self):
+        """Lazy initialization of Tensorlake processor"""
+        if self._tensorlake_checked:
+            return self._tensorlake_processor
+
+        self._tensorlake_checked = True
+
+        if not self.use_tensorlake:
+            return None
+
+        try:
+            from agents.integrations import TensorlakeProcessor
+            processor = TensorlakeProcessor()
+            if processor.is_available:
+                self._tensorlake_processor = processor
+                logger.info("Tensorlake processor initialized successfully")
+            else:
+                logger.info("Tensorlake not available (API key not configured)")
+        except ImportError:
+            logger.debug("Tensorlake integration not installed")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Tensorlake: {e}")
+
+        return self._tensorlake_processor
     
     def parse_bundle(self, bundle: RFPBundle) -> Dict[str, ParsedDocument]:
         """
@@ -137,31 +208,109 @@ class MultiFormatParser:
             return None
     
     def _parse_pdf(self, filepath: str, filename: str, doc_type: DocumentType) -> ParsedDocument:
-        """Parse PDF using pypdf"""
+        """
+        Parse PDF using Tensorlake (if available) or pypdf fallback.
+
+        Tensorlake provides better extraction for:
+        - Scanned PDFs requiring OCR
+        - Complex tables with merged cells
+        - Multi-column layouts
+        - Documents with charts/diagrams containing text
+        """
+        # Try Tensorlake first if available
+        tensorlake = self._get_tensorlake_processor()
+        if tensorlake:
+            try:
+                result = self._parse_pdf_with_tensorlake(filepath, filename, doc_type, tensorlake)
+                if result and result.extraction_quality >= 0.7:
+                    self.stats["pdf_tensorlake"] += 1
+                    self.stats["pdf_parsed"] += 1
+                    return result
+                else:
+                    logger.info(f"Tensorlake extraction quality low ({result.extraction_quality if result else 0}), falling back to pypdf")
+            except Exception as e:
+                logger.warning(f"Tensorlake parsing failed for {filename}, falling back to pypdf: {e}")
+
+        # Fallback to pypdf
+        return self._parse_pdf_with_pypdf(filepath, filename, doc_type)
+
+    def _parse_pdf_with_tensorlake(self, filepath: str, filename: str, doc_type: DocumentType,
+                                    processor) -> Optional[ParsedDocument]:
+        """Parse PDF using Tensorlake's Gemini 3 OCR"""
+        logger.info(f"Parsing {filename} with Tensorlake (Gemini 3 OCR)")
+
+        result = processor.process_document_sync(filepath, extract_structure=True)
+
+        if not result.success:
+            logger.warning(f"Tensorlake extraction failed: {result.error_message}")
+            return None
+
+        full_text = result.markdown
+
+        # Convert Tensorlake tables to our format
+        tables = []
+        for tl_table in result.tables:
+            tables.append({
+                "headers": tl_table.headers,
+                "rows": tl_table.rows,
+                "page": tl_table.page_number,
+                "source": "tensorlake"
+            })
+
+        # Split markdown into pages (estimate based on content)
+        pages = self._split_into_pages(full_text, chars_per_page=3000)
+
+        # Detect sections from the markdown
+        sections = self._detect_sections(full_text)
+
+        # Assess quality
+        quality = self._assess_extraction_quality(full_text, result.page_count or len(pages))
+
+        # Tensorlake typically produces higher quality for complex documents
+        if result.page_count and result.page_count > 0:
+            quality = min(1.0, quality + 0.1)  # Bonus for successful Tensorlake parse
+
+        return ParsedDocument(
+            filepath=filepath,
+            filename=filename,
+            document_type=doc_type,
+            full_text=full_text,
+            pages=pages,
+            page_count=result.page_count or len(pages),
+            sections=sections,
+            tables=tables,
+            title=self._extract_title(full_text),
+            parser_used="tensorlake",
+            extraction_quality=quality,
+        )
+
+    def _parse_pdf_with_pypdf(self, filepath: str, filename: str, doc_type: DocumentType) -> ParsedDocument:
+        """Parse PDF using pypdf (fallback method)"""
         from pypdf import PdfReader
-        
+
         reader = PdfReader(filepath)
         pages = []
         full_text_parts = []
-        
+
         for page in reader.pages:
             text = page.extract_text() or ""
             pages.append(text)
             full_text_parts.append(text)
-        
+
         full_text = "\n\n".join(full_text_parts)
-        
+
         # Detect sections
         sections = self._detect_sections(full_text)
-        
+
         # Extract tables (basic detection)
         tables = self._extract_table_hints(full_text)
-        
+
         # Calculate extraction quality
         quality = self._assess_extraction_quality(full_text, len(reader.pages))
-        
+
+        self.stats["pdf_pypdf_fallback"] += 1
         self.stats["pdf_parsed"] += 1
-        
+
         return ParsedDocument(
             filepath=filepath,
             filename=filename,
@@ -318,22 +467,50 @@ class MultiFormatParser:
     def _detect_sections(self, text: str) -> Dict[str, str]:
         """
         Detect section boundaries in the document
-        
+
+        Uses a multi-stage approach:
+        1. Find explicit section headers
+        2. Score matches to filter TOC entries vs real headers
+        3. Apply content heuristics for undetected content
+
         Returns:
             Dict mapping section ID to section text
         """
         sections = {}
-        
-        # Find all section headers and their positions
+
+        # Find all section headers and their positions with scoring
         section_positions = []
-        
+
         for section_id, pattern in self.SECTION_PATTERNS.items():
             for match in re.finditer(pattern, text, re.IGNORECASE):
-                section_positions.append((match.start(), section_id, match.group()))
-        
-        # Sort by position
-        section_positions.sort(key=lambda x: x[0])
-        
+                # Get surrounding context
+                line_start = text.rfind('\n', 0, match.start()) + 1
+                line_end = text.find('\n', match.end())
+                if line_end == -1:
+                    line_end = len(text)
+                line = text[line_start:line_end]
+
+                # Score this match to filter out TOC entries
+                score = self._score_section_match(match, line, text)
+
+                if score > 0:  # Only include positive scores
+                    section_positions.append((match.start(), section_id, match.group(), score))
+
+        # Sort by position, then by score (prefer higher scores for same position)
+        section_positions.sort(key=lambda x: (x[0], -x[3]))
+
+        # Remove duplicate positions (keep highest scoring)
+        seen_positions = set()
+        filtered_positions = []
+        for pos, section_id, header, score in section_positions:
+            # Consider positions within 100 chars as duplicates
+            pos_bucket = pos // 100
+            if pos_bucket not in seen_positions:
+                seen_positions.add(pos_bucket)
+                filtered_positions.append((pos, section_id, header))
+
+        section_positions = filtered_positions
+
         # Extract text between sections
         for i, (start_pos, section_id, header) in enumerate(section_positions):
             # Find end position (start of next section or end of doc)
@@ -341,10 +518,102 @@ class MultiFormatParser:
                 end_pos = section_positions[i + 1][0]
             else:
                 end_pos = len(text)
-            
+
             section_text = text[start_pos:end_pos]
             sections[section_id] = section_text
-        
+
+        # Apply content heuristics to identify sections in unassigned content
+        if not sections:
+            # No headers found - try content-based detection
+            sections = self._detect_sections_by_content(text)
+
+        return sections
+
+    def _score_section_match(self, match, line: str, full_text: str) -> int:
+        """
+        Score a potential section header match.
+        Higher scores = more likely to be a real section header.
+        Negative scores = likely a TOC entry or reference.
+        """
+        score = 10  # Base score
+
+        # TOC indicators - strongly negative
+        if '....' in line or re.search(r'\.{3,}\s*\d+\s*$', line):
+            return -100  # Definitely a TOC entry
+
+        # Page number at end of line suggests TOC
+        if re.search(r'\.\s*\d+\s*$', line):
+            return -50
+
+        # Check if this is a cross-reference (not a header)
+        preceding = full_text[max(0, match.start()-100):match.start()].lower()
+        if re.search(r'(?:in|see|per|under|from)\s*$', preceding):
+            return -30
+
+        # Positive indicators
+        following = full_text[match.end():match.end()+500]
+
+        # Real sections have substantial content
+        if len(following.strip()) > 200:
+            score += 20
+
+        # Real sections typically have requirement keywords nearby
+        req_keywords = len(re.findall(r'\b(?:shall|must|will|offeror|contractor|proposal|submit)\b',
+                                       following, re.IGNORECASE))
+        score += min(req_keywords * 5, 30)
+
+        # Headers at start of line
+        if match.start() == 0 or full_text[match.start()-1] in '\n\r':
+            score += 15
+
+        # Document position heuristics
+        doc_position = match.start() / max(len(full_text), 1)
+
+        # Sections L, M typically appear later (past 40% of doc)
+        section_id = line[:20].upper()
+        if 'SECTION L' in section_id or 'SECTION M' in section_id:
+            if doc_position > 0.3:
+                score += 20
+            elif doc_position < 0.1:
+                score -= 30  # Probably TOC
+
+        return score
+
+    def _detect_sections_by_content(self, text: str) -> Dict[str, str]:
+        """
+        Detect sections using content heuristics when headers aren't found.
+        This handles non-standard RFP formats.
+        """
+        sections = {}
+
+        # Split text into chunks for analysis
+        chunk_size = 5000
+        chunks = []
+        for i in range(0, len(text), chunk_size):
+            chunks.append((i, text[i:i + chunk_size]))
+
+        # Score each chunk for section likelihood
+        for start_pos, chunk in chunks:
+            section_scores = {}
+            chunk_lower = chunk.lower()
+
+            for section_id, patterns in self.SECTION_CONTENT_HEURISTICS.items():
+                score = 0
+                for pattern in patterns:
+                    matches = len(re.findall(pattern, chunk_lower, re.IGNORECASE))
+                    score += matches
+                if score > 0:
+                    section_scores[section_id] = score
+
+            # Assign chunk to highest-scoring section
+            if section_scores:
+                best_section = max(section_scores.items(), key=lambda x: x[1])
+                if best_section[1] >= 2:  # At least 2 pattern matches
+                    if best_section[0] not in sections:
+                        sections[best_section[0]] = chunk
+                    else:
+                        sections[best_section[0]] += chunk
+
         return sections
     
     def _extract_table_hints(self, text: str) -> List[Dict[str, Any]]:
@@ -472,12 +741,60 @@ class MultiFormatParser:
         return 0  # Not found
     
     def get_section_for_position(self, doc: ParsedDocument, position: int) -> str:
-        """Determine which section contains the given character position"""
-        current_pos = 0
-        
+        """
+        Determine which section contains the given character position.
+
+        Uses multiple strategies:
+        1. Check if position falls within detected section boundaries
+        2. Extract surrounding context and use content heuristics
+        3. Return best guess rather than UNKNOWN when possible
+        """
+        # Strategy 1: Check detected section boundaries
         for section_id, section_text in doc.sections.items():
             section_start = doc.full_text.find(section_text)
-            if section_start <= position < section_start + len(section_text):
+            if section_start >= 0 and section_start <= position < section_start + len(section_text):
                 return section_id.replace("section_", "").upper()
-        
+
+        # Strategy 2: Use content heuristics on surrounding text
+        context_start = max(0, position - 500)
+        context_end = min(len(doc.full_text), position + 500)
+        context = doc.full_text[context_start:context_end].lower()
+
+        section_scores = {}
+        for section_id, patterns in self.SECTION_CONTENT_HEURISTICS.items():
+            score = 0
+            for pattern in patterns:
+                if re.search(pattern, context, re.IGNORECASE):
+                    score += 1
+            if score > 0:
+                section_scores[section_id] = score
+
+        if section_scores:
+            best = max(section_scores.items(), key=lambda x: x[1])
+            if best[1] >= 1:  # At least one pattern match
+                return best[0].replace("section_", "").upper()
+
+        # Strategy 3: Check for explicit section references in context
+        ref_patterns = [
+            (r'\bSECTION\s+([A-M])\b', lambda m: m.group(1).upper()),
+            (r'\b([A-M])\.\d+', lambda m: m.group(1).upper()),
+            (r'\b(PWS|SOW)\b', lambda m: m.group(1).upper()),
+        ]
+        for pattern, extractor in ref_patterns:
+            match = re.search(pattern, context, re.IGNORECASE)
+            if match:
+                return extractor(match)
+
+        # Strategy 4: Infer from document type
+        if doc.document_type:
+            type_map = {
+                'STATEMENT_OF_WORK': 'SOW',
+                'PERFORMANCE_WORK_STATEMENT': 'PWS',
+                'MAIN_SOLICITATION': 'C',  # Default to C for main doc
+            }
+            doc_type_str = str(doc.document_type.value if hasattr(doc.document_type, 'value') else doc.document_type)
+            for key, section in type_map.items():
+                if key in doc_type_str.upper():
+                    return section
+
         return "UNKNOWN"
