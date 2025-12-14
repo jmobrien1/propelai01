@@ -89,7 +89,7 @@ class MultiFormatParser:
     # Subsection patterns: C.3.1, L.4.a.2, etc.
     SUBSECTION_PATTERN = r"([A-Z])\.(\d+)(?:\.(\d+|[a-z]))?(?:\.(\d+|[a-z]))?"
     
-    def __init__(self, use_markitdown_fallback: bool = True, use_tensorlake: bool = True):
+    def __init__(self, use_markitdown_fallback: bool = True, use_tensorlake: bool = False):
         self.use_markitdown_fallback = use_markitdown_fallback
         self.use_tensorlake = use_tensorlake
         self._tensorlake_processor = None
