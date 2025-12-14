@@ -24,6 +24,18 @@ pandas>=2.0.0
 # Utils
 httpx>=0.24.0
 
+# LLM Providers (Heterogeneous Model Mesh)
+google-generativeai>=0.8.0  # Gemini 1.5 Pro - "The Librarian"
+anthropic>=0.40.0  # Claude 3.5 Sonnet - "The Architect/Critic"
+openai>=1.50.0  # GPT-4 - "The Writer"
+tiktoken>=0.7.0  # Token counting for OpenAI models
+
+# Workflow Orchestration
+langgraph>=0.2.0  # Cyclic Draft-Critique-Expand workflows
+
+# Text Processing
+scikit-learn>=1.5.0  # TF-IDF deduplication engine
+
 # OASIS+ Optional Dependencies
 # Uncomment for full OASIS+ functionality:
 #
@@ -35,9 +47,8 @@ httpx>=0.24.0
 # psycopg2-binary>=2.9.0
 # pgvector>=0.2.0
 #
-# Embeddings
-# openai>=1.0.0  # For text-embedding-3-small
-# anthropic>=0.7.0  # For Claude API
+# Graph Database (Graph of Records)
+# neo4j>=5.0.0
 #
 # Background Tasks
 # redis>=5.0.0
