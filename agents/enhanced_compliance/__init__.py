@@ -1,8 +1,14 @@
 """
-PropelAI Enhanced Compliance Module v3.0
+PropelAI Enhanced Compliance Module v3.1
+
+New in v3.1:
+- Accuracy Audit framework for extraction validation
+- Section Inference for improved section detection
+- Source Traceability with character offsets
+- SQLite persistence layer
 """
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 __author__ = "PropelAI Team"
 
 # =============================================================================
@@ -174,3 +180,73 @@ except ImportError as e:
     AnnotatedOutlineExporter = None
     AnnotatedOutlineConfig = None
     generate_annotated_outline = None
+
+# =============================================================================
+# v3.1 New Modules
+# =============================================================================
+
+# Accuracy Audit Framework
+try:
+    from .accuracy_audit import (
+        AccuracyAuditor, AccuracyReport, AuditFinding, AuditSeverity,
+        ConflictFinding, ComplianceGate, audit_extraction,
+    )
+    ACCURACY_AUDIT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Accuracy audit not available: {e}")
+    ACCURACY_AUDIT_AVAILABLE = False
+    AccuracyAuditor = AccuracyReport = AuditFinding = AuditSeverity = None
+    ConflictFinding = ComplianceGate = audit_extraction = None
+
+# Section Inference
+try:
+    from .section_inference import (
+        SectionInferencer, InferenceResult, infer_section,
+    )
+    SECTION_INFERENCE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Section inference not available: {e}")
+    SECTION_INFERENCE_AVAILABLE = False
+    SectionInferencer = InferenceResult = infer_section = None
+
+# Source Traceability
+try:
+    from .source_traceability import (
+        SourceTracker, SourceTrace, SourceType, VerificationStatus,
+        TraceableRequirement, SourceTrackerWithOffsets, create_trace,
+    )
+    SOURCE_TRACEABILITY_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Source traceability not available: {e}")
+    SOURCE_TRACEABILITY_AVAILABLE = False
+    SourceTracker = SourceTrace = SourceType = VerificationStatus = None
+    TraceableRequirement = SourceTrackerWithOffsets = create_trace = None
+
+# SQLite Persistence
+try:
+    from .persistence import (
+        RFPDatabase, StoredProject, StoredRequirement, get_database,
+    )
+    PERSISTENCE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Persistence not available: {e}")
+    PERSISTENCE_AVAILABLE = False
+    RFPDatabase = StoredProject = StoredRequirement = get_database = None
+
+# Add new exports to __all__
+__all__.extend([
+    # Accuracy Audit
+    "AccuracyAuditor", "AccuracyReport", "AuditFinding", "AuditSeverity",
+    "ConflictFinding", "ComplianceGate", "audit_extraction",
+    "ACCURACY_AUDIT_AVAILABLE",
+    # Section Inference
+    "SectionInferencer", "InferenceResult", "infer_section",
+    "SECTION_INFERENCE_AVAILABLE",
+    # Source Traceability
+    "SourceTracker", "SourceTrace", "SourceType", "VerificationStatus",
+    "TraceableRequirement", "SourceTrackerWithOffsets", "create_trace",
+    "SOURCE_TRACEABILITY_AVAILABLE",
+    # Persistence
+    "RFPDatabase", "StoredProject", "StoredRequirement", "get_database",
+    "PERSISTENCE_AVAILABLE",
+])

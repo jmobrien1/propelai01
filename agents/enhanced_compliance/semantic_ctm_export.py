@@ -22,6 +22,11 @@ try:
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
+    # Create placeholder for type hints when openpyxl not available
+    Workbook = None
+    Font = Fill = PatternFill = Alignment = Border = Side = None
+    get_column_letter = None
+    DataValidation = None
 
 from .semantic_extractor import (
     ExtractedRequirement, ExtractionResult, 
