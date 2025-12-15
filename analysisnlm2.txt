@@ -1,0 +1,23 @@
+Based on a detailed analysis of the two new outlines (90Attachment 11... and 90Attachment 2...), the system shows regression in structural accuracy compared to previous iterations, specifically regarding volume count and hard constraints.
+While the naming conventions are acceptable (as you noted), the Compliance/Structure logic is currently hallucinating volumes and missing critical "P0" (Pass/Fail) constraints defined in the source text.
+Here is the breakdown of the specific issues found in these files:
+1. Analysis of 90Attachment 2 Placement Procedures_Annotated_Outline (1).docx
+Source RFP: FA880625RB003 (24x7 NOC) Status: High Compliance Risk
+• Critical Page Limit Failure: The outline states "Page Limit: No limit specified" for Volume 1.
+    ◦ Reality: The source document (Attachment 2. Placement Procedures.pdf) explicitly includes a table limiting Volume 1 to 8 Pages (with contradictory sub-limits of 10 pages per factor). This is a "P0" disqualification risk that the AI missed entirely.
+• Volume Structure Hallucination: The outline generates 4 Volumes (Technical, Past Performance, Cost/Price, Staffing).
+    ◦ Reality: The source explicitly mandates 3 Volumes: (1) Executive Summary/Technical, (2) Cost & Price, and (3) Contract Documentation.
+    ◦ Impact: The AI invented "Volume 2: Past Performance" and "Volume 4: Staffing" likely because it detected those keywords in the text, rather than adhering to the specific "Proposal Format" table in the RFP. It also completely missed the required "Contract Documentation" volume.
+• Formatting Success: It did correctly extract "Times New Roman" and "12 pt" font, matching the source requirement.
+2. Analysis of 90Attachment 11 - RAC Request for Estimate_Draft_Annotated_Outline (2).docx
+Source RFP: FA2377-25-R-B009 (SENTRA Task Order) Status: Moderate Compliance Risk
+• Structure Improvement: This outline correctly identifies a 2-Volume structure (Technical and Cost/Price), which is an improvement over previous versions that hallucinated four volumes. This aligns better with the "Request for Estimate" nature of the document.
+• Missing Inheritance (Page Limits): The outline states "Page Limit: No limit specified".
+    ◦ Reality: The parent IDIQ instructions (referenced in TEMPEST ARA Call 06) often impose a 25-page limit for Task Order technical proposals. The AI failed to inherit this constraint from the parent document to the child Task Order outline.
+• Content Over-Engineering: The outline inserts generic sections for Past Performance and Staffing Plan.
+    ◦ Reality: The "Ordering Instructions" for a RAC Estimate only ask for a "technical proposal and RAC Statement of Work" and "cost proposal." The AI is defaulting to a standard proposal structure rather than the simplified "Estimate" structure requested.
+Summary of Necessary Fixes
+The current output validates the "Strategic Roadmap" priority to "Audit compliance matrix extraction". The system is prioritizing generative structure (what a proposal usually looks like) over deterministic structure (what the document explicitly asks for).
+1. Table Parsing Logic: The NOC RFP (Attachment 2) contained the volume structure and page limits in a specific table. The AI missed this table entirely, suggesting the parser needs specific tuning for "Submission Instructions" tables.
+2. Stop Keyword-Based Volume Creation: The system likely saw the word "Past Performance" in the evaluation criteria and created a volume for it. It must be restricted to only create volumes explicitly defined in the Proposal Organization/Format section of Section L.
+3. Parent/Child Constraint Inheritance: For the RAC outline, the system needs to check the parent "Call 06" document to find the page limits that apply to the child "Attachment 11" task order.
