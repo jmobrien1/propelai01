@@ -1,0 +1,50 @@
+2025-12-15T13:23:52Z clientIP="71.62.189.24" requestID="c147c121-bdfa-4aa3" responseTimeMS=5 responseBytes=14243 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:23:52.965683658Z INFO:     71.62.189.24:0 - "GET / HTTP/1.1" 200 OK
+2025-12-15T13:23:53Z clientIP="71.62.189.24" requestID="4059ff8d-7eac-4e1a" responseTimeMS=2 responseBytes=377 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:23:53.352231522Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-15T13:24:05Z clientIP="71.62.189.24" requestID="57c81bc0-c13f-445e" responseTimeMS=3 responseBytes=444 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:05.653379418Z INFO:     71.62.189.24:0 - "POST /api/rfp HTTP/1.1" 200 OK
+2025-12-15T13:24:06Z clientIP="71.62.189.24" requestID="83d73375-9217-42cc" responseTimeMS=1 responseBytes=255 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:06.798681191Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:07Z clientIP="71.62.189.24" requestID="4a4b290b-a9a4-4778" responseTimeMS=2 responseBytes=336 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:07Z clientIP="71.62.189.24" requestID="5da28205-db2a-4614" responseTimeMS=3 responseBytes=255 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:07Z clientIP="71.62.189.24" requestID="e3bbb454-8c97-4222" responseTimeMS=73 responseBytes=711 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:07.709910642Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:07.716315476Z INFO:     71.62.189.24:0 - "POST /api/rfp/RFP-81962BBF/upload HTTP/1.1" 200 OK
+2025-12-15T13:24:07.760043721Z INFO:     71.62.189.24:0 - "POST /api/rfp/RFP-81962BBF/process HTTP/1.1" 200 OK
+2025-12-15T13:24:08Z clientIP="71.62.189.24" requestID="57549760-c79d-4ba1" responseTimeMS=6 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:08.706310551Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:09Z clientIP="71.62.189.24" requestID="a617c952-4f96-425f" responseTimeMS=17 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:09.727895827Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:10Z clientIP="71.62.189.24" requestID="8e41fc4b-4704-49a1" responseTimeMS=8 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:10.723140531Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:11Z clientIP="71.62.189.24" requestID="3a447193-1f20-45bc" responseTimeMS=12 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:11.71330806Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:12Z clientIP="71.62.189.24" requestID="d8a28f5d-87ca-4c5c" responseTimeMS=16 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:12.728240877Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:13Z clientIP="71.62.189.24" requestID="885fe9ab-ba98-4bfd" responseTimeMS=1 responseBytes=867 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:13Z clientIP="71.62.189.24" requestID="b2812e35-d26b-45f9" responseTimeMS=6 responseBytes=10439 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:13Z clientIP="71.62.189.24" requestID="3a2ce67f-cd59-4507" responseTimeMS=1 responseBytes=273 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:13.021707236Z 
+2025-12-15T13:24:13.021729767Z WARNINGS:
+2025-12-15T13:24:13.021735677Z   - LOW_SECTION_L: Only 0 Section L requirements. Proposal instructions may be missing.
+2025-12-15T13:24:13.719245676Z RFP RFP-81962BBF WARNINGS: ['LOW_SECTION_L: Only 0 Section L requirements. Proposal instructions may be missing.']
+2025-12-15T13:24:13.719312047Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/status HTTP/1.1" 200 OK
+2025-12-15T13:24:13.776581367Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/requirements HTTP/1.1" 200 OK
+2025-12-15T13:24:13.786176893Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF HTTP/1.1" 200 OK
+2025-12-15T13:24:16Z clientIP="71.62.189.24" requestID="184b2fa0-51dd-40d2" responseTimeMS=58 responseBytes=25527 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:16.113046357Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/export?format=xlsx HTTP/1.1" 200 OK
+2025-12-15T13:24:19Z clientIP="71.62.189.24" requestID="c38ecb05-f0f3-457c" responseTimeMS=3 responseBytes=634 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:19.83091627Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/outline HTTP/1.1" 200 OK
+2025-12-15T13:24:21Z clientIP="71.62.189.24" requestID="1d2d5bd7-b58f-47f3" responseTimeMS=497 responseBytes=12652 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:21.31121982Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/outline/export HTTP/1.1" 200 OK
+2025-12-15T13:24:23Z clientIP="71.62.189.24" requestID="bf6813b4-15f3-4588" responseTimeMS=3 responseBytes=377 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:23.37403099Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-15T13:24:53Z clientIP="71.62.189.24" requestID="0b6f0401-d6d3-42cf" responseTimeMS=4 responseBytes=377 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:24:53.466383469Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-15T13:25:23Z clientIP="71.62.189.24" requestID="17ff54a6-22d4-4852" responseTimeMS=4 responseBytes=377 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:25:23.399373419Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-15T13:25:32Z clientIP="71.62.189.24" requestID="c2bbfe41-caf7-4f54" responseTimeMS=625 responseBytes=12648 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:25:32.007448969Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-81962BBF/outline/export HTTP/1.1" 200 OK
+2025-12-15T13:25:53Z clientIP="71.62.189.24" requestID="99ece054-f2b7-4056" responseTimeMS=2 responseBytes=377 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-15T13:25:53.917585196Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
