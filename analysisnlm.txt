@@ -1,0 +1,43 @@
+Based on the analysis of the new **`Attachment 2 Placement Procedures_Annotated_Outline.docx`** (likely corresponding to your `00Attachment 2...` upload) and the context regarding the code update, the system shows distinct structural improvements but has introduced a **critical data cross-contamination error**.
+
+Regarding the **`00Attachment 11 - RAC...`** file, the source text for this specific new version was not present in the provided update; however, the behavior observed in the `Attachment 2` outline provides strong indicators of the current system state.
+
+### Analysis of `00Attachment 2 Placement Procedures_Annotated_Outline.docx`
+
+**Source RFP:** FA880625RB003 (24x7 NOC) – Attachment 2
+**Status:** **Structurally Improved, Content Contaminated**
+
+The code update successfully addressed the "Standard UCF" default issue (where it previously hallucinated 4 volumes), but it has introduced a new bug where data from the NIH RFP (also in the system) is leaking into this Air Force outline.
+
+#### 1. Improvements (Code Fixes Verified)
+The system is now correctly identifying non-standard volume structures and formatting constraints, addressing the previous "defaulting" errors.
+
+| Feature | Old Version (Fail) | New Version (Success) | Analysis |
+| :--- | :--- | :--- | :--- |
+| **Volume Structure** | **4 Volumes:** Technical, Past Perf, Cost, Staffing | **3 Volumes:** 1. Technical, 2. Business, 3. Contract Documentation | **Fixed:** The system correctly identified the 3-volume structure mandated in Attachment 2. It no longer hallucinates "Staffing" as a separate volume. |
+| **Formatting** | "Verify in RFP" | **"Times New Roman", "12 pt"** | **Fixed:** The extraction agent successfully pulled the specific font and size constraints from the text. |
+| **Constraints Table** | Not present | **P0 Constraints Table** included | **New Feature:** The outline now includes a placeholder table for "P0 Constraints - Disqualification Risks", intended to highlight pass/fail items. |
+
+#### 2. Critical Regressions & Bugs
+While the structure is better, the **content** within that structure is incorrect, likely due to a "state management" bug where data from one RFP (NIH) is overwriting another (Air Force).
+
+| Feature | PropelAI Output | Actual RFP Requirement | Critical Error Analysis |
+| :--- | :--- | :--- | :--- |
+| **Evaluation Factors** | **Factor 1: Experience**<br>**Factor 2: Program and Project Management** | **Sub Factor 1: Management Approach**<br>**Sub Factor 2: Infrastructure Approach** | **Cross-Contamination:** The factors listed in the outline actually belong to the **NIH RFP (75N96025R00004)**, not this Air Force RFP. The system has leaked data between projects. |
+| **Page Limits** | **"No limit specified"** | **8 Pages** (Tech), **10 Pages** (Sub-factors) | **Persisting Issue:** While the volume *titles* are correct, the system still fails to extract the specific page limits from the table in Attachment 2. |
+| **P0 Data** | **"UNKNOWN"** | **TS/SCI Eligibility**, **Margins**, etc. | **Implementation Gap:** The P0 table exists but is populated with "UNKNOWN" rows. The logic to classify requirements as P0 is not yet connecting to the outline generator. |
+
+### Summary & Recommendations
+
+**1. Immediate Fix Required: Data Leakage (Cross-Contamination)**
+The most urgent issue is that the **Air Force Outline** is being populated with **NIH Evaluation Factors** ("Experience", "Program Management").
+*   **Root Cause:** The `SmartOutlineGenerator` or the backend database likely relies on a global variable or a singleton pattern that isn't clearing the "Evaluation Factors" list between processing different RFPs.
+*   **Action:** Ensure the `evaluation_factors` list is scoped strictly to the `rfp_id` being processed.
+
+**2. Refine Volume Naming**
+*   The outline correctly identified Volume 2 but named it **"BUSINESS PROPOSAL"**.
+*   The Air Force RFP calls it **"Cost & Price Volume"**.
+*   **Recommendation:** The system is likely defaulting to a "Standard GSA/Fed" naming convention. It should prioritize the exact string found in the "Section L" equivalent (Attachment 2) for volume titles.
+
+**3. RAC Outline (`00Attachment 11`) Inference**
+Although the text for the new RAC outline wasn't provided, the logic applied to `Attachment 2` suggests the RAC outline **should** now correctly reflect the **2-part submission** (Technical & Cost) requested in the "Request for Estimate," rather than the 4-volume structure seen previously. If it still shows 4 volumes, the "Format Detection" logic needs to be updated to recognize "Request for Estimate" as a distinct document type similar to "Task Order."
