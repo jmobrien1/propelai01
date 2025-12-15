@@ -64,15 +64,28 @@ class SectionClassifier:
         (r'offeror\s+shall\s+(?:submit|provide|include)', 0.85),
         (r'proposal\s+(?:shall|must|should)', 0.8),
         (r'volume\s+[ivx\d]+', 0.75),
-        (r'page\s+limit', 0.8),
+        (r'page\s+limit', 0.9),  # v3.2: Strong Section L indicator
         (r'font\s+(?:size|type)', 0.75),
-        (r'submission\s+(?:requirements?|instructions?)', 0.8),
+        (r'submission\s+(?:requirements?|instructions?)', 0.85),
         (r'format\s+(?:requirements?|instructions?)', 0.75),
         (r'proposal\s+preparation', 0.8),
         (r'technical\s+(?:volume|proposal)', 0.7),
         (r'(?:past\s+performance|management)\s+(?:volume|proposal)', 0.7),
         (r'cost/price\s+(?:volume|proposal)', 0.7),
         (r'oral\s+presentation', 0.75),
+        # v3.2: Additional Section L patterns
+        (r'electronic\s+submission', 0.85),
+        (r'instructions?:\s*(?:electronic|use|submit)', 0.85),
+        (r'^\s*a\s+page\s+is\s+', 0.85),  # Page definition instructions
+        (r'8\.5\s*x\s*11', 0.8),  # Paper size instructions
+        (r'margin(?:s)?\s+(?:shall|should|must)', 0.8),
+        (r'proposal\s+shall\s+not\s+exceed', 0.85),
+        (r'pages?\s+shall\s+be\s+numbered', 0.8),
+        (r'use\s+(?:the\s+)?(?:secure|safe)\s+file\s+transfer', 0.85),
+        (r'all\s+electronic\s+files?\s+shall', 0.8),
+        (r'offeror(?:s)?(?:\s+are)?\s+(?:cautioned|advised|encouraged)', 0.8),
+        (r'without\s+conducting\s+(?:discussions|interchanges)', 0.8),  # Award intent
+        (r'intends?\s+to\s+(?:make\s+)?award', 0.75),
     ]
 
     # Section M indicators (Evaluation)
@@ -338,17 +351,27 @@ class SectionClassifier:
                 reasons.append(f"Content patterns match Section {best_section} (score: {best_score:.2f})")
                 return best_section, self._section_to_category(best_section), best_score, reasons
 
-        # Layer 5: Binding level hints
+        # Layer 5: Binding level hints (v3.2: Prioritize Section L detection)
         if req.binding_level == "SHALL":
+            # v3.2: Check Section L FIRST - proposal instructions take priority
+            section_l_indicators = [
+                r'proposal|offeror|submit(?:ted)?|format|page\s*limit',
+                r'electronic\s+(?:submission|file)',
+                r'margin|font\s+size|8\.5\s*x\s*11',
+                r'intends?\s+to\s+(?:make\s+)?award',
+                r'without\s+conducting\s+(?:discussions|interchanges)',
+                r'instructions?:\s*',
+                r'^a\s+page\s+is\s+',
+            ]
+            for indicator in section_l_indicators:
+                if re.search(indicator, text):
+                    reasons.append(f"SHALL statement with proposal/instruction indicator '{indicator}' -> Section L")
+                    return 'L', 'PROPOSAL_INSTRUCTION', 0.7, reasons
+
             # SHALL statements about contractor work -> Section C
             if re.search(r'contractor|perform|deliver|provide\s+(?:service|support)', text):
                 reasons.append("SHALL statement about contractor work -> Section C")
                 return 'C', 'TECHNICAL_REQUIREMENT', 0.6, reasons
-
-            # SHALL statements about proposal -> Section L
-            if re.search(r'proposal|offeror|submit|format', text):
-                reasons.append("SHALL statement about proposal -> Section L")
-                return 'L', 'PROPOSAL_INSTRUCTION', 0.6, reasons
 
         # Layer 6: Fallback - assign to most likely section with low confidence
         if self.sow_info.sow_detected:

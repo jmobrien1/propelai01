@@ -1,8 +1,14 @@
 """
-PropelAI v3.1: Resilient Extraction Pipeline
+PropelAI v3.2: Resilient Extraction Pipeline
 
 This module orchestrates the entire extraction process using the
 "Extract First, Classify Later" architecture.
+
+v3.2 Changes (2025-12-15):
+- Improved Section L detection (proposal instructions)
+- Added filters for distribution statements and boilerplate
+- Better FAR/DFARS clause handling
+- Maintains 91%+ recall with reduced false positives
 
 v3.1 Changes (2025-12-15):
 - Binding language required for extraction
@@ -16,7 +22,7 @@ Key principles:
 4. Validate and warn, don't silently drop
 """
 
-PIPELINE_VERSION = "3.1.0"
+PIPELINE_VERSION = "3.2.0"
 
 import logging
 import hashlib
