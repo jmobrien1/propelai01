@@ -1,9 +1,15 @@
 """
-PropelAI: Smart Proposal Outline Generator v2.10
+PropelAI: Smart Proposal Outline Generator v2.11
 
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
 already parsed from Section L and M rather than re-parsing PDFs.
+
+v2.11 Changes (2025-12-15):
+- Fix cross-contamination: Remove NIH-specific default factors
+- Improve page limit extraction with better patterns
+- Better volume structure detection from actual RFP text
+- Remove hardcoded defaults that leak between RFPs
 
 Key improvements:
 - Uses compliance matrix data (already parsed and categorized)
@@ -122,11 +128,17 @@ class SmartOutlineGenerator:
             (r"(technical|business|cost|price|management|past\s*performance)\s*proposal", "named"),
         ]
         
-        # Page limit patterns
+        # Page limit patterns - v2.11: Improved patterns
         self.page_limit_patterns = [
             r"(?:not\s+(?:to\s+)?exceed|maximum\s+of|limit(?:ed)?\s+to|no\s+more\s+than)\s*(\d+)\s*pages?",
             r"(\d+)\s*page\s*(?:limit|maximum)",
             r"(?:shall|must|should)\s+(?:not\s+exceed|be\s+limited\s+to)\s*(\d+)\s*pages?",
+            # v2.11: Additional patterns for common RFP formats
+            r"(\d+)\s*pages?\s+(?:maximum|limit|total)",
+            r"(?:limited\s+to|up\s+to|approximately)\s*(\d+)\s*pages?",
+            r"pages?[:\s]+(\d+)",  # "Pages: 8" format
+            r"(?:total|max(?:imum)?)\s*(?:of\s+)?(\d+)\s*pages?",
+            r"(\d+)\s*pages?\s+(?:for|per)\s+(?:this|each|the)",
         ]
         
         # Format patterns
@@ -360,25 +372,10 @@ class SmartOutlineGenerator:
                     if key not in factor_names or len(factor_name) > len(factor_names[key]):
                         factor_names[key] = factor_name.title()
         
-        # Also look in Section L for factor mentions
-        all_text_lower = text.lower()
-        
-        # Common factor names to look for if not found above
-        default_factors = {
-            "1": "Experience",
-            "2": "Program and Project Management", 
-            "3": "Technical Approach",
-            "4": "Key Personnel",
-            "5": "Facilities and Equipment",
-            "6": "Past Performance",
-        }
-        
-        for num, default_name in default_factors.items():
-            key = f"factor_{num}"
-            if key not in factor_names:
-                # Check if this factor is mentioned at all
-                if f"factor {num}" in all_text_lower or f"factor{num}" in all_text_lower:
-                    factor_names[key] = default_name
+        # v2.11: Do NOT apply hardcoded NIH default factors
+        # These were causing cross-contamination between RFPs
+        # Only use factors that are explicitly found in the text
+        # Removed: default_factors dictionary that leaked NIH names into other RFPs
         
         # Create sections from factors
         tech_sections = []
@@ -467,8 +464,14 @@ class SmartOutlineGenerator:
         return volumes
     
     def _create_default_volumes(self, rfp_format: str, section_m: List[Dict]) -> List[ProposalVolume]:
-        """Create default volumes if none were extracted"""
-        
+        """
+        Create default volumes if none were extracted.
+
+        v2.11: Reduced to minimal defaults - only Technical and Cost/Price.
+        The previous 4-volume default was causing incorrect structures.
+        Better to have fewer correct volumes than more incorrect ones.
+        """
+
         if rfp_format in ["GSA_BPA", "GSA_RFQ"]:
             return [
                 ProposalVolume(id="VOL-1", name="Technical Approach", volume_type=VolumeType.TECHNICAL, order=0),
@@ -476,11 +479,12 @@ class SmartOutlineGenerator:
                 ProposalVolume(id="VOL-3", name="Price", volume_type=VolumeType.COST_PRICE, order=2),
             ]
         else:
+            # v2.11: Only create Technical and Cost volumes by default
+            # Past Performance and Management should only appear if detected in text
+            # This prevents the 4-volume default from overriding actual RFP structure
             return [
                 ProposalVolume(id="VOL-TECH", name="Technical Proposal", volume_type=VolumeType.TECHNICAL, order=0),
-                ProposalVolume(id="VOL-MGMT", name="Management Proposal", volume_type=VolumeType.MANAGEMENT, order=1),
-                ProposalVolume(id="VOL-PP", name="Past Performance", volume_type=VolumeType.PAST_PERFORMANCE, order=2),
-                ProposalVolume(id="VOL-COST", name="Cost/Price Proposal", volume_type=VolumeType.COST_PRICE, order=3),
+                ProposalVolume(id="VOL-COST", name="Cost/Price Proposal", volume_type=VolumeType.COST_PRICE, order=1),
             ]
     
     def _classify_volume_type(self, name: str) -> VolumeType:
@@ -543,30 +547,10 @@ class SmartOutlineGenerator:
                     )
                     factors.append(factor)
         
-        # If no factors found from clean patterns, use defaults for known factors
-        if not factors:
-            # Check which factor numbers are mentioned
-            all_text_lower = all_text.lower()
-            default_factors = {
-                "1": "Experience",
-                "2": "Program and Project Management",
-                "3": "Technical Approach", 
-                "4": "Key Personnel",
-                "5": "Facilities and Equipment",
-                "6": "Past Performance",
-            }
-            
-            for num, name in default_factors.items():
-                if f"factor {num}" in all_text_lower or f"factor{num}" in all_text_lower:
-                    key = f"factor_{num}"
-                    if key not in seen:
-                        seen.add(key)
-                        factor = EvaluationFactor(
-                            id=f"EVAL-F{num}",
-                            name=f"Factor {num}: {name}",
-                            weight=None
-                        )
-                        factors.append(factor)
+        # v2.11: Removed hardcoded NIH default factors
+        # These were causing cross-contamination between RFPs
+        # If no clean factor patterns found, we skip NIH defaults
+        # The factors should be extracted from the actual RFP text only
         
         # Still no factors? Look for general criteria keywords
         if not factors:
