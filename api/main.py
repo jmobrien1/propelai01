@@ -103,6 +103,22 @@ except ImportError as e:
     RESILIENT_EXTRACTION_AVAILABLE = False
     resilient_extractor = None
 
+# v3.2: Guided Document Upload
+try:
+    from agents.enhanced_compliance.document_types import (
+        DocumentType,
+        DocumentSlot,
+        UPLOAD_SLOTS,
+        SKIP_DOCUMENTS,
+        get_slot_by_id,
+        classify_document_by_filename,
+        get_ui_config,
+    )
+    GUIDED_UPLOAD_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Guided upload not available: {e}")
+    GUIDED_UPLOAD_AVAILABLE = False
+
 
 # ============== Configuration ==============
 
@@ -451,6 +467,271 @@ async def upload_files(
         "status": "uploaded",
         "files": uploaded,
         "total_files": len(file_names)
+    }
+
+
+# ============== Guided Document Upload (v3.2) ==============
+
+@app.get("/api/upload-config")
+async def get_upload_config():
+    """
+    Get the guided upload UI configuration.
+
+    Returns the upload slots, skip documents list, and tips
+    for the guided document upload interface.
+    """
+    if not GUIDED_UPLOAD_AVAILABLE:
+        # Return a basic config if module not available
+        return {
+            "upload_slots": [
+                {
+                    "id": "all",
+                    "doc_type": "auto_detect",
+                    "title": "RFP Documents",
+                    "description": "Upload all RFP documents",
+                    "help_text": "Upload your RFP files here",
+                    "common_names": [],
+                    "required": True,
+                    "allows_multiple": True,
+                    "show_not_applicable": False,
+                    "order": 1,
+                    "icon": "📄",
+                    "color": "#4A5568"
+                }
+            ],
+            "skip_documents": [],
+            "tips": [],
+            "guided_mode_available": False
+        }
+
+    config = get_ui_config()
+    config["guided_mode_available"] = True
+    return config
+
+
+@app.post("/api/rfp/{rfp_id}/upload-guided")
+async def upload_files_guided(
+    rfp_id: str,
+    files: List[UploadFile] = File(...),
+    doc_types: str = Form(default="")  # Comma-separated doc_type values matching file order
+):
+    """
+    Upload RFP documents with explicit document type tags.
+
+    This endpoint supports the guided upload UI where users specify
+    what type of document each file is (SOW, Section L, Section M, etc.)
+
+    Args:
+        rfp_id: The RFP identifier
+        files: List of files to upload
+        doc_types: Comma-separated document types matching file order
+                   e.g., "sow,instructions,evaluation"
+                   Use "auto_detect" or empty for automatic classification
+
+    Returns:
+        Upload status with classified document info
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Parse document types
+    doc_type_list = [dt.strip() for dt in doc_types.split(",")] if doc_types else []
+
+    # Create upload directory
+    rfp_dir = UPLOAD_DIR / rfp_id
+    rfp_dir.mkdir(exist_ok=True)
+
+    uploaded = []
+    file_paths = list(rfp.get("file_paths", []))
+    file_names = list(rfp.get("files", []))
+
+    # Initialize document metadata if not present
+    doc_metadata = rfp.get("document_metadata", {})
+
+    for i, file in enumerate(files):
+        # Validate file type
+        ext = Path(file.filename).suffix.lower()
+        if ext not in [".pdf", ".docx", ".xlsx", ".doc", ".xls"]:
+            continue
+
+        # Get document type (from form or auto-detect)
+        if i < len(doc_type_list) and doc_type_list[i] and doc_type_list[i] != "auto_detect":
+            doc_type = doc_type_list[i]
+        elif GUIDED_UPLOAD_AVAILABLE:
+            doc_type = classify_document_by_filename(file.filename).value
+        else:
+            doc_type = "auto_detect"
+
+        # Save file
+        file_path = rfp_dir / file.filename
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        file_paths.append(str(file_path))
+        file_names.append(file.filename)
+
+        # Store document metadata
+        doc_metadata[file.filename] = {
+            "doc_type": doc_type,
+            "file_path": str(file_path),
+            "size": len(content),
+            "uploaded_at": datetime.now().isoformat()
+        }
+
+        uploaded.append({
+            "name": file.filename,
+            "size": len(content),
+            "type": ext[1:].upper(),
+            "doc_type": doc_type,
+            "doc_type_label": _get_doc_type_label(doc_type)
+        })
+
+    # Update store with metadata
+    store.update(rfp_id, {
+        "files": file_names,
+        "file_paths": file_paths,
+        "document_metadata": doc_metadata,
+        "status": "files_uploaded"
+    })
+
+    return {
+        "status": "uploaded",
+        "files": uploaded,
+        "total_files": len(file_names),
+        "document_summary": _summarize_documents(doc_metadata)
+    }
+
+
+def _get_doc_type_label(doc_type: str) -> str:
+    """Get human-readable label for document type"""
+    labels = {
+        "sow": "Statement of Work (SOW)",
+        "instructions": "Proposal Instructions (Section L)",
+        "evaluation": "Evaluation Criteria (Section M)",
+        "combined_lm": "Combined L & M",
+        "solicitation": "Main Solicitation",
+        "amendment": "Amendment",
+        "attachment": "Attachment",
+        "auto_detect": "Auto-Detected",
+        "not_applicable": "Not Applicable"
+    }
+    return labels.get(doc_type, doc_type.title())
+
+
+def _summarize_documents(doc_metadata: Dict) -> Dict:
+    """Summarize uploaded documents by type"""
+    summary = {
+        "has_sow": False,
+        "has_instructions": False,
+        "has_evaluation": False,
+        "by_type": {}
+    }
+
+    for filename, meta in doc_metadata.items():
+        doc_type = meta.get("doc_type", "auto_detect")
+
+        if doc_type == "sow":
+            summary["has_sow"] = True
+        elif doc_type == "instructions":
+            summary["has_instructions"] = True
+        elif doc_type == "evaluation":
+            summary["has_evaluation"] = True
+        elif doc_type == "combined_lm":
+            summary["has_instructions"] = True
+            summary["has_evaluation"] = True
+
+        if doc_type not in summary["by_type"]:
+            summary["by_type"][doc_type] = []
+        summary["by_type"][doc_type].append(filename)
+
+    # Add warnings for missing required documents
+    summary["warnings"] = []
+    if not summary["has_sow"]:
+        summary["warnings"].append(
+            "No Statement of Work (SOW) identified. "
+            "Technical requirements extraction may be incomplete."
+        )
+    if not summary["has_instructions"]:
+        summary["warnings"].append(
+            "No Section L identified. "
+            "Proposal structure and page limits may not be detected."
+        )
+
+    return summary
+
+
+@app.get("/api/rfp/{rfp_id}/documents")
+async def get_rfp_documents(rfp_id: str):
+    """
+    Get detailed information about uploaded documents for an RFP.
+
+    Returns document metadata including types, sizes, and classification.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    doc_metadata = rfp.get("document_metadata", {})
+
+    # Build response with all documents
+    documents = []
+    for filename in rfp.get("files", []):
+        meta = doc_metadata.get(filename, {})
+        documents.append({
+            "filename": filename,
+            "doc_type": meta.get("doc_type", "auto_detect"),
+            "doc_type_label": _get_doc_type_label(meta.get("doc_type", "auto_detect")),
+            "size": meta.get("size", 0),
+            "uploaded_at": meta.get("uploaded_at")
+        })
+
+    return {
+        "rfp_id": rfp_id,
+        "documents": documents,
+        "summary": _summarize_documents(doc_metadata)
+    }
+
+
+@app.put("/api/rfp/{rfp_id}/documents/{filename}/type")
+async def update_document_type(rfp_id: str, filename: str, doc_type: str = Form(...)):
+    """
+    Update the document type for a specific file.
+
+    Allows users to correct misclassified documents.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    if filename not in rfp.get("files", []):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Validate document type
+    valid_types = ["sow", "instructions", "evaluation", "combined_lm",
+                   "solicitation", "amendment", "attachment", "auto_detect", "not_applicable"]
+    if doc_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid document type. Must be one of: {', '.join(valid_types)}"
+        )
+
+    # Update metadata
+    doc_metadata = rfp.get("document_metadata", {})
+    if filename not in doc_metadata:
+        doc_metadata[filename] = {}
+
+    doc_metadata[filename]["doc_type"] = doc_type
+    doc_metadata[filename]["manually_classified"] = True
+
+    store.update(rfp_id, {"document_metadata": doc_metadata})
+
+    return {
+        "status": "updated",
+        "filename": filename,
+        "doc_type": doc_type,
+        "doc_type_label": _get_doc_type_label(doc_type)
     }
 
 

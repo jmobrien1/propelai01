@@ -162,7 +162,202 @@
             font-family: 'JetBrains Mono', monospace;
             color: var(--text-secondary);
         }
-        
+
+        /* Guided Upload Styles */
+        .upload-mode-toggle {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            background: var(--bg-tertiary);
+            padding: 4px;
+            border-radius: 8px;
+            width: fit-content;
+        }
+        .upload-mode-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+        }
+        .upload-mode-btn.active {
+            background: var(--accent-blue);
+            color: white;
+        }
+        .upload-mode-btn:hover:not(.active) {
+            background: var(--border-color);
+        }
+
+        .guided-upload-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 900px) {
+            .guided-upload-grid { grid-template-columns: 1fr; }
+        }
+
+        .upload-slot {
+            background: var(--bg-card);
+            border: 2px dashed var(--border-accent);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.2s;
+            cursor: pointer;
+            position: relative;
+        }
+        .upload-slot:hover { border-color: var(--accent-blue); }
+        .upload-slot.has-file { border-style: solid; border-color: var(--accent-green); background: rgba(52, 211, 153, 0.05); }
+        .upload-slot.required { position: relative; }
+        .upload-slot.required::after {
+            content: 'REQUIRED';
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--accent-amber);
+            letter-spacing: 1px;
+        }
+        .upload-slot.not-applicable { opacity: 0.5; border-style: dotted; }
+
+        .slot-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .slot-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .slot-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .slot-description {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        .slot-help {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+        }
+        .slot-help strong { color: var(--text-secondary); }
+
+        .slot-file {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg-secondary);
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+        .slot-file-name {
+            flex: 1;
+            font-size: 13px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .slot-file-remove {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+        }
+        .slot-file-remove:hover { background: var(--bg-tertiary); color: var(--accent-red); }
+
+        .slot-na-btn {
+            font-size: 11px;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+            cursor: pointer;
+            margin-top: 8px;
+            text-decoration: underline;
+        }
+        .slot-na-btn:hover { color: var(--text-secondary); }
+
+        .skip-docs-section {
+            background: rgba(248, 113, 113, 0.05);
+            border: 1px solid rgba(248, 113, 113, 0.2);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-top: 24px;
+        }
+        .skip-docs-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-red);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .skip-docs-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .skip-doc-tag {
+            font-size: 11px;
+            background: var(--bg-tertiary);
+            padding: 4px 10px;
+            border-radius: 4px;
+            color: var(--text-secondary);
+        }
+
+        .upload-tips {
+            background: rgba(79, 140, 255, 0.05);
+            border: 1px solid rgba(79, 140, 255, 0.2);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-top: 16px;
+        }
+        .upload-tips-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin-bottom: 8px;
+        }
+        .upload-tips ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .upload-tips li {
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 4px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        .upload-tips li::before {
+            content: '💡';
+            position: absolute;
+            left: 0;
+            font-size: 11px;
+        }
+
         .btn {
             display: inline-flex;
             align-items: center;
@@ -306,7 +501,18 @@
                 });
                 return res.json();
             },
-            
+
+            async uploadFilesGuided(rfpId, files, docTypes) {
+                const formData = new FormData();
+                files.forEach(f => formData.append('files', f));
+                formData.append('doc_types', docTypes);
+                const res = await fetch(`${API_BASE}/rfp/${rfpId}/upload-guided`, {
+                    method: 'POST',
+                    body: formData
+                });
+                return res.json();
+            },
+
             async processRFP(rfpId) {
                 const res = await fetch(`${API_BASE}/rfp/${rfpId}/process`, { method: 'POST' });
                 return res.json();
@@ -454,17 +660,17 @@
                 }
             };
             
-            // Process files
-            const processFiles = async () => {
+            // Process files - accepts optional docTypes from guided upload
+            const processFiles = async (docTypes = '') => {
                 if (rawFiles.length === 0) {
                     setError('Please upload files first');
                     return;
                 }
-                
+
                 setError(null);
                 setProcessing(true);
                 setProcessingStatus({ status: 'starting', progress: 0, message: 'Creating RFP project...' });
-                
+
                 try {
                     // Create RFP
                     const rfp = await api.createRFP({
@@ -472,12 +678,16 @@
                         solicitation_number: null,
                         agency: null
                     });
-                    
+
                     setCurrentRfpId(rfp.id);
                     setProcessingStatus({ status: 'uploading', progress: 20, message: 'Uploading files...' });
-                    
-                    // Upload files
-                    await api.uploadFiles(rfp.id, rawFiles);
+
+                    // Upload files with document types if provided
+                    if (docTypes) {
+                        await api.uploadFilesGuided(rfp.id, rawFiles, docTypes);
+                    } else {
+                        await api.uploadFiles(rfp.id, rawFiles);
+                    }
                     setProcessingStatus({ status: 'processing', progress: 40, message: 'Starting processing...' });
                     
                     // Start processing
@@ -598,7 +808,7 @@
                         )}
                         
                         {currentView === 'upload' && (
-                            <UploadView 
+                            <GuidedUploadView
                                 files={files}
                                 setFiles={setFiles}
                                 rawFiles={rawFiles}
@@ -813,7 +1023,298 @@
                 </div>
             );
         }
-        
+
+        // Guided Upload View - helps new proposal managers upload the right documents
+        function GuidedUploadView({ files, setFiles, rawFiles, setRawFiles, onProcess, apiConnected, extractionMode, setExtractionMode }) {
+            const [uploadConfig, setUploadConfig] = useState(null);
+            const [slotFiles, setSlotFiles] = useState({});  // { slotId: { file, rawFile } }
+            const [notApplicable, setNotApplicable] = useState(new Set());
+            const [loading, setLoading] = useState(true);
+            const [showHelp, setShowHelp] = useState(null);
+            const fileInputRefs = useRef({});
+
+            // Fetch upload config on mount
+            useEffect(() => {
+                fetch('/api/upload-config')
+                    .then(res => res.json())
+                    .then(config => {
+                        setUploadConfig(config);
+                        setLoading(false);
+                    })
+                    .catch(() => setLoading(false));
+            }, []);
+
+            const handleSlotDrop = (slotId, allowsMultiple) => (e) => {
+                e.preventDefault();
+                const droppedFiles = Array.from(e.dataTransfer.files);
+                if (droppedFiles.length > 0) {
+                    const file = droppedFiles[0];
+                    addFileToSlot(slotId, file, allowsMultiple);
+                }
+            };
+
+            const handleSlotSelect = (slotId, allowsMultiple) => (e) => {
+                const selectedFiles = Array.from(e.target.files);
+                if (selectedFiles.length > 0) {
+                    addFileToSlot(slotId, selectedFiles[0], allowsMultiple);
+                }
+            };
+
+            const addFileToSlot = (slotId, file, allowsMultiple) => {
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (!['pdf', 'docx', 'xlsx', 'doc', 'xls'].includes(ext)) return;
+
+                const fileData = {
+                    name: file.name,
+                    size: formatFileSize(file.size),
+                    type: ext.toUpperCase()
+                };
+
+                if (allowsMultiple) {
+                    const existing = slotFiles[slotId] || [];
+                    setSlotFiles({
+                        ...slotFiles,
+                        [slotId]: [...existing, { file: fileData, rawFile: file }]
+                    });
+                } else {
+                    setSlotFiles({
+                        ...slotFiles,
+                        [slotId]: [{ file: fileData, rawFile: file }]
+                    });
+                }
+
+                // Remove from not applicable
+                if (notApplicable.has(slotId)) {
+                    const newNA = new Set(notApplicable);
+                    newNA.delete(slotId);
+                    setNotApplicable(newNA);
+                }
+            };
+
+            const removeFileFromSlot = (slotId, index) => {
+                const existing = slotFiles[slotId] || [];
+                setSlotFiles({
+                    ...slotFiles,
+                    [slotId]: existing.filter((_, i) => i !== index)
+                });
+            };
+
+            const toggleNotApplicable = (slotId) => {
+                const newNA = new Set(notApplicable);
+                if (newNA.has(slotId)) {
+                    newNA.delete(slotId);
+                } else {
+                    newNA.add(slotId);
+                    // Clear files from this slot
+                    setSlotFiles({ ...slotFiles, [slotId]: [] });
+                }
+                setNotApplicable(newNA);
+            };
+
+            const handleProcess = () => {
+                // Collect all files with their doc types
+                const allFiles = [];
+                const docTypes = [];
+
+                Object.entries(slotFiles).forEach(([slotId, fileList]) => {
+                    (fileList || []).forEach(({ rawFile }) => {
+                        allFiles.push(rawFile);
+                        docTypes.push(slotId);
+                    });
+                });
+
+                if (allFiles.length === 0) return;
+
+                // Update parent state
+                const fileData = allFiles.map(f => ({
+                    name: f.name,
+                    size: formatFileSize(f.size),
+                    type: f.name.split('.').pop().toUpperCase(),
+                    status: 'ready'
+                }));
+
+                setFiles(fileData);
+                setRawFiles(allFiles);
+                onProcess(docTypes.join(','));
+            };
+
+            const getTotalFiles = () => {
+                return Object.values(slotFiles).reduce((acc, files) => acc + (files?.length || 0), 0);
+            };
+
+            const hasRequiredFiles = () => {
+                if (!uploadConfig) return false;
+                const requiredSlots = uploadConfig.upload_slots.filter(s => s.required);
+                return requiredSlots.every(slot =>
+                    (slotFiles[slot.id]?.length > 0) || notApplicable.has(slot.id)
+                );
+            };
+
+            if (loading) {
+                return <div style={{ textAlign: 'center', padding: 40 }}>Loading...</div>;
+            }
+
+            if (!uploadConfig?.guided_mode_available) {
+                return <UploadView
+                    files={files} setFiles={setFiles}
+                    rawFiles={rawFiles} setRawFiles={setRawFiles}
+                    onProcess={onProcess} apiConnected={apiConnected}
+                    extractionMode={extractionMode} setExtractionMode={setExtractionMode}
+                />;
+            }
+
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>Upload RFP Documents</h2>
+                        <p>Upload each document type to help PropelAI extract requirements accurately</p>
+                    </div>
+
+                    <div className="guided-upload-grid">
+                        {uploadConfig.upload_slots.map(slot => {
+                            const slotFileList = slotFiles[slot.id] || [];
+                            const isNA = notApplicable.has(slot.id);
+                            const hasFiles = slotFileList.length > 0;
+
+                            return (
+                                <div
+                                    key={slot.id}
+                                    className={`upload-slot ${slot.required ? 'required' : ''} ${hasFiles ? 'has-file' : ''} ${isNA ? 'not-applicable' : ''}`}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={!isNA ? handleSlotDrop(slot.id, slot.allows_multiple) : undefined}
+                                    onClick={() => !isNA && fileInputRefs.current[slot.id]?.click()}
+                                    style={{ cursor: isNA ? 'default' : 'pointer' }}
+                                >
+                                    <input
+                                        ref={el => fileInputRefs.current[slot.id] = el}
+                                        type="file"
+                                        accept=".pdf,.docx,.xlsx,.doc,.xls"
+                                        onChange={handleSlotSelect(slot.id, slot.allows_multiple)}
+                                        style={{ display: 'none' }}
+                                    />
+
+                                    <div className="slot-header">
+                                        <div className="slot-icon" style={{ background: `${slot.color}20` }}>
+                                            {slot.icon}
+                                        </div>
+                                        <div>
+                                            <div className="slot-title">{slot.title}</div>
+                                            <div className="slot-description">{slot.description}</div>
+                                        </div>
+                                    </div>
+
+                                    {!isNA && !hasFiles && (
+                                        <div className="slot-help">
+                                            <strong>Look for:</strong> {slot.common_names.slice(0, 3).join(', ')}
+                                            {slot.common_names.length > 3 && '...'}
+                                            <button
+                                                className="btn btn-ghost"
+                                                onClick={(e) => { e.stopPropagation(); setShowHelp(showHelp === slot.id ? null : slot.id); }}
+                                                style={{ marginLeft: 8, padding: '2px 6px', fontSize: 11 }}
+                                            >
+                                                ?
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {showHelp === slot.id && (
+                                        <div style={{
+                                            marginTop: 12,
+                                            padding: 12,
+                                            background: 'var(--bg-secondary)',
+                                            borderRadius: 8,
+                                            fontSize: 12,
+                                            lineHeight: 1.6,
+                                            whiteSpace: 'pre-wrap'
+                                        }}>
+                                            {slot.help_text}
+                                        </div>
+                                    )}
+
+                                    {hasFiles && slotFileList.map((item, idx) => (
+                                        <div key={idx} className="slot-file">
+                                            <Icon name="FileText" size={16} />
+                                            <span className="slot-file-name">{item.file.name}</span>
+                                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{item.file.size}</span>
+                                            <button
+                                                className="slot-file-remove"
+                                                onClick={(e) => { e.stopPropagation(); removeFileFromSlot(slot.id, idx); }}
+                                            >
+                                                <Icon name="X" size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+
+                                    {isNA && (
+                                        <div style={{ marginTop: 12, color: 'var(--text-muted)', fontSize: 12 }}>
+                                            Marked as not applicable
+                                        </div>
+                                    )}
+
+                                    {slot.show_not_applicable && !hasFiles && (
+                                        <button
+                                            className="slot-na-btn"
+                                            onClick={(e) => { e.stopPropagation(); toggleNotApplicable(slot.id); }}
+                                        >
+                                            {isNA ? 'Enable this slot' : 'Not applicable for this RFP'}
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Skip Documents Warning */}
+                    <div className="skip-docs-section">
+                        <div className="skip-docs-title">
+                            <Icon name="AlertCircle" size={14} />
+                            Don't upload these documents
+                        </div>
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                            These files don't contain proposal requirements and may reduce extraction accuracy:
+                        </p>
+                        <div className="skip-docs-list">
+                            {uploadConfig.skip_documents.map((doc, i) => (
+                                <span key={i} className="skip-doc-tag" title={doc.description}>
+                                    {doc.name}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Tips */}
+                    <div className="upload-tips">
+                        <div className="upload-tips-title">Tips for Best Results</div>
+                        <ul>
+                            {uploadConfig.tips.map((tip, i) => (
+                                <li key={i}>{tip}</li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    {/* Process Button */}
+                    <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleProcess}
+                            disabled={!apiConnected || getTotalFiles() === 0}
+                        >
+                            <Icon name="Zap" />
+                            {getTotalFiles() > 0
+                                ? `Process ${getTotalFiles()} Document${getTotalFiles() > 1 ? 's' : ''}`
+                                : 'Upload documents to continue'
+                            }
+                        </button>
+                        {!hasRequiredFiles() && getTotalFiles() > 0 && (
+                            <span style={{ fontSize: 12, color: 'var(--accent-amber)' }}>
+                                ⚠️ Missing required documents (SOW or Instructions)
+                            </span>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         // Matrix View
         function MatrixView({ 
             requirements, allRequirements, stats, 
