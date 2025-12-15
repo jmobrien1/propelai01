@@ -455,12 +455,17 @@ async def upload_files(
 # ============== Processing ==============
 
 def process_rfp_background(rfp_id: str):
-    """Background task to process RFP - uses best practices extractor when available"""
+    """Background task to process RFP - uses resilient extraction as default (v3.0)"""
     rfp = store.get(rfp_id)
     if not rfp:
         return
-    
-    # Use best practices extraction if available (v2.10+)
+
+    # Use resilient extraction if available (v3.0) - this is now the default
+    if RESILIENT_EXTRACTION_AVAILABLE and resilient_extractor:
+        process_rfp_resilient_background(rfp_id)
+        return
+
+    # Fall back to best practices extraction (v2.10)
     if BEST_PRACTICES_AVAILABLE and best_practices_extractor:
         process_rfp_best_practices_background(rfp_id)
         return
