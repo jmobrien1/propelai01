@@ -37,14 +37,15 @@ class ParagraphContext:
 
 class UniversalExtractor:
     """
-    Extracts ALL potential requirements from documents.
+    Extracts potential requirements from documents.
 
-    This extractor is intentionally permissive - it's better to extract
-    something that isn't a requirement (and classify it later) than to
-    miss a real requirement due to overly strict filtering.
+    v3.1 Update: Balanced precision/recall approach
+    - Requires binding language (shall/must/should/will) for extraction
+    - Filters out form templates, headers, and non-requirement content
+    - Document-level filtering for templates, checklists, etc.
     """
 
-    # Binding language patterns
+    # Binding language patterns - REQUIRED for extraction
     BINDING_PATTERNS = {
         "SHALL": [
             r'\bshall\b',
@@ -52,7 +53,13 @@ class UniversalExtractor:
             r'\bis\s+required\s+to\b',
             r'\bare\s+required\s+to\b',
             r'\bwill\s+be\s+required\b',
-            r'\bmandatory\b',
+            r'\brequires?\s+(?:the\s+)?(?:contractor|offeror|vendor|successful)',
+            r'(?:contractor|offeror)s?\s+(?:are|is)\s+required',
+            r'\bis\s+not\s+authorized\b',  # Negative constraints
+            r'\bare\s+not\s+authorized\b',
+            r'\bis\s+not\s+permitted\b',
+            r'\bis\s+prohibited\b',
+            r'(?:participation|foreign)\s+is\s+not\s+authorized',
         ],
         "SHOULD": [
             r'\bshould\b',
@@ -61,12 +68,75 @@ class UniversalExtractor:
             r'\brecommended\b',
         ],
         "MAY": [
-            r'\bmay\b',
-            r'\bcan\b',
-            r'\boptional\b',
+            r'\bmay\b(?!\s+\d{4})',  # Exclude "May 2024" dates
             r'\bat\s+(?:its|their)\s+discretion\b',
         ],
+        "WILL": [
+            r'\b(?:contractor|offeror|vendor|government)\s+will\b',
+            r'\bwill\s+(?:provide|deliver|perform|submit|ensure|maintain)\b',
+        ],
     }
+
+    # Documents to SKIP entirely (templates, forms, non-requirement docs)
+    SKIP_DOCUMENT_PATTERNS = [
+        r'template',
+        r'form\b',
+        r'checklist',
+        r'dd\s*254',
+        r'dd\s*1423',
+        r'sf\s*\d+',           # Standard forms
+        r'pricing\s*table',
+        r'rate\s*card',
+        r'labor\s*rates?',
+        r'labor\s*categor',
+        r'proposed\s*labor',
+        r'past\s*performance',
+        r'experience\s*matrix',
+        r'resume',
+        r'organizational\s*conflict',
+        r'oasis',
+        r'gsa\s*schedule',
+        r'q\s*&?\s*a\b',
+        r'amendment',
+        r'modification',
+        r'surveillance\s*plan',
+        r'resolution\s*matrix',
+        r'comments?\s*matrix',
+        r'placeholder',
+        r'rac\s*request',
+        r'request\s*for\s*estimate',
+        r'ordering\s*instruction',
+        r'representations?\s*and\s*cert',
+        r'cdrl',
+        r'mapping\b',
+        r'model\s*contract',
+    ]
+
+    # Content patterns that indicate NON-requirement text
+    NON_REQUIREMENT_PATTERNS = [
+        r'^[A-Z\s]{10,50}$',                           # ALL CAPS headers
+        r'^\s*\d+\s*$',                                # Just a number
+        r'^\s*page\s+\d+',                             # Page numbers
+        r'^\s*table\s+of\s+contents',                  # TOC
+        r'\.{3,}',                                      # Dot leaders (TOC)
+        r'^\s*(?:date|name|title|signature):\s*$',     # Empty form fields
+        r'^\s*\[.*\]\s*$',                             # Placeholder brackets
+        r'^\s*_{3,}\s*$',                              # Blank lines for filling
+        r'^\s*(?:draft|confidential|proprietary)',     # Document markings
+        r'^\s*(?:copyright|all\s+rights\s+reserved)',  # Copyright
+        r'^\s*(?:section|article|part)\s+[a-z\d]+\s*$', # Section headers alone
+        r'^\s*\(\s*\)\s*$',                            # Empty checkboxes
+        r'^\s*☐\s*',                                   # Checkbox characters
+        r'^\s*(?:yes|no)\s*(?:☐|☑|□|■)?\s*$',          # Yes/No fields
+        r'^\s*n/?a\s*$',                               # N/A entries
+        r'^\s*tbd\s*$',                                # TBD entries
+        r'^\s*\$?\s*[\d,]+\.?\d*\s*$',                 # Just currency/numbers
+        r'labor\s*category.*hours.*rate',              # Table headers
+        r'^\s*total\s*:?\s*\$?[\d,\.]*\s*$',          # Total rows
+        r'^instructions?:?\s*$',                       # Instruction headers
+        r'^\s*attachment\s+\d+\s*[-:]?\s*$',          # Attachment headers
+        r'^\s*exhibit\s+[a-z\d]+\s*$',                # Exhibit headers
+    ]
 
     # RFP reference patterns (to extract the RFP's own numbering)
     RFP_REFERENCE_PATTERNS = [
@@ -113,7 +183,7 @@ class UniversalExtractor:
 
     def extract_all(self, documents: List[Dict]) -> List[RequirementCandidate]:
         """
-        Extract ALL potential requirements from ALL documents.
+        Extract potential requirements from documents.
 
         Args:
             documents: List of parsed documents with 'text', 'filename', 'pages'
@@ -124,11 +194,18 @@ class UniversalExtractor:
         self.seen_hashes = set()
         self.req_counter = 0
         all_candidates = []
+        skipped_docs = []
 
         for doc in documents:
             filename = doc.get('filename', 'unknown')
             text = doc.get('text', '')
             pages = doc.get('pages', [])
+
+            # Check if document should be skipped (templates, forms, etc.)
+            if self._should_skip_document(filename):
+                skipped_docs.append(filename)
+                logger.info(f"Skipping non-requirement document: {filename}")
+                continue
 
             # Use pages if they have real content, otherwise fall back to full text
             # Check if pages are placeholders (very short strings) or real content
@@ -158,8 +235,18 @@ class UniversalExtractor:
                 all_candidates.extend(candidates)
                 page_offset += len(page_text) + 2  # +2 for page separator
 
-        logger.info(f"Extracted {len(all_candidates)} candidates from {len(documents)} documents")
+        logger.info(f"Extracted {len(all_candidates)} candidates from {len(documents) - len(skipped_docs)} documents (skipped {len(skipped_docs)})")
         return all_candidates
+
+    def _should_skip_document(self, filename: str) -> bool:
+        """Check if document should be skipped based on filename"""
+        filename_lower = filename.lower()
+
+        for pattern in self.SKIP_DOCUMENT_PATTERNS:
+            if re.search(pattern, filename_lower):
+                return True
+
+        return False
 
     def _extract_from_page(
         self,
@@ -168,7 +255,7 @@ class UniversalExtractor:
         source_document: str,
         offset: int
     ) -> List[RequirementCandidate]:
-        """Extract candidates from a single page"""
+        """Extract candidates from a single page - requires binding language"""
         candidates = []
 
         # Split into paragraphs
@@ -192,12 +279,19 @@ class UniversalExtractor:
             if self._is_clearly_not_requirement(para_text):
                 continue
 
-            # Create candidate
+            # v3.1: REQUIRE binding language - this is the key precision filter
+            has_binding, binding_level, keyword = self._has_binding_language(para_text)
+            if not has_binding:
+                continue  # Skip text without shall/must/should/will
+
+            # Create candidate (pass binding info to avoid re-detection)
             candidate = self._create_candidate(
                 text=para_text,
                 page_number=page_number,
                 source_document=source_document,
-                offset=offset + para['start']
+                offset=offset + para['start'],
+                binding_level=binding_level,
+                binding_keyword=keyword
             )
 
             if candidate:
@@ -234,7 +328,7 @@ class UniversalExtractor:
         source_document: str,
         offset: int
     ) -> List[RequirementCandidate]:
-        """Handle very long paragraphs by extracting sub-items"""
+        """Handle very long paragraphs by extracting sub-items - requires binding language"""
         candidates = []
 
         # Try to split on numbered items
@@ -244,63 +338,119 @@ class UniversalExtractor:
         for part in parts:
             part = part.strip()
             if len(part) >= self.min_length and len(part) <= self.max_length:
+                # v3.1: Require binding language
+                has_binding, binding_level, keyword = self._has_binding_language(part)
+                if not has_binding:
+                    continue
+
                 candidate = self._create_candidate(
                     text=part,
                     page_number=page_number,
                     source_document=source_document,
-                    offset=offset
+                    offset=offset,
+                    binding_level=binding_level,
+                    binding_keyword=keyword
                 )
                 if candidate:
                     candidates.append(candidate)
 
-        # If no sub-items found, truncate and flag for review
+        # If no sub-items found but original text has binding language, truncate and flag
         if not candidates and len(text) >= self.min_length:
-            truncated = text[:self.max_length] + "..."
-            candidate = self._create_candidate(
-                text=truncated,
-                page_number=page_number,
-                source_document=source_document,
-                offset=offset
-            )
-            if candidate:
-                candidate.needs_review = True
-                candidate.review_reasons.append("TRUNCATED: Original text exceeded max length")
-                candidates.append(candidate)
+            has_binding, binding_level, keyword = self._has_binding_language(text)
+            if has_binding:
+                truncated = text[:self.max_length] + "..."
+                candidate = self._create_candidate(
+                    text=truncated,
+                    page_number=page_number,
+                    source_document=source_document,
+                    offset=offset,
+                    binding_level=binding_level,
+                    binding_keyword=keyword
+                )
+                if candidate:
+                    candidate.needs_review = True
+                    candidate.review_reasons.append("TRUNCATED: Original text exceeded max length")
+                    candidates.append(candidate)
 
         return candidates
 
     def _is_clearly_not_requirement(self, text: str) -> bool:
-        """Check if text is clearly not a requirement (headers, TOC, etc.)"""
-        text_lower = text.lower()
+        """
+        Check if text is clearly NOT a requirement.
+        v3.1: Much stricter filtering to reduce false positives.
+        """
+        text_lower = text.lower().strip()
+        text_stripped = text.strip()
 
-        # Table of contents entries
+        # Check against known non-requirement patterns
+        for pattern in self.NON_REQUIREMENT_PATTERNS:
+            if re.search(pattern, text_lower, re.IGNORECASE | re.MULTILINE):
+                return True
+
+        # Table of contents entries (dot leaders)
         if '....' in text or re.search(r'\.\s*\d+\s*$', text):
             return True
 
-        # Very short lines that are likely headers
-        if len(text) < 60 and text.isupper():
+        # Very short lines that are likely headers (under 60 chars and ALL CAPS)
+        if len(text_stripped) < 60 and text_stripped.isupper():
             return True
 
-        # Page numbers
+        # Page numbers standalone
         if re.match(r'^\s*(?:Page\s+)?\d+\s*(?:of\s+\d+)?\s*$', text, re.IGNORECASE):
             return True
 
-        # Copyright/footer text
-        if 'copyright' in text_lower or 'all rights reserved' in text_lower:
+        # Blank or whitespace only
+        if not text_stripped:
             return True
 
-        # Blank or whitespace only
-        if not text.strip():
+        # Form field patterns (label followed by colon and little/no content)
+        if re.match(r'^[A-Za-z\s]{3,30}:\s*(?:\n|$|[_\s]*$)', text_stripped):
             return True
+
+        # Multiple blank form fields in one block
+        blank_field_count = len(re.findall(r':\s*(?:\n|$|_{2,})', text))
+        if blank_field_count >= 3:
+            return True
+
+        # Table row fragments (mostly numbers, dates, or single words)
+        words = text_stripped.split()
+        if len(words) <= 5:
+            # Check if it's mostly numbers or very short tokens
+            num_count = sum(1 for w in words if re.match(r'^[\d,$%.]+$', w))
+            if num_count >= len(words) * 0.5:
+                return True
+
+        # Signature blocks
+        if re.search(r'(?:signature|authorized|representative).*(?:date|title)', text_lower):
+            if len(text_stripped) < 150:  # Short signature block
+                return True
 
         return False
+
+    def _has_binding_language(self, text: str) -> Tuple[bool, str, Optional[str]]:
+        """
+        Check if text contains binding language.
+        Returns: (has_binding, binding_level, matched_keyword)
+        """
+        text_lower = text.lower()
+
+        # Check all binding pattern categories
+        for level in ["SHALL", "SHOULD", "WILL", "MAY"]:
+            for pattern in self.BINDING_PATTERNS.get(level, []):
+                match = re.search(pattern, text_lower)
+                if match:
+                    return True, level, match.group()
+
+        return False, "INFORMATIONAL", None
 
     def _create_candidate(
         self,
         text: str,
         page_number: int,
         source_document: str,
-        offset: int
+        offset: int,
+        binding_level: Optional[str] = None,
+        binding_keyword: Optional[str] = None
     ) -> Optional[RequirementCandidate]:
         """Create a requirement candidate with binding analysis"""
 
@@ -310,8 +460,9 @@ class UniversalExtractor:
             return None
         self.seen_hashes.add(text_hash)
 
-        # Detect binding level
-        binding_level, binding_keyword = self._detect_binding(text)
+        # Use provided binding info or detect
+        if binding_level is None:
+            binding_level, binding_keyword = self._detect_binding(text)
 
         # Extract RFP reference if present
         rfp_reference = self._extract_rfp_reference(text)
@@ -357,6 +508,12 @@ class UniversalExtractor:
             match = re.search(pattern, text_lower)
             if match:
                 return "SHALL", match.group()
+
+        # Check WILL patterns (strong requirement)
+        for pattern in self.BINDING_PATTERNS.get("WILL", []):
+            match = re.search(pattern, text_lower)
+            if match:
+                return "SHALL", match.group()  # Treat WILL as SHALL-equivalent
 
         # Check SHOULD patterns
         for pattern in self.BINDING_PATTERNS["SHOULD"]:

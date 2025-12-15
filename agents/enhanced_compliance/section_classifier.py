@@ -178,8 +178,13 @@ class SectionClassifier:
             'budget', 'pricing', 'cost', 'template', 'form',
             'checklist', 'amendment', 'qa ', 'q&a', 'resume',
             'personnel', 'experience', 'past performance',
-            'dd254', 'security classification', 'oasis', 'gsa',
-            'resolution matrix', 'organizational conflict',
+            'dd254', 'dd 254', 'dd1423', 'security classification',
+            'oasis', 'gsa', 'resolution matrix', 'organizational conflict',
+            'surveillance', 'comments matrix', 'rac ', 'rac_',
+            'labor categor', 'labor rate', 'rate card',
+            'ordering instruction', 'placeholder', 'model contract',
+            'representations', 'certifications', 'cdrl',
+            'mapping', 'estimate', 'proposed labor',
         ]
         for indicator in non_sow_indicators:
             if indicator in filename_lower:
