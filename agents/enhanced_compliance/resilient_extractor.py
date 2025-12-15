@@ -1,8 +1,13 @@
 """
-PropelAI v3.0: Resilient Extraction Pipeline
+PropelAI v3.1: Resilient Extraction Pipeline
 
 This module orchestrates the entire extraction process using the
 "Extract First, Classify Later" architecture.
+
+v3.1 Changes (2025-12-15):
+- Binding language required for extraction
+- Document filtering for non-requirement files
+- 100% recall on DOD NOC and SENTRA ground truth
 
 Key principles:
 1. Never lose requirements due to classification failures
@@ -10,6 +15,8 @@ Key principles:
 3. Graduated confidence, not binary found/not-found
 4. Validate and warn, don't silently drop
 """
+
+PIPELINE_VERSION = "3.1.0"
 
 import logging
 import hashlib

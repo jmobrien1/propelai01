@@ -93,9 +93,11 @@ try:
         ExtractionValidator,
         ReproducibilityTester,
     )
+    from agents.enhanced_compliance.resilient_extractor import PIPELINE_VERSION
+    from agents.enhanced_compliance.universal_extractor import EXTRACTOR_VERSION
     RESILIENT_EXTRACTION_AVAILABLE = True
     resilient_extractor = create_resilient_extractor()
-    print("v3.0 Resilient Extraction Pipeline loaded")
+    print(f"=== PropelAI Resilient Extraction v{PIPELINE_VERSION} (extractor v{EXTRACTOR_VERSION}) ===")
 except ImportError as e:
     print(f"Warning: Resilient extraction not available: {e}")
     RESILIENT_EXTRACTION_AVAILABLE = False
@@ -1010,6 +1012,11 @@ def process_rfp_resilient_background(rfp_id: str):
     try:
         import time
         start_time = time.time()
+
+        # Log version for deployment verification
+        from agents.enhanced_compliance.resilient_extractor import PIPELINE_VERSION
+        from agents.enhanced_compliance.universal_extractor import EXTRACTOR_VERSION
+        print(f"Processing {rfp_id} with Resilient Extraction v{PIPELINE_VERSION} (extractor v{EXTRACTOR_VERSION})")
 
         store.set_status(rfp_id, "processing", 10, "Initializing resilient extraction...")
         store.update(rfp_id, {"status": "processing"})
