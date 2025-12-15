@@ -1,11 +1,17 @@
 """
-PropelAI: Document Type Definitions for Guided Upload
+PropelAI: Document Type Definitions for Guided Upload (v2.0)
 
 This module defines the document types that users can upload, with clear
 descriptions and guidance for proposal managers (especially newcomers).
 
 The goal is to help users upload ONLY the documents needed for accurate
 extraction, avoiding noise from irrelevant attachments like DD254s, CDRLs, etc.
+
+Design Philosophy (v2.0):
+- Only SOW/PWS is truly required (it contains the actual requirements)
+- Many RFPs combine everything in one document - make this easy
+- Avoid government jargon (Section L/M) in primary UI - use plain English
+- Provide expert-level help text for those who want to learn
 """
 
 from enum import Enum
@@ -20,17 +26,20 @@ class DocumentType(Enum):
     These map to the key sections of government RFPs that contain
     extractable requirements and proposal guidance.
     """
-    # Required documents
+    # The one truly required document
     SOW = "sow"                      # Statement of Work / PWS - Section C
-    INSTRUCTIONS = "instructions"    # Proposal Instructions - Section L
-    EVALUATION = "evaluation"        # Evaluation Criteria - Section M
 
-    # Optional but useful
-    SOLICITATION = "solicitation"    # Main solicitation document (SF1449, cover)
-    AMENDMENT = "amendment"          # Amendments/modifications to RFP
+    # Combined/All-in-one (very common)
+    COMBINED_RFP = "combined_rfp"    # Full RFP with everything in one document
 
-    # Special cases
-    COMBINED_LM = "combined_lm"      # Combined Section L and M (common)
+    # Separate instruction documents (when not combined)
+    INSTRUCTIONS = "instructions"    # How to write proposal (Section L)
+    EVALUATION = "evaluation"        # How proposal scored (Section M)
+    COMBINED_LM = "combined_lm"      # Instructions + Evaluation together
+
+    # Supporting documents
+    SOLICITATION = "solicitation"    # Cover/admin document (SF1449, etc.)
+    AMENDMENT = "amendment"          # Changes to original RFP
     ATTACHMENT = "attachment"        # Other relevant attachments
 
     # For backwards compatibility / bulk upload
@@ -65,205 +74,239 @@ class DocumentSlot:
 
 
 # Define all upload slots with user-friendly descriptions
+# v2.0: Simplified structure based on real-world RFP analysis across agencies
 UPLOAD_SLOTS: List[DocumentSlot] = [
+    # ==== PRIMARY SLOT: Technical Requirements (the one truly required doc) ====
     DocumentSlot(
         id="sow",
         doc_type=DocumentType.SOW,
-        title="Statement of Work (SOW/PWS)",
-        description="The technical requirements - what the contractor must DO",
-        help_text="""This is the most important document for requirements extraction.
+        title="Technical Requirements (SOW/PWS)",
+        description="What the contractor must DO - the actual work requirements",
+        help_text="""This is the MOST IMPORTANT document for requirements extraction.
 
-It describes ALL the work the contractor must perform, including:
+It describes ALL the work the contractor must perform:
 • Technical tasks and deliverables
-• Performance standards
-• Personnel requirements
-• Reporting requirements
+• Performance standards and metrics
+• Personnel qualifications
+• Reporting and delivery requirements
 
-Also called: Performance Work Statement (PWS), Scope of Work,
-Statement of Objectives (SOO), or Technical Requirements.""",
+WHAT TO LOOK FOR in your RFP package:
+• "Statement of Work" or "SOW"
+• "Performance Work Statement" or "PWS"
+• "Statement of Objectives" or "SOO"
+• "Technical Requirements"
+• Often labeled as "Attachment 1" or "Section C"
+
+TIP: If requirements are spread across multiple attachments,
+upload all of them here.""",
         common_names=[
-            "Statement of Work",
-            "SOW",
-            "PWS",
-            "Performance Work Statement",
-            "Attachment 1",
-            "Section C",
-            "Scope of Work",
-            "Technical Requirements",
-            "SOO",
-            "Statement of Objectives"
+            "Statement of Work", "SOW", "PWS", "Performance Work Statement",
+            "Attachment 1", "Section C", "Scope of Work", "Technical Requirements",
+            "SOO", "Statement of Objectives", "Work Statement", "Requirements"
         ],
         required=True,
-        allows_multiple=True,  # Some RFPs split SOW across attachments
+        allows_multiple=True,  # SOW can span multiple attachments
         show_not_applicable=False,
         order=1,
         icon="📋",
         color="#2B6CB0"  # Blue
     ),
 
+    # ==== COMBINED/ALL-IN-ONE OPTION (prominently displayed) ====
     DocumentSlot(
-        id="instructions",
-        doc_type=DocumentType.INSTRUCTIONS,
-        title="Proposal Instructions (Section L)",
-        description="HOW to write and format your proposal",
-        help_text="""This document tells you how to structure your proposal response.
+        id="combined_rfp",
+        doc_type=DocumentType.COMBINED_RFP,
+        title="Complete RFP (All-in-One Document)",
+        description="Single document containing requirements, instructions, AND evaluation criteria",
+        help_text="""Many RFPs - especially from civilian agencies, GSA, and smaller
+procurements - combine EVERYTHING in one document.
 
-Look for information about:
-• Volume structure (Technical, Management, Cost volumes)
-• Page limits for each section
-• Font, margin, and formatting requirements
-• What to include in each volume
-• Submission method and deadline
+USE THIS SLOT IF your RFP is a single document that includes:
+• Technical requirements (what to do)
+• Proposal instructions (how to write it)
+• Evaluation criteria (how it will be scored)
 
-Also called: Instructions to Offerors, Proposal Preparation Instructions,
-Placement Procedures, or Section L.""",
+COMMON EXAMPLES:
+• GSA Schedule RFQs and BPA task orders
+• NIH and HHS solicitations
+• State and local government RFPs
+• Small Business set-asides
+• Most RFPs under $10M
+
+If you upload here, you can skip the other slots below.""",
         common_names=[
-            "Section L",
-            "Instructions to Offerors",
-            "Proposal Instructions",
-            "Proposal Preparation",
-            "Placement Procedures",
-            "Attachment 2",
-            "Instructions",
-            "Submission Requirements"
-        ],
-        required=True,
-        allows_multiple=False,
-        show_not_applicable=True,
-        order=2,
-        icon="📝",
-        color="#D69E2E"  # Yellow/Gold
-    ),
-
-    DocumentSlot(
-        id="evaluation",
-        doc_type=DocumentType.EVALUATION,
-        title="Evaluation Criteria (Section M)",
-        description="HOW your proposal will be SCORED",
-        help_text="""This document explains how the government will evaluate proposals.
-
-Look for:
-• Evaluation factors (Technical, Management, Past Performance, Price)
-• Relative importance of each factor
-• Subfactors and their weights
-• Rating scales (Outstanding, Good, Acceptable, etc.)
-• What makes a proposal "win"
-
-Also called: Evaluation Factors, Basis for Award, Section M,
-or Award Criteria.
-
-NOTE: Sometimes combined with Section L in one document.""",
-        common_names=[
-            "Section M",
-            "Evaluation Factors",
-            "Evaluation Criteria",
-            "Basis for Award",
-            "Award Criteria",
-            "Evaluation",
-            "Selection Criteria"
-        ],
-        required=False,  # Often combined with Section L
-        allows_multiple=False,
-        show_not_applicable=True,
-        order=3,
-        icon="⚖️",
-        color="#38A169"  # Green
-    ),
-
-    DocumentSlot(
-        id="combined_lm",
-        doc_type=DocumentType.COMBINED_LM,
-        title="Combined Instructions & Evaluation",
-        description="Single document with BOTH Section L and M content",
-        help_text="""Many RFPs combine proposal instructions and evaluation criteria
-in a single document.
-
-If your RFP has ONE document that covers both:
-• How to structure your proposal (volumes, pages, format)
-• How proposals will be evaluated (factors, weights, ratings)
-
-Upload it here instead of using separate L and M slots.
-
-Common in: GSA task orders, smaller procurements, some DoD RFPs.""",
-        common_names=[
-            "Sections L and M",
-            "Section L-M",
-            "Instructions and Evaluation",
-            "Proposal Requirements",
-            "RFP Instructions"
+            "RFP", "Request for Proposal", "Solicitation", "Complete RFP",
+            "Full Solicitation", "Task Order Request", "RFQ", "Request for Quote"
         ],
         required=False,
         allows_multiple=False,
         show_not_applicable=True,
-        order=4,
-        icon="📑",
-        color="#805AD5"  # Purple
+        order=2,
+        icon="📚",
+        color="#805AD5"  # Purple - stands out
     ),
 
+    # ==== INSTRUCTIONS & EVALUATION (simplified from separate L/M) ====
+    DocumentSlot(
+        id="instructions_evaluation",
+        doc_type=DocumentType.COMBINED_LM,
+        title="Proposal Instructions & Evaluation Criteria",
+        description="How to write your proposal and how it will be scored",
+        help_text="""This covers the "rules of the game" for your proposal.
+
+PROPOSAL INSTRUCTIONS tell you:
+• Volume structure (Technical, Management, Past Performance, Cost)
+• Page limits for each section
+• Font, margins, and formatting requirements
+• What to address in each volume
+• Submission method and deadline
+
+EVALUATION CRITERIA tell you:
+• Evaluation factors (Technical Approach, Management, Price, etc.)
+• Relative importance ("Technical is more important than Price")
+• Subfactors and their weights
+• Rating scales (Outstanding, Good, Acceptable, etc.)
+
+WHERE TO FIND THIS:
+• "Section L" and/or "Section M" (DoD UCF format)
+• "Instructions to Offerors"
+• "Evaluation Factors" or "Basis for Award"
+• "Placement Procedures" (GSA)
+• Often combined in one attachment
+
+NOTE: If your RFP has separate Section L and Section M documents,
+you can upload them both here - or use the advanced slots below.""",
+        common_names=[
+            "Section L", "Section M", "Instructions to Offerors",
+            "Proposal Instructions", "Evaluation Factors", "Evaluation Criteria",
+            "Basis for Award", "Placement Procedures", "Award Criteria",
+            "Selection Criteria", "Instructions and Evaluation"
+        ],
+        required=False,  # Not all RFPs have separate instruction docs
+        allows_multiple=True,  # Can upload both L and M
+        show_not_applicable=True,
+        order=3,
+        icon="📝",
+        color="#D69E2E"  # Yellow/Gold
+    ),
+
+    # ==== AMENDMENTS (important for accuracy) ====
+    DocumentSlot(
+        id="amendments",
+        doc_type=DocumentType.AMENDMENT,
+        title="Amendments / Modifications",
+        description="Any changes or updates to the original RFP",
+        help_text="""Amendments modify the original RFP and are CRITICAL for accuracy.
+
+AMENDMENTS CAN:
+• Change technical requirements in the SOW
+• Modify page limits or volume structure
+• Extend or change deadlines
+• Add, remove, or clarify requirements
+• Answer industry questions that affect requirements
+
+IMPORTANT: Upload ALL amendments you have received.
+PropelAI will incorporate the changes into extraction.
+
+TIP: If you have multiple amendments (Amendment 1, 2, 3, etc.),
+upload them in order for best results.""",
+        common_names=[
+            "Amendment", "Modification", "SF30", "Change Notice",
+            "RFP Update", "Addendum", "Amendment 1", "Amendment 2",
+            "Mod", "Questions and Answers"
+        ],
+        required=False,
+        allows_multiple=True,  # Often multiple amendments
+        show_not_applicable=True,
+        order=4,
+        icon="📌",
+        color="#E53E3E"  # Red - attention
+    ),
+
+    # ==== COVER/ADMIN DOCUMENT (helpful but optional) ====
     DocumentSlot(
         id="solicitation",
         doc_type=DocumentType.SOLICITATION,
-        title="Main Solicitation Document",
-        description="The cover/overview document with key dates and contacts",
-        help_text="""The main RFP document that ties everything together.
+        title="Cover Document / SF1449",
+        description="Administrative info: solicitation number, dates, contacts",
+        help_text="""The administrative cover document for the RFP.
 
-Typically includes:
+TYPICALLY INCLUDES:
 • SF1449 or SF33 (Standard Forms)
 • Solicitation number
-• Due date and time
-• Contracting Officer contact info
+• Proposal due date and time
+• Contracting Officer contact information
 • List of attachments
-• Special instructions
+• NAICS code and size standard
 
-This helps PropelAI extract key dates and organize the RFP context.""",
+This helps PropelAI extract key dates and metadata, but is
+NOT required if this info is already in your other documents.""",
         common_names=[
-            "Solicitation",
-            "RFP",
-            "SF1449",
-            "SF33",
-            "Request for Proposal",
-            "Cover Page",
-            "Main Document"
+            "SF1449", "SF33", "Cover Page", "Solicitation",
+            "Standard Form", "Cover Document", "Admin"
         ],
         required=False,
         allows_multiple=False,
         show_not_applicable=True,
         order=5,
         icon="📰",
-        color="#4A5568"  # Gray
+        color="#4A5568"  # Gray - less prominent
     ),
+]
 
+# ==== ADVANCED SLOTS (for users who want granular control) ====
+ADVANCED_UPLOAD_SLOTS: List[DocumentSlot] = [
     DocumentSlot(
-        id="amendments",
-        doc_type=DocumentType.AMENDMENT,
-        title="Amendments / Modifications",
-        description="Changes or updates to the original RFP",
-        help_text="""Amendments modify the original RFP requirements.
+        id="instructions_only",
+        doc_type=DocumentType.INSTRUCTIONS,
+        title="Section L Only (Proposal Instructions)",
+        description="Just the instructions - no evaluation criteria",
+        help_text="""Use this if you have a SEPARATE Section L document.
 
-IMPORTANT: Amendments can:
-• Change requirements in the SOW
-• Modify page limits or formatting
-• Extend deadlines
-• Answer questions that clarify requirements
-
-If you have amendments, upload them here so PropelAI can
-incorporate the changes.
-
-Tip: Upload in order (Amendment 1, then 2, etc.)""",
-        common_names=[
-            "Amendment",
-            "Modification",
-            "SF30",
-            "Change Notice",
-            "RFP Update",
-            "Addendum"
-        ],
+Most users should use the combined "Proposal Instructions & Evaluation"
+slot above instead.""",
+        common_names=["Section L", "Instructions to Offerors", "Proposal Instructions"],
         required=False,
-        allows_multiple=True,  # Can have multiple amendments
+        allows_multiple=False,
         show_not_applicable=True,
-        order=6,
-        icon="📌",
-        color="#E53E3E"  # Red
+        order=10,
+        icon="📝",
+        color="#D69E2E"
+    ),
+    DocumentSlot(
+        id="evaluation_only",
+        doc_type=DocumentType.EVALUATION,
+        title="Section M Only (Evaluation Criteria)",
+        description="Just the evaluation factors - no instructions",
+        help_text="""Use this if you have a SEPARATE Section M document.
+
+Most users should use the combined "Proposal Instructions & Evaluation"
+slot above instead.""",
+        common_names=["Section M", "Evaluation Factors", "Evaluation Criteria", "Basis for Award"],
+        required=False,
+        allows_multiple=False,
+        show_not_applicable=True,
+        order=11,
+        icon="⚖️",
+        color="#38A169"
+    ),
+    DocumentSlot(
+        id="other_attachment",
+        doc_type=DocumentType.ATTACHMENT,
+        title="Other Relevant Attachment",
+        description="Additional document that contains requirements",
+        help_text="""Use this for attachments that contain requirements but don't
+fit the other categories.
+
+Examples: Technical exhibits, CDRLs with requirements, labor category
+descriptions, security requirements documents.""",
+        common_names=["Attachment", "Exhibit", "Appendix"],
+        required=False,
+        allows_multiple=True,
+        show_not_applicable=True,
+        order=12,
+        icon="📎",
+        color="#718096"
     ),
 ]
 
@@ -347,34 +390,59 @@ def classify_document_by_filename(filename: str) -> DocumentType:
     return DocumentType.AUTO_DETECT
 
 
-def get_ui_config() -> Dict[str, Any]:
+def get_ui_config(include_advanced: bool = False) -> Dict[str, Any]:
     """
     Get the complete UI configuration for the guided upload interface.
     Returns a JSON-serializable dictionary.
+
+    Args:
+        include_advanced: If True, include advanced granular slots (Section L only, etc.)
     """
+    def slot_to_dict(slot: DocumentSlot) -> Dict[str, Any]:
+        return {
+            "id": slot.id,
+            "doc_type": slot.doc_type.value,
+            "title": slot.title,
+            "description": slot.description,
+            "help_text": slot.help_text,
+            "common_names": slot.common_names,
+            "required": slot.required,
+            "allows_multiple": slot.allows_multiple,
+            "show_not_applicable": slot.show_not_applicable,
+            "order": slot.order,
+            "icon": slot.icon,
+            "color": slot.color,
+        }
+
+    slots = sorted(UPLOAD_SLOTS, key=lambda s: s.order)
+    advanced_slots = sorted(ADVANCED_UPLOAD_SLOTS, key=lambda s: s.order) if include_advanced else []
+
     return {
-        "upload_slots": [
-            {
-                "id": slot.id,
-                "doc_type": slot.doc_type.value,
-                "title": slot.title,
-                "description": slot.description,
-                "help_text": slot.help_text,
-                "common_names": slot.common_names,
-                "required": slot.required,
-                "allows_multiple": slot.allows_multiple,
-                "show_not_applicable": slot.show_not_applicable,
-                "order": slot.order,
-                "icon": slot.icon,
-                "color": slot.color,
-            }
-            for slot in sorted(UPLOAD_SLOTS, key=lambda s: s.order)
-        ],
+        "upload_slots": [slot_to_dict(s) for s in slots],
+        "advanced_slots": [slot_to_dict(s) for s in advanced_slots] if include_advanced else [],
         "skip_documents": SKIP_DOCUMENTS,
         "tips": [
-            "Upload only the documents that contain requirements or proposal instructions",
-            "If Section L and M are in one document, use the 'Combined' slot",
-            "Amendments should be uploaded separately so changes are tracked",
-            "When in doubt about a document, check if it contains 'shall' statements",
+            "Only the SOW/PWS is required - all other slots are optional",
+            "If your RFP is ONE document with everything, use 'Complete RFP (All-in-One)'",
+            "Upload amendments separately so PropelAI can track changes accurately",
+            "When in doubt, check if a document contains 'shall' or 'must' statements",
+            "Skip DD254s, CDRLs, pricing templates - they don't help extraction",
+        ],
+        "quick_start_tips": [
+            {
+                "scenario": "Single document RFP",
+                "action": "Upload in 'Complete RFP (All-in-One)' slot",
+                "examples": "GSA RFQs, NIH solicitations, State RFPs"
+            },
+            {
+                "scenario": "DoD RFP with multiple attachments",
+                "action": "Upload SOW in first slot, Section L/M in second",
+                "examples": "Most DoD contracts, UCF format RFPs"
+            },
+            {
+                "scenario": "Not sure what documents you have",
+                "action": "Start with just the SOW/PWS - you can add more later",
+                "examples": "Any RFP where you're unsure"
+            },
         ]
     }
