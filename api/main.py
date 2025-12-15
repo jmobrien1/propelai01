@@ -1025,12 +1025,34 @@ def process_rfp_resilient_background(rfp_id: str):
         from agents.enhanced_compliance import MultiFormatParser, DocumentType
         parser = MultiFormatParser()
 
+        def infer_doc_type(filename: str) -> DocumentType:
+            """Infer document type from filename (with typo tolerance for SOW)"""
+            fname_lower = filename.lower()
+            if 'amendment' in fname_lower:
+                return DocumentType.AMENDMENT
+            elif 'attachment' in fname_lower or 'exhibit' in fname_lower:
+                return DocumentType.ATTACHMENT
+            # SOW detection with typo tolerance
+            elif any(x in fname_lower for x in ['sow', 'statement of work', 'stament of work', 'statment of work']):
+                return DocumentType.STATEMENT_OF_WORK
+            elif any(x in fname_lower for x in ['pws', 'performance work statement', 'performace work']):
+                return DocumentType.STATEMENT_OF_WORK
+            elif 'section_l' in fname_lower or 'instructions' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            elif 'section_m' in fname_lower or 'evaluation' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            elif 'rfp' in fname_lower or 'solicitation' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            else:
+                return DocumentType.ATTACHMENT
+
         documents = []
         for file_path in file_paths:
             try:
                 import os
                 filename = os.path.basename(file_path)
-                parsed = parser.parse_file(file_path)
+                doc_type = infer_doc_type(filename)
+                parsed = parser.parse_file(file_path, doc_type)
                 if parsed:
                     documents.append({
                         'text': parsed.full_text,
