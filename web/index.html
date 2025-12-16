@@ -660,9 +660,12 @@
                 }
             };
             
-            // Process files - accepts optional docTypes from guided upload
-            const processFiles = async (docTypes = '') => {
-                if (rawFiles.length === 0) {
+            // Process files - accepts optional docTypes and files from guided upload
+            const processFiles = async (docTypes = '', filesToProcess = null) => {
+                // Use provided files or fall back to rawFiles state
+                const files = filesToProcess || rawFiles;
+
+                if (files.length === 0) {
                     setError('Please upload files first');
                     return;
                 }
@@ -674,7 +677,7 @@
                 try {
                     // Create RFP
                     const rfp = await api.createRFP({
-                        name: rawFiles[0]?.name?.replace(/\.[^/.]+$/, '') || 'New RFP',
+                        name: files[0]?.name?.replace(/\.[^/.]+$/, '') || 'New RFP',
                         solicitation_number: null,
                         agency: null
                     });
@@ -684,12 +687,12 @@
 
                     // Upload files with document types if provided
                     if (docTypes) {
-                        await api.uploadFilesGuided(rfp.id, rawFiles, docTypes);
+                        await api.uploadFilesGuided(rfp.id, files, docTypes);
                     } else {
-                        await api.uploadFiles(rfp.id, rawFiles);
+                        await api.uploadFiles(rfp.id, files);
                     }
                     setProcessingStatus({ status: 'processing', progress: 40, message: 'Starting processing...' });
-                    
+
                     // Start processing
                     if (extractionMode === 'best_practices') {
                         await api.processRFPBestPractices(rfp.id);
@@ -698,9 +701,9 @@
                     } else {
                         await api.processRFP(rfp.id);
                     }
-                    
+
                     // Status polling will take over from here
-                    
+
                 } catch (e) {
                     setProcessing(false);
                     setError('Processing failed: ' + e.message);
@@ -1125,7 +1128,7 @@
 
                 if (allFiles.length === 0) return;
 
-                // Update parent state
+                // Update parent state for display purposes
                 const fileData = allFiles.map(f => ({
                     name: f.name,
                     size: formatFileSize(f.size),
@@ -1135,7 +1138,9 @@
 
                 setFiles(fileData);
                 setRawFiles(allFiles);
-                onProcess(docTypes.join(','));
+
+                // Pass files directly to avoid React state timing issues
+                onProcess(docTypes.join(','), allFiles);
             };
 
             const getTotalFiles = () => {
