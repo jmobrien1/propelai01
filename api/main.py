@@ -1308,10 +1308,39 @@ def process_rfp_resilient_background(rfp_id: str):
             store.update(rfp_id, {"status": "error"})
             return
 
+        # Get document metadata from guided upload (if available)
+        document_metadata = rfp.get("document_metadata", {})
+
         # Parse documents
         store.set_status(rfp_id, "processing", 20, "Parsing documents...")
         from agents.enhanced_compliance import MultiFormatParser, DocumentType
         parser = MultiFormatParser()
+
+        def get_doc_type_from_metadata(filename: str) -> tuple:
+            """
+            Get document type from guided upload metadata.
+            Returns (DocumentType, content_type) where content_type is used for categorization.
+            """
+            meta = document_metadata.get(filename, {})
+            guided_doc_type = meta.get("doc_type", "auto_detect")
+
+            # Map guided upload doc_type to DocumentType and content categorization
+            if guided_doc_type == "sow":
+                return (DocumentType.STATEMENT_OF_WORK, "technical")
+            elif guided_doc_type in ["instructions", "instructions_only"]:
+                return (DocumentType.MAIN_SOLICITATION, "section_l")
+            elif guided_doc_type in ["evaluation", "evaluation_only"]:
+                return (DocumentType.MAIN_SOLICITATION, "section_m")
+            elif guided_doc_type in ["combined_lm", "instructions_evaluation"]:
+                return (DocumentType.MAIN_SOLICITATION, "section_lm")
+            elif guided_doc_type == "combined_rfp":
+                return (DocumentType.MAIN_SOLICITATION, "combined")
+            elif guided_doc_type == "amendments":
+                return (DocumentType.AMENDMENT, "amendment")
+            elif guided_doc_type == "solicitation":
+                return (DocumentType.MAIN_SOLICITATION, "cover")
+            else:
+                return (None, None)  # Fall back to inference
 
         def infer_doc_type(filename: str) -> DocumentType:
             """Infer document type from filename (with typo tolerance for SOW)"""
@@ -1339,13 +1368,20 @@ def process_rfp_resilient_background(rfp_id: str):
             try:
                 import os
                 filename = os.path.basename(file_path)
-                doc_type = infer_doc_type(filename)
+
+                # First try guided upload metadata, then fall back to inference
+                doc_type, content_type = get_doc_type_from_metadata(filename)
+                if doc_type is None:
+                    doc_type = infer_doc_type(filename)
+                    content_type = "auto"
+
                 parsed = parser.parse_file(file_path, doc_type)
                 if parsed:
                     documents.append({
                         'text': parsed.full_text,
                         'filename': parsed.filename,
                         'pages': parsed.pages if parsed.pages else [parsed.full_text],
+                        'content_type': content_type,  # Pass to extractor for categorization
                     })
             except Exception as e:
                 print(f"Warning: Could not parse {file_path}: {e}")
@@ -1355,13 +1391,16 @@ def process_rfp_resilient_background(rfp_id: str):
             store.update(rfp_id, {"status": "error"})
             return
 
+        # Build filename to content_type mapping for post-processing
+        doc_content_types = {doc['filename']: doc.get('content_type', 'auto') for doc in documents}
+
         # Run resilient extraction
         store.set_status(rfp_id, "processing", 40, "Extracting requirements (resilient mode)...")
         result = resilient_extractor.extract_from_parsed(documents, rfp_id)
 
         store.set_status(rfp_id, "processing", 70, "Building compliance data...")
 
-        # Convert to API format
+        # Convert to API format with category assignment based on source document type
         requirements = []
         for req in result.requirements:
             priority = "medium"
@@ -1370,11 +1409,36 @@ def process_rfp_resilient_background(rfp_id: str):
             elif req.binding_level == "MAY":
                 priority = "low"
 
+            # Determine category based on source document's content_type (from guided upload)
+            source_content_type = doc_content_types.get(req.source_document, "auto")
+            category = req.category or "general"
+
+            # Override category based on guided upload document type
+            if source_content_type == "section_l":
+                category = "L_COMPLIANCE"
+            elif source_content_type == "section_m":
+                category = "EVALUATION"
+            elif source_content_type == "section_lm":
+                # For combined L+M docs, check text for clues
+                text_lower = req.text.lower()
+                if any(kw in text_lower for kw in ['evaluat', 'factor', 'rating', 'score', 'criterion', 'assessed']):
+                    category = "EVALUATION"
+                elif any(kw in text_lower for kw in ['submit', 'page limit', 'font', 'format', 'volume', 'shall include']):
+                    category = "L_COMPLIANCE"
+                else:
+                    category = "L_COMPLIANCE"  # Default to L for combined docs
+            elif source_content_type == "technical":
+                category = "TECHNICAL"
+            elif source_content_type == "combined":
+                # For all-in-one RFPs, keep original category or infer
+                pass  # Use extractor's category
+
             requirements.append({
                 "id": req.id,
                 "text": req.text,
                 "section": req.assigned_section or "UNASSIGNED",
                 "type": req.category or "general",
+                "category": category,  # Add explicit category for outline generator
                 "priority": priority,
                 "confidence": req.confidence_score,
                 "confidence_level": req.confidence.value,
@@ -1388,9 +1452,17 @@ def process_rfp_resilient_background(rfp_id: str):
 
         # Build stats with quality metrics
         metrics = result.quality_metrics
+
+        # Count requirements by category (for outline generator)
+        by_category = {}
+        for r in requirements:
+            cat = r.get("category", "general")
+            by_category[cat] = by_category.get(cat, 0) + 1
+
         stats = {
             "total": len(requirements),
             "by_section": metrics.section_counts,
+            "by_category": by_category,  # Track L_COMPLIANCE, EVALUATION, TECHNICAL
             "by_confidence": {
                 "high": metrics.high_confidence_count,
                 "medium": metrics.medium_confidence_count,
@@ -1410,6 +1482,7 @@ def process_rfp_resilient_background(rfp_id: str):
             "review_queue_size": len(result.review_queue),
             "anomalies": metrics.anomalies,
             "warnings": metrics.warnings,
+            "guided_upload_used": bool(document_metadata),  # Track if guided upload was used
         }
 
         store.set_status(rfp_id, "processing", 95, "Finalizing...")
