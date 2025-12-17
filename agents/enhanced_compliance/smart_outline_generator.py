@@ -1,9 +1,15 @@
 """
-PropelAI: Smart Proposal Outline Generator v2.11
+PropelAI: Smart Proposal Outline Generator v3.0
 
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
 already parsed from Section L and M rather than re-parsing PDFs.
+
+v3.0 Changes (2025-12-17):
+- CRITICAL FIX: Populate volume sections with actual requirements
+- Root cause of generic placeholder output was that sections were empty
+- New _populate_sections_from_requirements method groups requirements by section
+- Now properly passes requirements and eval_criteria to JS exporter
 
 v2.11 Changes (2025-12-15):
 - Fix cross-contamination: Remove NIH-specific default factors
@@ -235,7 +241,16 @@ class SmartOutlineGenerator:
         for vol in volumes:
             if not vol.page_limit:
                 warnings.append(f"No page limit found for: {vol.name}")
-        
+
+        # v3.0: CRITICAL FIX - Populate volume sections with actual requirements
+        # This was the root cause of generic placeholder output
+        self._populate_sections_from_requirements(
+            volumes,
+            section_l_requirements,
+            section_m_requirements,
+            technical_requirements
+        )
+
         # Calculate total pages
         total_pages = sum(v.page_limit or 0 for v in volumes) or None
         
@@ -487,6 +502,119 @@ class SmartOutlineGenerator:
                 ProposalVolume(id="VOL-COST", name="Cost/Price Proposal", volume_type=VolumeType.COST_PRICE, order=1),
             ]
     
+    def _populate_sections_from_requirements(
+        self,
+        volumes: List[ProposalVolume],
+        section_l: List[Dict],
+        section_m: List[Dict],
+        technical: List[Dict]
+    ) -> None:
+        """
+        v3.0: Populate volume sections with actual requirements.
+
+        This is the CRITICAL fix for the generic placeholder issue.
+        Previous code tried to parse "Factor N" patterns from text, which failed
+        for combined documents. Now we use the pre-categorized requirements directly.
+        """
+        if not volumes:
+            return
+
+        # Group requirements by their RFP section reference (e.g., "2.1", "3.2.1")
+        def get_section_ref(req: Dict) -> str:
+            """Extract section reference like '2.1.1' from requirement text or metadata"""
+            text = req.get("text", "") or ""
+            rfp_ref = req.get("rfp_reference", "")
+
+            # Try rfp_reference first
+            if rfp_ref:
+                match = re.match(r'^(\d+(?:\.\d+)*)', rfp_ref)
+                if match:
+                    return match.group(1)
+
+            # Try to extract from start of text (e.g., "2.1.1 The Contractor shall...")
+            match = re.match(r'^(\d+(?:\.\d+)+)\s', text)
+            if match:
+                return match.group(1)
+
+            return "general"
+
+        # Group technical requirements by section
+        tech_by_section: Dict[str, List[str]] = {}
+        for req in technical:
+            sec_ref = get_section_ref(req)
+            # Use first part for grouping (e.g., "2.1" from "2.1.1")
+            parts = sec_ref.split('.')
+            group_key = '.'.join(parts[:2]) if len(parts) >= 2 else parts[0]
+
+            if group_key not in tech_by_section:
+                tech_by_section[group_key] = []
+            tech_by_section[group_key].append(req.get("text", ""))
+
+        # Create sections for Technical volume
+        for vol in volumes:
+            if vol.volume_type == VolumeType.TECHNICAL:
+                # If volume already has sections, add requirements to them
+                if vol.sections:
+                    for sec in vol.sections:
+                        sec.requirements = [r.get("text", "") for r in technical[:10]]
+                else:
+                    # Create sections from grouped requirements
+                    sections = []
+                    for i, (sec_ref, reqs) in enumerate(sorted(tech_by_section.items())):
+                        if sec_ref == "general":
+                            sec_name = "General Requirements"
+                        else:
+                            sec_name = f"Section {sec_ref} Requirements"
+
+                        section = ProposalSection(
+                            id=f"SEC-{sec_ref.replace('.', '-')}",
+                            name=sec_name,
+                            requirements=reqs[:20],  # Limit to avoid overwhelming
+                        )
+                        sections.append(section)
+
+                    # If no sections were created, create a catch-all
+                    if not sections and technical:
+                        sections.append(ProposalSection(
+                            id="SEC-TECH-ALL",
+                            name="Technical Requirements",
+                            requirements=[r.get("text", "") for r in technical[:30]],
+                        ))
+
+                    vol.sections = sections
+
+            elif vol.volume_type == VolumeType.COST_PRICE:
+                # Add any pricing-related requirements
+                pricing_reqs = [r.get("text", "") for r in (section_l + section_m)
+                               if any(kw in r.get("text", "").lower()
+                                     for kw in ["cost", "price", "pricing", "budget", "rate"])]
+                if pricing_reqs and not vol.sections:
+                    vol.sections = [ProposalSection(
+                        id="SEC-COST",
+                        name="Cost/Price Requirements",
+                        requirements=pricing_reqs[:15],
+                    )]
+
+        # Add Section L requirements (submission instructions) to all technical volumes
+        submission_reqs = [r.get("text", "") for r in section_l
+                         if any(kw in r.get("text", "").lower()
+                               for kw in ["submit", "page", "format", "font", "volume", "shall include"])]
+
+        # Add Section M requirements (evaluation criteria)
+        eval_reqs = [r.get("text", "") for r in section_m
+                    if any(kw in r.get("text", "").lower()
+                          for kw in ["evaluat", "factor", "rating", "score", "assess"])]
+
+        for vol in volumes:
+            if vol.volume_type == VolumeType.TECHNICAL:
+                for sec in vol.sections:
+                    # Add relevant L requirements
+                    if submission_reqs:
+                        sec.requirements = submission_reqs[:5] + sec.requirements
+                    # Add relevant M requirements as eval_criteria
+                    if eval_reqs:
+                        sec.eval_criteria = eval_reqs[:5]
+
     def _classify_volume_type(self, name: str) -> VolumeType:
         """Classify volume type from name"""
         name_lower = name.lower()
@@ -720,6 +848,7 @@ class SmartOutlineGenerator:
                             "page_limit": sec.page_limit,
                             "content_requirements": sec.requirements,  # UI expects this name
                             "requirements": sec.requirements,
+                            "eval_criteria": sec.eval_criteria,  # v3.0: Pass evaluation criteria
                             "compliance_checkpoints": [],  # Can be populated later
                             "subsections": [
                                 {"id": sub.id, "title": sub.name, "name": sub.name}
