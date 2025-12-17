@@ -1310,6 +1310,7 @@ def process_rfp_resilient_background(rfp_id: str):
 
         # Get document metadata from guided upload (if available)
         document_metadata = rfp.get("document_metadata", {})
+        print(f"[DEBUG] Guided upload document_metadata: {document_metadata}")
 
         # Parse documents
         store.set_status(rfp_id, "processing", 20, "Parsing documents...")
@@ -1432,6 +1433,18 @@ def process_rfp_resilient_background(rfp_id: str):
             elif source_content_type == "combined":
                 # For all-in-one RFPs, keep original category or infer
                 pass  # Use extractor's category
+            elif source_content_type == "auto":
+                # Fallback: infer from source document filename when no guided upload metadata
+                source_lower = (req.source_document or "").lower()
+                if any(kw in source_lower for kw in ['placement', 'procedure', 'section l', 'section_l', 'instruction']):
+                    # Likely Section L content
+                    text_lower = req.text.lower()
+                    if any(kw in text_lower for kw in ['evaluat', 'factor', 'rating', 'score']):
+                        category = "EVALUATION"
+                    else:
+                        category = "L_COMPLIANCE"
+                elif any(kw in source_lower for kw in ['section m', 'section_m', 'evaluation']):
+                    category = "EVALUATION"
 
             requirements.append({
                 "id": req.id,
@@ -1458,6 +1471,8 @@ def process_rfp_resilient_background(rfp_id: str):
         for r in requirements:
             cat = r.get("category", "general")
             by_category[cat] = by_category.get(cat, 0) + 1
+
+        print(f"[DEBUG] Requirements by category: {by_category}")
 
         stats = {
             "total": len(requirements),
