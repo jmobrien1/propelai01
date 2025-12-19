@@ -1,9 +1,19 @@
 """
-PropelAI: Smart Proposal Outline Generator v3.0
+PropelAI: Smart Proposal Outline Generator v3.1
 
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
 already parsed from Section L and M rather than re-parsing PDFs.
+
+v3.1 Changes (2025-12-19):
+- STRUCTURE FIX: Outline now follows Section L hierarchy, NOT SOW structure
+- Section L defines PROPOSAL structure (sub-factors, volumes, headings)
+- SOW requirements are MAPPED to Section L-defined sections
+- New _extract_l_defined_sections: Parses "Sub Factor N:" patterns from Section L
+- New _extract_page_limits_from_l: Extracts page limits from tables/text
+- New _extract_eval_weights_from_m: Extracts "SF1 > SF2" formulas from Section M
+- New _map_requirements_to_section: Semantic mapping of SOW reqs to L sections
+- Filters boilerplate (Revision History, Change Control) from extraction
 
 v3.0 Changes (2025-12-17):
 - CRITICAL FIX: Populate volume sections with actual requirements
@@ -512,79 +522,81 @@ class SmartOutlineGenerator:
         """
         v3.0: Populate volume sections with actual requirements.
 
-        This is the CRITICAL fix for the generic placeholder issue.
-        Previous code tried to parse "Factor N" patterns from text, which failed
-        for combined documents. Now we use the pre-categorized requirements directly.
+        CRITICAL: Structure must follow Section L (Instructions), NOT SOW.
+        - Section L defines the PROPOSAL STRUCTURE (sub-factors, volumes, headings)
+        - SOW requirements are MAPPED to Section L sections
+        - This ensures evaluator compliance (they score by L/M criteria)
         """
         if not volumes:
             return
 
-        # Group requirements by their RFP section reference (e.g., "2.1", "3.2.1")
-        def get_section_ref(req: Dict) -> str:
-            """Extract section reference like '2.1.1' from requirement text or metadata"""
-            text = req.get("text", "") or ""
-            rfp_ref = req.get("rfp_reference", "")
+        # =====================================================================
+        # STEP 1: Extract required proposal structure from Section L
+        # Look for patterns like "Sub Factor 1:", "1.1 Executive Summary", etc.
+        # =====================================================================
+        section_l_text = "\n".join([r.get("text", "") for r in section_l])
+        section_m_text = "\n".join([r.get("text", "") for r in section_m])
+        all_instructions = section_l_text + "\n" + section_m_text
 
-            # Try rfp_reference first
-            if rfp_ref:
-                match = re.match(r'^(\d+(?:\.\d+)*)', rfp_ref)
-                if match:
-                    return match.group(1)
+        # Parse Section L for required proposal sections/sub-factors
+        l_defined_sections = self._extract_l_defined_sections(all_instructions, section_l)
 
-            # Try to extract from start of text (e.g., "2.1.1 The Contractor shall...")
-            match = re.match(r'^(\d+(?:\.\d+)+)\s', text)
-            if match:
-                return match.group(1)
+        # =====================================================================
+        # STEP 2: Extract page limits from Section L
+        # =====================================================================
+        page_limits = self._extract_page_limits_from_l(all_instructions)
 
-            return "general"
+        # =====================================================================
+        # STEP 3: Extract evaluation weights from Section M
+        # =====================================================================
+        eval_weights = self._extract_eval_weights_from_m(section_m_text, section_m)
 
-        # Group technical requirements by section
-        tech_by_section: Dict[str, List[str]] = {}
-        for req in technical:
-            sec_ref = get_section_ref(req)
-            # Use first part for grouping (e.g., "2.1" from "2.1.1")
-            parts = sec_ref.split('.')
-            group_key = '.'.join(parts[:2]) if len(parts) >= 2 else parts[0]
-
-            if group_key not in tech_by_section:
-                tech_by_section[group_key] = []
-            tech_by_section[group_key].append(req.get("text", ""))
-
-        # Create sections for Technical volume
+        # =====================================================================
+        # STEP 4: Build sections from Section L structure (NOT SOW)
+        # =====================================================================
         for vol in volumes:
             if vol.volume_type == VolumeType.TECHNICAL:
-                # If volume already has sections, add requirements to them
-                if vol.sections:
-                    for sec in vol.sections:
-                        sec.requirements = [r.get("text", "") for r in technical[:10]]
-                else:
-                    # Create sections from grouped requirements
+                if l_defined_sections:
+                    # Use Section L defined structure
                     sections = []
-                    for i, (sec_ref, reqs) in enumerate(sorted(tech_by_section.items())):
-                        if sec_ref == "general":
-                            sec_name = "General Requirements"
-                        else:
-                            sec_name = f"Section {sec_ref} Requirements"
+                    for i, l_sec in enumerate(l_defined_sections):
+                        sec_name = l_sec.get("name", f"Section {i+1}")
+                        sec_id = l_sec.get("id", f"SEC-L-{i+1}")
+
+                        # Find SOW requirements relevant to this section
+                        relevant_reqs = self._map_requirements_to_section(
+                            technical, sec_name, l_sec.get("keywords", [])
+                        )
+
+                        # Find L instructions for this section
+                        l_instructions = self._find_l_instructions_for_section(
+                            section_l, sec_name
+                        )
+
+                        # Find M evaluation criteria for this section
+                        m_criteria = self._find_m_criteria_for_section(
+                            section_m, sec_name, eval_weights
+                        )
 
                         section = ProposalSection(
-                            id=f"SEC-{sec_ref.replace('.', '-')}",
+                            id=sec_id,
                             name=sec_name,
-                            requirements=reqs[:20],  # Limit to avoid overwhelming
+                            page_limit=page_limits.get(sec_name.lower()),
+                            requirements=l_instructions + relevant_reqs,
+                            eval_criteria=m_criteria,
                         )
                         sections.append(section)
 
-                    # If no sections were created, create a catch-all
-                    if not sections and technical:
-                        sections.append(ProposalSection(
-                            id="SEC-TECH-ALL",
-                            name="Technical Requirements",
-                            requirements=[r.get("text", "") for r in technical[:30]],
-                        ))
-
                     vol.sections = sections
 
+                    # Apply volume-level page limit
+                    if "technical" in vol.name.lower() and page_limits.get("technical"):
+                        vol.page_limit = page_limits.get("technical")
+                else:
+                    # Fallback: Create basic structure from SOW if no L structure found
+                    vol.sections = self._create_fallback_sections(technical, section_l, section_m)
+
             elif vol.volume_type == VolumeType.COST_PRICE:
-                # Add any pricing-related requirements
                 pricing_reqs = [r.get("text", "") for r in (section_l + section_m)
                                if any(kw in r.get("text", "").lower()
                                      for kw in ["cost", "price", "pricing", "budget", "rate"])]
@@ -592,28 +604,308 @@ class SmartOutlineGenerator:
                     vol.sections = [ProposalSection(
                         id="SEC-COST",
                         name="Cost/Price Requirements",
+                        page_limit=page_limits.get("cost") or page_limits.get("price"),
                         requirements=pricing_reqs[:15],
                     )]
 
-        # Add Section L requirements (submission instructions) to all technical volumes
-        submission_reqs = [r.get("text", "") for r in section_l
-                         if any(kw in r.get("text", "").lower()
-                               for kw in ["submit", "page", "format", "font", "volume", "shall include"])]
+    def _extract_l_defined_sections(self, text: str, section_l: List[Dict]) -> List[Dict]:
+        """
+        Extract required proposal sections from Section L instructions.
 
-        # Add Section M requirements (evaluation criteria)
-        eval_reqs = [r.get("text", "") for r in section_m
-                    if any(kw in r.get("text", "").lower()
-                          for kw in ["evaluat", "factor", "rating", "score", "assess"])]
+        Looks for patterns like:
+        - "Sub Factor 1: Management Approach"
+        - "1.1 Executive Summary"
+        - "Volume I: Technical"
+        """
+        sections = []
+        text_lower = text.lower()
 
-        for vol in volumes:
-            if vol.volume_type == VolumeType.TECHNICAL:
-                for sec in vol.sections:
-                    # Add relevant L requirements
-                    if submission_reqs:
-                        sec.requirements = submission_reqs[:5] + sec.requirements
-                    # Add relevant M requirements as eval_criteria
-                    if eval_reqs:
-                        sec.eval_criteria = eval_reqs[:5]
+        # Pattern 1: Sub-Factor patterns (common in DoD RFPs)
+        subfactor_patterns = [
+            r'sub[\-\s]*factor\s*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+            r'factor\s*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+            r'sf[\-\s]*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+        ]
+
+        for pattern in subfactor_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                num = match.group(1)
+                name = match.group(2).strip()
+                # Clean up the name
+                name = re.sub(r'\s+', ' ', name).strip()
+                if len(name) > 3 and len(name) < 80:
+                    sections.append({
+                        "id": f"SEC-SF-{num}",
+                        "name": f"Sub Factor {num}: {name.title()}",
+                        "keywords": self._extract_keywords_from_name(name),
+                        "order": int(num)
+                    })
+
+        # Pattern 2: Numbered section patterns (1.1 Executive Summary)
+        numbered_patterns = [
+            r'(\d+\.\d+)\s+([A-Z][A-Za-z\s\-]+?)(?:\n|\.|\(|:)',
+        ]
+
+        if not sections:  # Only if no sub-factors found
+            for pattern in numbered_patterns:
+                for match in re.finditer(pattern, text):
+                    num = match.group(1)
+                    name = match.group(2).strip()
+                    if len(name) > 3 and len(name) < 60:
+                        sections.append({
+                            "id": f"SEC-{num.replace('.', '-')}",
+                            "name": f"{num} {name.title()}",
+                            "keywords": self._extract_keywords_from_name(name),
+                            "order": float(num)
+                        })
+
+        # Pattern 3: Common section names
+        common_sections = [
+            ("executive summary", "Executive Summary"),
+            ("management approach", "Management Approach"),
+            ("technical approach", "Technical Approach"),
+            ("infrastructure approach", "Infrastructure Approach"),
+            ("staffing", "Staffing Plan"),
+            ("past performance", "Past Performance"),
+            ("key personnel", "Key Personnel"),
+            ("quality", "Quality Assurance"),
+        ]
+
+        if not sections:  # Only if nothing else found
+            for keyword, name in common_sections:
+                if keyword in text_lower:
+                    sections.append({
+                        "id": f"SEC-{keyword.replace(' ', '-').upper()}",
+                        "name": name,
+                        "keywords": [keyword],
+                        "order": len(sections)
+                    })
+
+        # Sort by order and deduplicate
+        seen = set()
+        unique_sections = []
+        for sec in sorted(sections, key=lambda s: s.get("order", 999)):
+            key = sec["name"].lower()
+            if key not in seen:
+                seen.add(key)
+                unique_sections.append(sec)
+
+        return unique_sections
+
+    def _extract_keywords_from_name(self, name: str) -> List[str]:
+        """Extract keywords from section name for requirement mapping"""
+        name_lower = name.lower()
+        keywords = []
+
+        keyword_map = {
+            "management": ["manage", "management", "project", "program", "plan", "schedule", "risk"],
+            "technical": ["technical", "approach", "solution", "design", "develop", "implement"],
+            "infrastructure": ["infrastructure", "system", "network", "server", "cloud", "hardware"],
+            "staffing": ["staff", "personnel", "team", "resource", "labor", "employee"],
+            "executive": ["executive", "summary", "overview", "introduction"],
+            "past performance": ["past", "performance", "experience", "reference", "contract"],
+            "quality": ["quality", "assurance", "qa", "qc", "control", "test"],
+        }
+
+        for key, kws in keyword_map.items():
+            if key in name_lower:
+                keywords.extend(kws)
+
+        return list(set(keywords))
+
+    def _extract_page_limits_from_l(self, text: str) -> Dict[str, int]:
+        """Extract page limits from Section L instructions"""
+        limits = {}
+
+        # Pattern: "Technical Volume: 8 pages" or "Page Limit: 8"
+        patterns = [
+            r'technical[^:]*:\s*(\d+)\s*page',
+            r'cost[^:]*:\s*(\d+)\s*page',
+            r'price[^:]*:\s*(\d+)\s*page',
+            r'page\s*limit[^:]*:\s*(\d+)',
+            r'not\s*(?:to\s*)?exceed\s*(\d+)\s*page',
+            r'maximum\s*(?:of\s*)?(\d+)\s*page',
+            r'(\d+)\s*page\s*(?:limit|maximum)',
+        ]
+
+        text_lower = text.lower()
+
+        for pattern in patterns:
+            for match in re.finditer(pattern, text_lower):
+                pages = int(match.group(1))
+                if pages > 0 and pages < 500:  # Sanity check
+                    # Determine which volume this applies to
+                    context = text_lower[max(0, match.start()-100):match.end()+50]
+                    if "technical" in context:
+                        limits["technical"] = pages
+                    elif "cost" in context or "price" in context:
+                        limits["cost"] = pages
+                    elif "management" in context:
+                        limits["management"] = pages
+                    else:
+                        limits["total"] = pages
+
+        return limits
+
+    def _extract_eval_weights_from_m(self, text: str, section_m: List[Dict]) -> Dict[str, str]:
+        """Extract evaluation factor weights from Section M"""
+        weights = {}
+        text_lower = text.lower()
+
+        # Look for weighting patterns
+        # e.g., "SF1 > SF2", "Technical is more important than Cost"
+
+        # Pattern: "Factor 1 is more important than Factor 2"
+        importance_patterns = [
+            r'(factor\s*\d+|sf\s*\d+|technical|management|cost|price|past performance)[^.]*(?:more|most|greater)\s*import',
+            r'(factor\s*\d+|sf\s*\d+|technical|management|cost|price)[^.]*>\s*(factor\s*\d+|sf\s*\d+|technical|management|cost)',
+        ]
+
+        for pattern in importance_patterns:
+            for match in re.finditer(pattern, text_lower):
+                weights["formula"] = match.group(0)[:100]
+
+        # Look for specific weight percentages
+        weight_pattern = r'(technical|management|cost|price|past performance)[^:]*:\s*(\d+)\s*%'
+        for match in re.finditer(weight_pattern, text_lower):
+            factor = match.group(1)
+            pct = match.group(2)
+            weights[factor] = f"{pct}%"
+
+        return weights
+
+    def _map_requirements_to_section(
+        self,
+        requirements: List[Dict],
+        section_name: str,
+        keywords: List[str]
+    ) -> List[str]:
+        """Map SOW requirements to a Section L defined section using keyword matching"""
+        relevant = []
+        section_lower = section_name.lower()
+
+        for req in requirements:
+            text = req.get("text", "")
+            text_lower = text.lower()
+
+            # Score relevance
+            score = 0
+            for kw in keywords:
+                if kw in text_lower:
+                    score += 1
+
+            # Also check section name keywords
+            if "management" in section_lower and any(kw in text_lower for kw in ["manage", "project", "program", "plan"]):
+                score += 2
+            if "technical" in section_lower and any(kw in text_lower for kw in ["technical", "approach", "solution"]):
+                score += 2
+            if "infrastructure" in section_lower and any(kw in text_lower for kw in ["system", "network", "infrastructure"]):
+                score += 2
+            if "staffing" in section_lower and any(kw in text_lower for kw in ["staff", "personnel", "team"]):
+                score += 2
+
+            if score > 0:
+                relevant.append((score, text))
+
+        # Sort by relevance and return top matches
+        relevant.sort(key=lambda x: x[0], reverse=True)
+        return [text for score, text in relevant[:15]]
+
+    def _find_l_instructions_for_section(self, section_l: List[Dict], section_name: str) -> List[str]:
+        """Find Section L instructions relevant to a specific section"""
+        relevant = []
+        section_lower = section_name.lower()
+
+        for req in section_l:
+            text = req.get("text", "")
+            text_lower = text.lower()
+
+            # Check if instruction mentions this section
+            if any(kw in text_lower for kw in section_lower.split()):
+                relevant.append(text)
+
+        return relevant[:5]
+
+    def _find_m_criteria_for_section(
+        self,
+        section_m: List[Dict],
+        section_name: str,
+        eval_weights: Dict[str, str]
+    ) -> List[str]:
+        """Find Section M evaluation criteria for a specific section"""
+        relevant = []
+        section_lower = section_name.lower()
+
+        for req in section_m:
+            text = req.get("text", "")
+            text_lower = text.lower()
+
+            # Check if criteria mentions this section
+            if any(kw in text_lower for kw in section_lower.split()):
+                relevant.append(text)
+            # Also check for evaluation language
+            elif any(kw in text_lower for kw in ["evaluat", "assess", "rating", "score"]):
+                relevant.append(text)
+
+        # Add weight info if available
+        for factor, weight in eval_weights.items():
+            if factor in section_lower:
+                relevant.insert(0, f"Weight: {weight}")
+
+        return relevant[:5]
+
+    def _create_fallback_sections(
+        self,
+        technical: List[Dict],
+        section_l: List[Dict],
+        section_m: List[Dict]
+    ) -> List[ProposalSection]:
+        """
+        Fallback: Create sections from SOW structure when no Section L structure found.
+        This maintains backward compatibility but is less ideal.
+        """
+        def get_section_ref(req: Dict) -> str:
+            text = req.get("text", "") or ""
+            rfp_ref = req.get("rfp_reference", "")
+            if rfp_ref:
+                match = re.match(r'^(\d+(?:\.\d+)*)', rfp_ref)
+                if match:
+                    return match.group(1)
+            match = re.match(r'^(\d+(?:\.\d+)+)\s', text)
+            if match:
+                return match.group(1)
+            return "general"
+
+        tech_by_section: Dict[str, List[str]] = {}
+        for req in technical:
+            sec_ref = get_section_ref(req)
+            parts = sec_ref.split('.')
+            group_key = '.'.join(parts[:2]) if len(parts) >= 2 else parts[0]
+            if group_key not in tech_by_section:
+                tech_by_section[group_key] = []
+            tech_by_section[group_key].append(req.get("text", ""))
+
+        sections = []
+        for sec_ref, reqs in sorted(tech_by_section.items()):
+            if sec_ref == "general":
+                sec_name = "General Requirements"
+            else:
+                sec_name = f"Section {sec_ref} Requirements"
+            section = ProposalSection(
+                id=f"SEC-{sec_ref.replace('.', '-')}",
+                name=sec_name,
+                requirements=reqs[:20],
+            )
+            sections.append(section)
+
+        if not sections and technical:
+            sections.append(ProposalSection(
+                id="SEC-TECH-ALL",
+                name="Technical Requirements",
+                requirements=[r.get("text", "") for r in technical[:30]],
+            ))
+
+        return sections
 
     def _classify_volume_type(self, name: str) -> VolumeType:
         """Classify volume type from name"""
