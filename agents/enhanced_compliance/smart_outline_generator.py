@@ -14,6 +14,10 @@ v3.2 Changes (2025-12-19):
   "1 Technical 8 Pages" (common PDF table extraction output)
 - Removed aggressive volume indicators (staffing, personnel, experience, etc.)
   that were creating non-compliant volume structures
+- FIX SF1449 BUG: Sub-factor patterns now limit to 1-2 digits to exclude
+  Standard Form numbers (SF1449 was being parsed as "Sub Factor 1449")
+- FIX "1 PAGE" BUG: Page limit patterns now require "page" keyword and
+  sanity check > 1 to avoid matching volume numbers as page limits
 
 v3.1 Changes (2025-12-19):
 - STRUCTURE FIX: Outline now follows Section L hierarchy, NOT SOW structure
@@ -702,10 +706,12 @@ class SmartOutlineGenerator:
         text_lower = text.lower()
 
         # Pattern 1: Sub-Factor patterns (common in DoD RFPs)
+        # v3.2 FIX: Limit to 1-2 digit numbers to exclude Standard Forms (SF1449, SF30, etc.)
         subfactor_patterns = [
-            r'sub[\-\s]*factor\s*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
-            r'factor\s*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
-            r'sf[\-\s]*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+            r'sub[\-\s]*factor\s*(\d{1,2})[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+            r'factor\s*(\d{1,2})[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+            # SF1, SF2 etc. but NOT SF1449 (Standard Form)
+            r'(?<![0-9])sf[\-\s]*(\d{1,2})(?![0-9])[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
         ]
 
         for pattern in subfactor_patterns:
@@ -805,15 +811,18 @@ class SmartOutlineGenerator:
         limits = {}
         text_lower = text.lower()
 
-        # v3.1: Table-aware patterns (e.g., "1 Technical 8 Pages")
-        # Common formats from PDF table extraction:
+        # v3.2: Table-aware patterns (e.g., "1 Technical 8 Pages")
+        # CRITICAL: Must require "page" to avoid matching volume numbers
+        # Bug fix: "Volume 1 Technical" was being parsed as "1 page limit"
         table_patterns = [
-            # "1 Technical 8 Pages" or "1. Technical 8 Pages"
-            r'(\d+)\.?\s*(technical|cost|price|management|past performance)[^\d]*(\d+)\s*page',
-            # "Technical 8" (just volume name and number)
-            r'(technical|cost|price|management)[^\d]*(\d+)\s*(?:page)?',
+            # "1 Technical 8 Pages" or "1. Technical 8 Pages" - page count AFTER volume name
+            r'(\d+)\.?\s*(technical|cost|price|management|past performance)[^\d]*(\d+)\s*pages?',
+            # "Technical: 8 pages" or "Technical Volume: 8 pages"
+            r'(technical|cost|price|management)\s*(?:volume)?[:\s]+(\d+)\s*pages?',
             # "Volume 1: Technical... 8 pages"
-            r'volume\s*\d+[:\s]*(technical|cost|price|management)[^\d]*(\d+)\s*page',
+            r'volume\s*\d+[:\s]*(technical|cost|price|management)[^\d]*(\d+)\s*pages?',
+            # "8 pages for Technical" or "8 page technical"
+            r'(\d+)\s*pages?\s+(?:for\s+)?(technical|cost|price|management)',
         ]
 
         for pattern in table_patterns:
@@ -825,11 +834,16 @@ class SmartOutlineGenerator:
 
                 for g in groups:
                     if g and g.isdigit():
-                        pages = int(g)
+                        candidate = int(g)
+                        # v3.2: Sanity check - page limits are typically 5-100, not 1-4
+                        # Volume numbers are 1-4, so skip small numbers without "page" context
+                        if candidate >= 5 or (candidate > 0 and pages is None):
+                            pages = candidate
                     elif g and g in ["technical", "cost", "price", "management", "past performance"]:
                         vol_type = g
 
-                if vol_type and pages and 0 < pages < 500:
+                # v3.2: Page limit must be > 1 (1 page limit is almost never real)
+                if vol_type and pages and pages > 1 and pages < 500:
                     if vol_type == "technical":
                         limits["technical"] = pages
                     elif vol_type in ["cost", "price"]:

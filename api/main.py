@@ -2098,9 +2098,20 @@ async def export_annotated_outline(rfp_id: str):
     
     requirements = rfp.get("requirements", [])
     
+    # v3.2: Use proper proposal title, not source document filename
+    # The RFP name might be "Attachment 1. Stament Of Work" which is wrong
+    solicitation_number = rfp.get("solicitation_number", rfp_id)
+    rfp_name = rfp.get("name", "")
+
+    # Don't use source document names as title
+    if any(x in rfp_name.lower() for x in ["attachment", "sow", "statement of work", "stament"]):
+        rfp_title = f"Proposal Response to {solicitation_number}"
+    else:
+        rfp_title = rfp_name or f"Proposal Response to {solicitation_number}"
+
     config = AnnotatedOutlineConfig(
-        rfp_title=rfp.get("name", rfp.get("title", "RFP")),
-        solicitation_number=rfp.get("solicitation_number", rfp_id),
+        rfp_title=rfp_title,
+        solicitation_number=solicitation_number,
         due_date=outline.get("submission", {}).get("due_date", "TBD"),
         submission_method=outline.get("submission", {}).get("method", "Not Specified"),
         total_pages=outline.get("total_pages"),
@@ -2111,7 +2122,8 @@ async def export_annotated_outline(rfp_id: str):
         exporter = AnnotatedOutlineExporter()
         doc_bytes = exporter.export(outline, requirements, outline.get("format_requirements", {}), config)
         
-        safe_name = "".join(c for c in rfp.get("name", rfp_id) if c.isalnum() or c in " -_")[:50]
+        # v3.2: Use solicitation number for filename, not source document name
+        safe_name = "".join(c for c in solicitation_number if c.isalnum() or c in " -_")[:50]
         filename = f"{safe_name}_Annotated_Outline.docx"
         
         return Response(
