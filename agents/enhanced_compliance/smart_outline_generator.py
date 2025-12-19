@@ -1,9 +1,19 @@
 """
-PropelAI: Smart Proposal Outline Generator v3.1
+PropelAI: Smart Proposal Outline Generator v3.2
 
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
 already parsed from Section L and M rather than re-parsing PDFs.
+
+v3.2 Changes (2025-12-19):
+- FIX PHANTOM VOLUMES: _extract_standard_volumes now requires EXPLICIT volume
+  definitions (e.g., "Volume 1: Technical"), not keyword matching
+- Previous version created "Volume 4: Staffing" from SOW mentions of "staffing"
+  even when RFP only specified 3 volumes
+- TABLE PAGE LIMITS: _extract_page_limits_from_l now handles table formats like
+  "1 Technical 8 Pages" (common PDF table extraction output)
+- Removed aggressive volume indicators (staffing, personnel, experience, etc.)
+  that were creating non-compliant volume structures
 
 v3.1 Changes (2025-12-19):
 - STRUCTURE FIX: Outline now follows Section L hierarchy, NOT SOW structure
@@ -317,16 +327,21 @@ class SmartOutlineGenerator:
         rfp_format: str
     ) -> List[ProposalVolume]:
         """Extract proposal volumes from requirements"""
-        
+
+        # v3.2: Debug logging
+        print(f"[DEBUG] _extract_volumes: section_l={len(section_l)}, section_m={len(section_m)}, format={rfp_format}")
+
         volumes = []
         seen_volumes = set()
-        
+
         all_requirements = section_l + section_m
         all_text = " ".join([
-            r.get("text", "") or r.get("full_text", "") 
+            r.get("text", "") or r.get("full_text", "")
             for r in all_requirements
         ])
-        
+
+        print(f"[DEBUG] _extract_volumes: all_text length={len(all_text)} chars")
+
         # Strategy depends on format
         if rfp_format == "NIH_FACTOR":
             volumes = self._extract_nih_volumes(all_text, section_m)
@@ -334,6 +349,8 @@ class SmartOutlineGenerator:
             volumes = self._extract_gsa_volumes(all_text, section_l)
         else:
             volumes = self._extract_standard_volumes(all_text, section_l)
+
+        print(f"[DEBUG] _extract_volumes: found {len(volumes)} volumes: {[v.name for v in volumes]}")
         
         # Deduplicate and order
         unique_volumes = []
@@ -461,31 +478,95 @@ class SmartOutlineGenerator:
         return volumes
     
     def _extract_standard_volumes(self, text: str, section_l: List[Dict]) -> List[ProposalVolume]:
-        """Extract volumes from standard UCF RFP"""
+        """
+        v3.1: Extract volumes from standard UCF RFP.
+
+        CRITICAL: Only create volumes that are EXPLICITLY defined in Section L.
+        Previous version was too aggressive - creating volumes for ANY mention
+        of keywords like "staffing" or "personnel", even when these are just
+        subsections within a volume, not separate volumes.
+
+        This caused "phantom volumes" like "Volume 4: Staffing" when the RFP
+        only specified 3 volumes.
+        """
         volumes = []
         text_lower = text.lower()
-        
-        # Standard volume indicators
-        indicators = [
-            ("Technical", ["technical proposal", "technical volume", "technical approach"], VolumeType.TECHNICAL),
-            ("Management", ["management proposal", "management approach", "management volume"], VolumeType.MANAGEMENT),
-            ("Past Performance", ["past performance", "experience", "relevant experience"], VolumeType.PAST_PERFORMANCE),
-            ("Cost/Price", ["cost proposal", "price proposal", "pricing", "business proposal"], VolumeType.COST_PRICE),
-            ("Staffing", ["staffing", "key personnel", "personnel", "resumes"], VolumeType.STAFFING),
-            ("Small Business", ["small business", "subcontracting plan"], VolumeType.SMALL_BUSINESS),
+
+        # v3.1: Look for EXPLICIT volume definitions only
+        # Pattern: "Volume 1", "Vol. 1:", "Volume I:", etc.
+        volume_patterns = [
+            r'volume\s*(\d+|[ivx]+)[:\s]+([A-Za-z\s/\-]+?)(?:\n|\.|\(|$)',
+            r'vol\.?\s*(\d+|[ivx]+)[:\s]+([A-Za-z\s/\-]+?)(?:\n|\.|\(|$)',
+            # Table format: "1 Technical" or "1. Technical"
+            r'^(\d+)\.?\s+(technical|cost|price|management|past performance)(?:\s|$)',
         ]
-        
-        for name, keywords, vol_type in indicators:
-            for kw in keywords:
-                if kw in text_lower:
+
+        found_explicit_volumes = []
+        for pattern in volume_patterns:
+            for match in re.finditer(pattern, text_lower, re.MULTILINE):
+                vol_num = match.group(1)
+                vol_name = match.group(2).strip().title() if len(match.groups()) > 1 else ""
+
+                # Determine volume type from name
+                vol_type = VolumeType.OTHER
+                name_lower = vol_name.lower()
+                if "technical" in name_lower or "approach" in name_lower:
+                    vol_type = VolumeType.TECHNICAL
+                    vol_name = vol_name or "Technical"
+                elif "cost" in name_lower or "price" in name_lower:
+                    vol_type = VolumeType.COST_PRICE
+                    vol_name = vol_name or "Cost/Price"
+                elif "past" in name_lower or "experience" in name_lower:
+                    vol_type = VolumeType.PAST_PERFORMANCE
+                    vol_name = vol_name or "Past Performance"
+                elif "management" in name_lower:
+                    vol_type = VolumeType.MANAGEMENT
+                    vol_name = vol_name or "Management"
+                elif "contract" in name_lower or "admin" in name_lower:
+                    vol_type = VolumeType.ADMINISTRATIVE
+                    vol_name = vol_name or "Contracts/Administrative"
+
+                found_explicit_volumes.append({
+                    "num": vol_num,
+                    "name": vol_name,
+                    "type": vol_type
+                })
+
+        # If explicit volumes found, use them
+        if found_explicit_volumes:
+            # Deduplicate by name
+            seen = set()
+            for vol_info in found_explicit_volumes:
+                key = vol_info["name"].lower()
+                if key not in seen and vol_info["name"]:
+                    seen.add(key)
                     vol = ProposalVolume(
-                        id=f"VOL-{name.upper().replace('/', '-').replace(' ', '-')}",
-                        name=name,
-                        volume_type=vol_type
+                        id=f"VOL-{len(volumes)+1}",
+                        name=vol_info["name"],
+                        volume_type=vol_info["type"],
+                        order=len(volumes)
                     )
                     volumes.append(vol)
-                    break
-        
+        else:
+            # v3.1: Only look for high-confidence volume indicators
+            # Must include "volume" or "proposal" in the phrase
+            explicit_indicators = [
+                ("Technical", ["technical proposal", "technical volume"], VolumeType.TECHNICAL),
+                ("Cost/Price", ["cost proposal", "price proposal", "cost volume", "price volume"], VolumeType.COST_PRICE),
+                ("Past Performance", ["past performance volume"], VolumeType.PAST_PERFORMANCE),
+            ]
+
+            for name, keywords, vol_type in explicit_indicators:
+                for kw in keywords:
+                    if kw in text_lower:
+                        vol = ProposalVolume(
+                            id=f"VOL-{name.upper().replace('/', '-').replace(' ', '-')}",
+                            name=name,
+                            volume_type=vol_type
+                        )
+                        volumes.append(vol)
+                        break
+
         return volumes
     
     def _create_default_volumes(self, rfp_format: str, section_m: List[Dict]) -> List[ProposalVolume]:
@@ -714,11 +795,50 @@ class SmartOutlineGenerator:
         return list(set(keywords))
 
     def _extract_page_limits_from_l(self, text: str) -> Dict[str, int]:
-        """Extract page limits from Section L instructions"""
-        limits = {}
+        """
+        v3.1: Extract page limits from Section L instructions.
 
-        # Pattern: "Technical Volume: 8 pages" or "Page Limit: 8"
-        patterns = [
+        Now handles table formats like:
+          "1 Technical 8 Pages"
+          "Volume 1: Technical - 8 pages maximum"
+        """
+        limits = {}
+        text_lower = text.lower()
+
+        # v3.1: Table-aware patterns (e.g., "1 Technical 8 Pages")
+        # Common formats from PDF table extraction:
+        table_patterns = [
+            # "1 Technical 8 Pages" or "1. Technical 8 Pages"
+            r'(\d+)\.?\s*(technical|cost|price|management|past performance)[^\d]*(\d+)\s*page',
+            # "Technical 8" (just volume name and number)
+            r'(technical|cost|price|management)[^\d]*(\d+)\s*(?:page)?',
+            # "Volume 1: Technical... 8 pages"
+            r'volume\s*\d+[:\s]*(technical|cost|price|management)[^\d]*(\d+)\s*page',
+        ]
+
+        for pattern in table_patterns:
+            for match in re.finditer(pattern, text_lower):
+                groups = match.groups()
+                # Find the volume type and page count from captured groups
+                vol_type = None
+                pages = None
+
+                for g in groups:
+                    if g and g.isdigit():
+                        pages = int(g)
+                    elif g and g in ["technical", "cost", "price", "management", "past performance"]:
+                        vol_type = g
+
+                if vol_type and pages and 0 < pages < 500:
+                    if vol_type == "technical":
+                        limits["technical"] = pages
+                    elif vol_type in ["cost", "price"]:
+                        limits["cost"] = pages
+                    elif vol_type == "management":
+                        limits["management"] = pages
+
+        # Original patterns for prose formats
+        prose_patterns = [
             r'technical[^:]*:\s*(\d+)\s*page',
             r'cost[^:]*:\s*(\d+)\s*page',
             r'price[^:]*:\s*(\d+)\s*page',
@@ -726,23 +846,25 @@ class SmartOutlineGenerator:
             r'not\s*(?:to\s*)?exceed\s*(\d+)\s*page',
             r'maximum\s*(?:of\s*)?(\d+)\s*page',
             r'(\d+)\s*page\s*(?:limit|maximum)',
+            # "shall not exceed 8 pages"
+            r'shall\s*not\s*exceed\s*(\d+)\s*page',
+            # "limited to 8 pages"
+            r'limited\s*to\s*(\d+)\s*page',
         ]
 
-        text_lower = text.lower()
-
-        for pattern in patterns:
+        for pattern in prose_patterns:
             for match in re.finditer(pattern, text_lower):
                 pages = int(match.group(1))
                 if pages > 0 and pages < 500:  # Sanity check
                     # Determine which volume this applies to
                     context = text_lower[max(0, match.start()-100):match.end()+50]
-                    if "technical" in context:
+                    if "technical" in context and "technical" not in limits:
                         limits["technical"] = pages
-                    elif "cost" in context or "price" in context:
+                    elif ("cost" in context or "price" in context) and "cost" not in limits:
                         limits["cost"] = pages
-                    elif "management" in context:
+                    elif "management" in context and "management" not in limits:
                         limits["management"] = pages
-                    else:
+                    elif "total" not in limits:
                         limits["total"] = pages
 
         return limits
