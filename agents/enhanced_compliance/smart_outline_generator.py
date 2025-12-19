@@ -1,23 +1,43 @@
 """
-PropelAI: Smart Proposal Outline Generator v3.2
+PropelAI: Smart Proposal Outline Generator v3.3
 
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
 already parsed from Section L and M rather than re-parsing PDFs.
 
+v3.3 Changes (2025-12-19): STRICT CONSTRUCTIONIST ARCHITECTURE
+=================================================================
+Major refactor to eliminate phantom volume hallucination. The system now
+uses a "Hierarchy of Authority" approach - it starts with ZERO volumes
+and only creates what is explicitly evidenced in the source documents.
+
+NEW: ProposalStructureParser class
+- Dedicated parser for Section L volume tables/lists
+- Explicit table parsing: "Volume | Title | Page Limit"
+- List parsing: "Volume 1: Technical", "Vol. 1 - Technical"
+- RFP type detection to disable UCF defaults for Task Orders, RFEs, RFQs
+
+NEW: Evidence Tracking
+- EvidenceSource enum: TABLE, LIST, FACTOR, FILENAME, KEYWORD, DEFAULT
+- ConfidenceLevel enum: HIGH, MEDIUM, LOW
+- ProposalVolume now tracks evidence_source and confidence
+
+HIERARCHY OF AUTHORITY (in _extract_volumes):
+1. PRIMARY: Section L explicit tables/lists (HIGH confidence)
+2. SECONDARY: Section M evaluation factors (MEDIUM confidence)
+3. TERTIARY: Uploaded file names (MEDIUM confidence)
+4. FALLBACK: Single generic volume, NOT 4-volume UCF (LOW confidence)
+
+DEPRECATED: _create_default_volumes
+- No longer creates phantom volumes
+- Returns empty list to prevent hallucination
+- All fallback logic now in _extract_volumes
+
 v3.2 Changes (2025-12-19):
 - FIX PHANTOM VOLUMES: _extract_standard_volumes now requires EXPLICIT volume
   definitions (e.g., "Volume 1: Technical"), not keyword matching
-- Previous version created "Volume 4: Staffing" from SOW mentions of "staffing"
-  even when RFP only specified 3 volumes
-- TABLE PAGE LIMITS: _extract_page_limits_from_l now handles table formats like
-  "1 Technical 8 Pages" (common PDF table extraction output)
-- Removed aggressive volume indicators (staffing, personnel, experience, etc.)
-  that were creating non-compliant volume structures
-- FIX SF1449 BUG: Sub-factor patterns now limit to 1-2 digits to exclude
-  Standard Form numbers (SF1449 was being parsed as "Sub Factor 1449")
-- FIX "1 PAGE" BUG: Page limit patterns now require "page" keyword and
-  sanity check > 1 to avoid matching volume numbers as page limits
+- FIX SF1449 BUG: Sub-factor patterns now limit to 1-2 digits
+- FIX "1 PAGE" BUG: Page limit patterns require "page" keyword
 
 v3.1 Changes (2025-12-19):
 - STRUCTURE FIX: Outline now follows Section L hierarchy, NOT SOW structure
@@ -80,6 +100,23 @@ class ProposalSection:
     subsections: List['ProposalSection'] = field(default_factory=list)
 
 
+class EvidenceSource(Enum):
+    """v3.3: Track where volume structure evidence came from"""
+    TABLE = "table"           # Explicit table in Section L (highest confidence)
+    LIST = "list"             # Numbered list "Volume 1:", "Volume 2:"
+    FACTOR = "factor"         # Mapped from Section M evaluation factors
+    FILENAME = "filename"     # Inferred from uploaded file names
+    KEYWORD = "keyword"       # Keyword match (low confidence)
+    DEFAULT = "default"       # No evidence found, using fallback
+
+
+class ConfidenceLevel(Enum):
+    """v3.3: Confidence in the volume structure"""
+    HIGH = "high"             # Explicit table or numbered list
+    MEDIUM = "medium"         # Factor mapping or filename inference
+    LOW = "low"               # Keyword match or default
+
+
 @dataclass
 class ProposalVolume:
     """A proposal volume"""
@@ -90,6 +127,9 @@ class ProposalVolume:
     sections: List[ProposalSection] = field(default_factory=list)
     eval_factors: List[str] = field(default_factory=list)
     order: int = 0
+    # v3.3: Evidence tracking for Strict Constructionist approach
+    evidence_source: EvidenceSource = EvidenceSource.DEFAULT
+    confidence: ConfidenceLevel = ConfidenceLevel.LOW
 
 
 @dataclass
@@ -135,6 +175,272 @@ class ProposalOutline:
     total_pages: Optional[int] = None
 
 
+# ============== Proposal Structure Parser (v3.3) ==============
+
+class ProposalStructureParser:
+    """
+    v3.3: Strict Constructionist parser for proposal volume structure.
+
+    HIERARCHY OF AUTHORITY:
+    1. PRIMARY: Explicit tables in Section L with Volume/Pages columns
+    2. SECONDARY: Numbered lists "Volume 1:", "Volume 2:" in Section L
+    3. TERTIARY: Evaluation Factors from Section M mapped to volumes
+    4. QUATERNARY: File names of uploaded documents
+    5. FALLBACK: Single generic volume (NOT 4-volume UCF default)
+
+    This parser NEVER hallucinates volumes. It only creates what is
+    explicitly evidenced in the source documents.
+    """
+
+    # RFP types that should NEVER use UCF defaults
+    NO_UCF_TYPES = {
+        "task_order", "delivery_order", "idiq_order",
+        "request_for_estimate", "rfe", "rac",
+        "request_for_quote", "rfq", "bpa_call"
+    }
+
+    def __init__(self):
+        # Table patterns for Section L volume definitions
+        self.table_patterns = [
+            # "Volume | Title | Page Limit" table format
+            r'(?:volume|vol\.?)\s*(\d+)\s*[:\|\s]+([A-Za-z\s/\-]+?)\s*[:\|\s]+(\d+)\s*pages?',
+            # "1. Technical Volume... 8 pages" row format
+            r'^(\d+)\.\s*([A-Za-z\s/\-]+?(?:volume|proposal)?)\s*[\.:\-\s]+(\d+)\s*pages?',
+        ]
+
+        # List patterns for Section L
+        self.list_patterns = [
+            # "Volume 1: Technical Proposal"
+            r'volume\s*(\d+|[ivx]+)[:\s]+([A-Za-z\s/\-]+?)(?:\n|$|\.|\()',
+            # "Vol. 1 - Technical"
+            r'vol\.?\s*(\d+|[ivx]+)\s*[\-:]\s*([A-Za-z\s/\-]+?)(?:\n|$|\.)',
+            # "Book 1: Technical Volume"
+            r'book\s*(\d+)[:\s]+([A-Za-z\s/\-]+?)(?:\n|$|\.)',
+            # "Part 1: Technical"
+            r'part\s*(\d+)[:\s]+([A-Za-z\s/\-]+?)(?:\n|$|\.)',
+        ]
+
+        # RFP type indicators
+        self.rfp_type_indicators = {
+            "task_order": ["task order", "to request", "delivery order"],
+            "request_for_estimate": ["request for estimate", "rfe", "rac request"],
+            "request_for_quote": ["request for quote", "rfq", "quotation"],
+            "bpa_call": ["bpa call", "blanket purchase"],
+            "idiq": ["idiq", "indefinite delivery", "indefinite quantity"],
+            "full_open": ["full and open", "far 15", "competitive"],
+        }
+
+    def parse_section_l_structure(self, section_l_text: str) -> Tuple[List[Dict], EvidenceSource, ConfidenceLevel]:
+        """
+        Parse Section L for explicit volume structure.
+
+        Returns:
+            (volumes_list, evidence_source, confidence_level)
+        """
+        # Try table parsing first (highest confidence)
+        volumes = self._parse_volume_tables(section_l_text)
+        if volumes:
+            print(f"[DEBUG] StructureParser: Found {len(volumes)} volumes from TABLE")
+            return volumes, EvidenceSource.TABLE, ConfidenceLevel.HIGH
+
+        # Try list parsing second
+        volumes = self._parse_volume_lists(section_l_text)
+        if volumes:
+            print(f"[DEBUG] StructureParser: Found {len(volumes)} volumes from LIST")
+            return volumes, EvidenceSource.LIST, ConfidenceLevel.HIGH
+
+        # No explicit structure found
+        print("[DEBUG] StructureParser: No explicit volume structure found in Section L")
+        return [], EvidenceSource.DEFAULT, ConfidenceLevel.LOW
+
+    def parse_section_m_factors(self, section_m_text: str) -> Tuple[List[Dict], EvidenceSource, ConfidenceLevel]:
+        """
+        Parse Section M for evaluation factors that can be mapped to volumes.
+
+        Returns:
+            (factors_as_volumes, evidence_source, confidence_level)
+        """
+        volumes = []
+
+        # Look for Factor patterns
+        factor_patterns = [
+            r'factor\s*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+            r'evaluation\s*factor\s*(\d+)[:\s]+([A-Za-z\s\-]+?)(?:\n|\.|\(|$)',
+        ]
+
+        for pattern in factor_patterns:
+            for match in re.finditer(pattern, section_m_text, re.IGNORECASE):
+                num = match.group(1)
+                name = match.group(2).strip()
+                if len(name) > 2 and len(name) < 60:
+                    vol_type = self._infer_volume_type(name)
+                    volumes.append({
+                        "num": int(num),
+                        "name": name.title(),
+                        "type": vol_type,
+                        "page_limit": None
+                    })
+
+        if volumes:
+            # Deduplicate by number
+            seen = set()
+            unique = []
+            for v in sorted(volumes, key=lambda x: x["num"]):
+                if v["num"] not in seen:
+                    seen.add(v["num"])
+                    unique.append(v)
+            print(f"[DEBUG] StructureParser: Found {len(unique)} volumes from FACTORS")
+            return unique, EvidenceSource.FACTOR, ConfidenceLevel.MEDIUM
+
+        return [], EvidenceSource.DEFAULT, ConfidenceLevel.LOW
+
+    def infer_from_filenames(self, filenames: List[str]) -> Tuple[List[Dict], EvidenceSource, ConfidenceLevel]:
+        """
+        Infer volume structure from uploaded file names.
+
+        Returns:
+            (inferred_volumes, evidence_source, confidence_level)
+        """
+        volumes = []
+
+        # File name patterns that suggest volumes
+        filename_indicators = {
+            "technical": ("Technical", VolumeType.TECHNICAL),
+            "cost": ("Cost/Price", VolumeType.COST_PRICE),
+            "price": ("Cost/Price", VolumeType.COST_PRICE),
+            "past performance": ("Past Performance", VolumeType.PAST_PERFORMANCE),
+            "management": ("Management", VolumeType.MANAGEMENT),
+        }
+
+        seen_types = set()
+        for filename in filenames:
+            fname_lower = filename.lower()
+            for indicator, (name, vol_type) in filename_indicators.items():
+                if indicator in fname_lower and vol_type not in seen_types:
+                    seen_types.add(vol_type)
+                    volumes.append({
+                        "num": len(volumes) + 1,
+                        "name": name,
+                        "type": vol_type,
+                        "page_limit": None
+                    })
+
+        if volumes:
+            print(f"[DEBUG] StructureParser: Inferred {len(volumes)} volumes from FILENAMES")
+            return volumes, EvidenceSource.FILENAME, ConfidenceLevel.MEDIUM
+
+        return [], EvidenceSource.DEFAULT, ConfidenceLevel.LOW
+
+    def detect_rfp_type(self, all_text: str) -> str:
+        """
+        Detect the RFP type based on text indicators.
+
+        Returns type string like "task_order", "request_for_estimate", etc.
+        """
+        text_lower = all_text.lower()
+
+        for rfp_type, indicators in self.rfp_type_indicators.items():
+            for indicator in indicators:
+                if indicator in text_lower:
+                    print(f"[DEBUG] StructureParser: Detected RFP type '{rfp_type}'")
+                    return rfp_type
+
+        return "unknown"
+
+    def should_use_ucf_defaults(self, rfp_type: str) -> bool:
+        """
+        Determine if UCF defaults are appropriate for this RFP type.
+
+        Task Orders, RFEs, RFQs should NEVER use UCF defaults.
+        """
+        return rfp_type not in self.NO_UCF_TYPES
+
+    def _parse_volume_tables(self, text: str) -> List[Dict]:
+        """Parse table-format volume definitions"""
+        volumes = []
+
+        for pattern in self.table_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE):
+                num = match.group(1)
+                name = match.group(2).strip()
+                page_limit = int(match.group(3)) if len(match.groups()) > 2 else None
+
+                if len(name) > 2:
+                    vol_type = self._infer_volume_type(name)
+                    volumes.append({
+                        "num": int(num) if num.isdigit() else self._roman_to_int(num),
+                        "name": name.title(),
+                        "type": vol_type,
+                        "page_limit": page_limit
+                    })
+
+        return volumes
+
+    def _parse_volume_lists(self, text: str) -> List[Dict]:
+        """Parse list-format volume definitions"""
+        volumes = []
+
+        for pattern in self.list_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                num = match.group(1)
+                name = match.group(2).strip()
+
+                # Clean up the name
+                name = re.sub(r'\s+', ' ', name).strip()
+
+                if len(name) > 2 and len(name) < 80:
+                    vol_type = self._infer_volume_type(name)
+                    volumes.append({
+                        "num": int(num) if num.isdigit() else self._roman_to_int(num),
+                        "name": name.title(),
+                        "type": vol_type,
+                        "page_limit": None
+                    })
+
+        # Deduplicate
+        seen = set()
+        unique = []
+        for v in volumes:
+            key = (v["num"], v["name"].lower())
+            if key not in seen:
+                seen.add(key)
+                unique.append(v)
+
+        return sorted(unique, key=lambda x: x["num"])
+
+    def _infer_volume_type(self, name: str) -> VolumeType:
+        """Infer volume type from name"""
+        name_lower = name.lower()
+
+        if any(x in name_lower for x in ["technical", "approach", "solution"]):
+            return VolumeType.TECHNICAL
+        elif any(x in name_lower for x in ["cost", "price", "pricing"]):
+            return VolumeType.COST_PRICE
+        elif any(x in name_lower for x in ["past performance", "experience", "reference"]):
+            return VolumeType.PAST_PERFORMANCE
+        elif any(x in name_lower for x in ["management", "staffing", "personnel"]):
+            return VolumeType.MANAGEMENT
+        elif any(x in name_lower for x in ["admin", "contract", "compliance"]):
+            return VolumeType.ADMINISTRATIVE
+        else:
+            return VolumeType.OTHER
+
+    def _roman_to_int(self, s: str) -> int:
+        """Convert Roman numeral to integer"""
+        roman_values = {'i': 1, 'v': 5, 'x': 10, 'l': 50, 'c': 100}
+        s = s.lower()
+        total = 0
+        prev = 0
+        for char in reversed(s):
+            curr = roman_values.get(char, 0)
+            if curr < prev:
+                total -= curr
+            else:
+                total += curr
+            prev = curr
+        return total if total > 0 else 1
+
+
 # ============== Smart Outline Generator ==============
 
 class SmartOutlineGenerator:
@@ -146,7 +452,10 @@ class SmartOutlineGenerator:
     """
     
     def __init__(self):
-        # Volume detection patterns
+        # v3.3: Add strict constructionist structure parser
+        self.structure_parser = ProposalStructureParser()
+
+        # Volume detection patterns (legacy - kept for backwards compatibility)
         self.volume_patterns = [
             # NIH Factor-based
             (r"factor\s*(\d+)[:\s,\-–]*([a-z\s]+)", "factor"),
@@ -157,7 +466,7 @@ class SmartOutlineGenerator:
             # Technical Proposal, Business Proposal
             (r"(technical|business|cost|price|management|past\s*performance)\s*proposal", "named"),
         ]
-        
+
         # Page limit patterns - v2.11: Improved patterns
         self.page_limit_patterns = [
             r"(?:not\s+(?:to\s+)?exceed|maximum\s+of|limit(?:ed)?\s+to|no\s+more\s+than)\s*(\d+)\s*pages?",
@@ -209,22 +518,25 @@ class SmartOutlineGenerator:
         
         # Detect RFP format
         rfp_format = self._detect_rfp_format(
-            section_l_requirements, 
+            section_l_requirements,
             section_m_requirements,
             stats
         )
-        
-        # Extract volumes based on format
-        volumes = self._extract_volumes(
+
+        # v3.3: Extract volumes using STRICT CONSTRUCTIONIST approach
+        # No more UCF defaults - only create what is explicitly evidenced
+        volumes, vol_warnings = self._extract_volumes(
             section_l_requirements,
             section_m_requirements,
-            rfp_format
+            rfp_format,
+            filenames=None  # TODO: Pass actual filenames for Level 3 inference
         )
-        
-        # If no volumes found, create defaults
-        if not volumes:
-            volumes = self._create_default_volumes(rfp_format, section_m_requirements)
-            warnings.append("No explicit volumes found - using default structure")
+        warnings.extend(vol_warnings)
+
+        # Log structure confidence for debugging
+        if volumes:
+            for vol in volumes:
+                print(f"[DEBUG] Volume '{vol.name}': source={vol.evidence_source.value}, confidence={vol.confidence.value}")
         
         # Extract evaluation factors
         eval_factors = self._extract_eval_factors(section_m_requirements)
@@ -328,44 +640,122 @@ class SmartOutlineGenerator:
         self,
         section_l: List[Dict],
         section_m: List[Dict],
-        rfp_format: str
+        rfp_format: str,
+        filenames: List[str] = None
+    ) -> Tuple[List[ProposalVolume], List[str]]:
+        """
+        v3.3: Extract proposal volumes using STRICT CONSTRUCTIONIST approach.
+
+        HIERARCHY OF AUTHORITY:
+        1. PRIMARY: Section L tables/lists (highest confidence)
+        2. SECONDARY: Section M evaluation factors
+        3. TERTIARY: File names
+        4. FALLBACK: Single generic volume (NOT 4-volume UCF)
+
+        Returns:
+            (volumes, warnings)
+        """
+        warnings = []
+
+        # Combine text for parsing
+        section_l_text = "\n".join([r.get("text", "") for r in section_l])
+        section_m_text = "\n".join([r.get("text", "") for r in section_m])
+        all_text = section_l_text + "\n" + section_m_text
+
+        print(f"[DEBUG] _extract_volumes v3.3: section_l={len(section_l)}, section_m={len(section_m)}")
+        print(f"[DEBUG] _extract_volumes v3.3: section_l_text={len(section_l_text)} chars, section_m_text={len(section_m_text)} chars")
+
+        # Detect RFP type for validation
+        rfp_type = self.structure_parser.detect_rfp_type(all_text)
+        allow_ucf_defaults = self.structure_parser.should_use_ucf_defaults(rfp_type)
+        print(f"[DEBUG] _extract_volumes v3.3: rfp_type={rfp_type}, allow_ucf_defaults={allow_ucf_defaults}")
+
+        # =====================================================================
+        # LEVEL 1: Try Section L explicit structure (PRIMARY AUTHORITY)
+        # =====================================================================
+        vol_dicts, evidence_source, confidence = self.structure_parser.parse_section_l_structure(section_l_text)
+
+        if vol_dicts:
+            volumes = self._convert_vol_dicts_to_volumes(vol_dicts, evidence_source, confidence)
+            print(f"[DEBUG] _extract_volumes v3.3: Found {len(volumes)} volumes from Section L ({evidence_source.value})")
+            return volumes, warnings
+
+        # =====================================================================
+        # LEVEL 2: Try Section M factors (SECONDARY AUTHORITY)
+        # =====================================================================
+        vol_dicts, evidence_source, confidence = self.structure_parser.parse_section_m_factors(section_m_text)
+
+        if vol_dicts:
+            volumes = self._convert_vol_dicts_to_volumes(vol_dicts, evidence_source, confidence)
+            print(f"[DEBUG] _extract_volumes v3.3: Found {len(volumes)} volumes from Section M factors")
+            return volumes, warnings
+
+        # =====================================================================
+        # LEVEL 3: Try file names (TERTIARY AUTHORITY)
+        # =====================================================================
+        if filenames:
+            vol_dicts, evidence_source, confidence = self.structure_parser.infer_from_filenames(filenames)
+
+            if vol_dicts:
+                volumes = self._convert_vol_dicts_to_volumes(vol_dicts, evidence_source, confidence)
+                warnings.append(
+                    f"Volume structure inferred from file names (confidence: {confidence.value}). "
+                    "Manual review recommended."
+                )
+                print(f"[DEBUG] _extract_volumes v3.3: Inferred {len(volumes)} volumes from filenames")
+                return volumes, warnings
+
+        # =====================================================================
+        # LEVEL 4: FALLBACK - Single generic volume
+        # =====================================================================
+        # v3.3 STRICT CONSTRUCTIONIST: Do NOT create multi-volume UCF defaults
+        warnings.append(
+            "WARNING: No explicit volume structure found in Section L or M. "
+            "Creating minimal single-volume response. Manual structure review required."
+        )
+
+        print("[DEBUG] _extract_volumes v3.3: No structure found, using minimal fallback")
+
+        # Return single generic volume
+        return [
+            ProposalVolume(
+                id="VOL-1",
+                name="Proposal Response",
+                volume_type=VolumeType.TECHNICAL,
+                page_limit=None,
+                order=0,
+                evidence_source=EvidenceSource.DEFAULT,
+                confidence=ConfidenceLevel.LOW
+            )
+        ], warnings
+
+    def _convert_vol_dicts_to_volumes(
+        self,
+        vol_dicts: List[Dict],
+        evidence_source: EvidenceSource,
+        confidence: ConfidenceLevel
     ) -> List[ProposalVolume]:
-        """Extract proposal volumes from requirements"""
-
-        # v3.2: Debug logging
-        print(f"[DEBUG] _extract_volumes: section_l={len(section_l)}, section_m={len(section_m)}, format={rfp_format}")
-
+        """Convert parsed volume dictionaries to ProposalVolume objects"""
         volumes = []
-        seen_volumes = set()
+        seen = set()
 
-        all_requirements = section_l + section_m
-        all_text = " ".join([
-            r.get("text", "") or r.get("full_text", "")
-            for r in all_requirements
-        ])
+        for i, v in enumerate(vol_dicts):
+            name = v.get("name", f"Volume {i+1}")
+            key = name.lower()
 
-        print(f"[DEBUG] _extract_volumes: all_text length={len(all_text)} chars")
+            if key not in seen:
+                seen.add(key)
+                volumes.append(ProposalVolume(
+                    id=f"VOL-{i+1}",
+                    name=name,
+                    volume_type=v.get("type", VolumeType.OTHER),
+                    page_limit=v.get("page_limit"),
+                    order=i,
+                    evidence_source=evidence_source,
+                    confidence=confidence
+                ))
 
-        # Strategy depends on format
-        if rfp_format == "NIH_FACTOR":
-            volumes = self._extract_nih_volumes(all_text, section_m)
-        elif rfp_format in ["GSA_BPA", "GSA_RFQ"]:
-            volumes = self._extract_gsa_volumes(all_text, section_l)
-        else:
-            volumes = self._extract_standard_volumes(all_text, section_l)
-
-        print(f"[DEBUG] _extract_volumes: found {len(volumes)} volumes: {[v.name for v in volumes]}")
-        
-        # Deduplicate and order
-        unique_volumes = []
-        for vol in volumes:
-            key = vol.name.lower()
-            if key not in seen_volumes:
-                seen_volumes.add(key)
-                vol.order = len(unique_volumes)
-                unique_volumes.append(vol)
-        
-        return unique_volumes
+        return volumes
     
     def _extract_nih_volumes(self, text: str, section_m: List[Dict]) -> List[ProposalVolume]:
         """Extract volumes from NIH Factor-based RFP"""
@@ -575,27 +965,20 @@ class SmartOutlineGenerator:
     
     def _create_default_volumes(self, rfp_format: str, section_m: List[Dict]) -> List[ProposalVolume]:
         """
-        Create default volumes if none were extracted.
+        DEPRECATED in v3.3 - Strict Constructionist approach.
 
-        v2.11: Reduced to minimal defaults - only Technical and Cost/Price.
-        The previous 4-volume default was causing incorrect structures.
-        Better to have fewer correct volumes than more incorrect ones.
+        This method is no longer used. The fallback logic is now built into
+        _extract_volumes() which returns a single generic volume if no
+        explicit structure is found.
+
+        Keeping this method for backwards compatibility but it now returns
+        an empty list to prevent phantom volume creation.
         """
+        print("[WARNING] _create_default_volumes is DEPRECATED in v3.3 - use _extract_volumes() instead")
 
-        if rfp_format in ["GSA_BPA", "GSA_RFQ"]:
-            return [
-                ProposalVolume(id="VOL-1", name="Technical Approach", volume_type=VolumeType.TECHNICAL, order=0),
-                ProposalVolume(id="VOL-2", name="Past Performance", volume_type=VolumeType.PAST_PERFORMANCE, order=1),
-                ProposalVolume(id="VOL-3", name="Price", volume_type=VolumeType.COST_PRICE, order=2),
-            ]
-        else:
-            # v2.11: Only create Technical and Cost volumes by default
-            # Past Performance and Management should only appear if detected in text
-            # This prevents the 4-volume default from overriding actual RFP structure
-            return [
-                ProposalVolume(id="VOL-TECH", name="Technical Proposal", volume_type=VolumeType.TECHNICAL, order=0),
-                ProposalVolume(id="VOL-COST", name="Cost/Price Proposal", volume_type=VolumeType.COST_PRICE, order=1),
-            ]
+        # v3.3: Return empty list - no more UCF defaults
+        # The calling code should use _extract_volumes() which has built-in fallback
+        return []
     
     def _populate_sections_from_requirements(
         self,
@@ -1268,6 +1651,9 @@ class SmartOutlineGenerator:
                     "page_limit": vol.page_limit,
                     "order": vol.order,
                     "eval_factors": vol.eval_factors,
+                    # v3.3: Evidence tracking for Strict Constructionist approach
+                    "evidence_source": vol.evidence_source.value if hasattr(vol, 'evidence_source') else "default",
+                    "confidence": vol.confidence.value if hasattr(vol, 'confidence') else "low",
                     "sections": [
                         {
                             "id": sec.id,
