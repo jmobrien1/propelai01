@@ -1374,7 +1374,14 @@ def process_rfp_resilient_background(rfp_id: str):
                 doc_type, content_type = get_doc_type_from_metadata(filename)
                 if doc_type is None:
                     doc_type = infer_doc_type(filename)
-                    content_type = "auto"
+                    # v3.1: Infer content_type from filename patterns
+                    fname_lower = filename.lower()
+                    if any(x in fname_lower for x in ['attachment 2', 'attachment_2', 'placement', 'procedure']):
+                        content_type = "section_lm"  # Attachment 2 typically contains L/M content
+                    elif any(x in fname_lower for x in ['attachment 1', 'attachment_1', 'sow', 'statement']):
+                        content_type = "technical"  # Attachment 1 typically contains SOW
+                    else:
+                        content_type = "auto"
 
                 parsed = parser.parse_file(file_path, doc_type)
                 if parsed:
@@ -1436,10 +1443,11 @@ def process_rfp_resilient_background(rfp_id: str):
             elif source_content_type == "auto":
                 # Fallback: infer from source document filename when no guided upload metadata
                 source_lower = (req.source_document or "").lower()
-                if any(kw in source_lower for kw in ['placement', 'procedure', 'section l', 'section_l', 'instruction']):
-                    # Likely Section L content
+                # v3.1: Added 'attachment 2' - typically contains Section L/M (Placement Procedures)
+                if any(kw in source_lower for kw in ['placement', 'procedure', 'section l', 'section_l', 'instruction', 'attachment 2', 'attachment_2']):
+                    # Likely Section L content - check text for L vs M distinction
                     text_lower = req.text.lower()
-                    if any(kw in text_lower for kw in ['evaluat', 'factor', 'rating', 'score']):
+                    if any(kw in text_lower for kw in ['evaluat', 'factor', 'rating', 'score', 'assessed', 'criteria']):
                         category = "EVALUATION"
                     else:
                         category = "L_COMPLIANCE"
@@ -1452,6 +1460,7 @@ def process_rfp_resilient_background(rfp_id: str):
                 "section": req.assigned_section or "UNASSIGNED",
                 "type": req.category or "general",
                 "category": category,  # Add explicit category for outline generator
+                "source_content_type": source_content_type,  # v3.1: Save for fallback in outline generation
                 "priority": priority,
                 "confidence": req.confidence_score,
                 "confidence_level": req.confidence.value,
@@ -2068,8 +2077,21 @@ async def export_annotated_outline(rfp_id: str):
     outline = rfp.get("outline")
     if not outline:
         generator = SmartOutlineGenerator()
-        section_l = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("L")]
-        section_m = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("M")]
+        # v3.1 FIX: Use category field (set by extraction), not section field
+        # The category field contains: L_COMPLIANCE, EVALUATION, TECHNICAL
+        # The section field contains SOW references like "2.1" which never start with L/M
+        section_l = [r for r in rfp.get("requirements", []) if r.get("category") == "L_COMPLIANCE"]
+        section_m = [r for r in rfp.get("requirements", []) if r.get("category") == "EVALUATION"]
+
+        # Fallback: also include requirements from documents categorized as section_lm
+        if not section_l:
+            section_l = [r for r in rfp.get("requirements", [])
+                        if r.get("source_content_type") in ["section_l", "section_lm"]]
+        if not section_m:
+            section_m = [r for r in rfp.get("requirements", [])
+                        if r.get("source_content_type") in ["section_m", "section_lm"]]
+
+        print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}")
         outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, rfp.get("documents", []))
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
