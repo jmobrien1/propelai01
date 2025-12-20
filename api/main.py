@@ -1444,9 +1444,32 @@ async def export_annotated_outline(rfp_id: str):
     outline = rfp.get("outline")
     if not outline:
         generator = SmartOutlineGenerator()
-        section_l = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("L")]
-        section_m = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("M")]
-        outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, rfp.get("documents", []))
+        # v3.1 FIX: Use category field (set by extraction), not section field
+        # The category field contains: L_COMPLIANCE, EVALUATION, TECHNICAL
+        # The section field contains SOW references like "2.1" which never start with L/M
+        section_l = [r for r in rfp.get("requirements", []) if r.get("category") == "L_COMPLIANCE"]
+        section_m = [r for r in rfp.get("requirements", []) if r.get("category") == "EVALUATION"]
+
+        # Fallback: also include requirements from documents categorized as section_lm
+        if not section_l:
+            section_l = [r for r in rfp.get("requirements", [])
+                        if r.get("source_content_type") in ["section_l", "section_lm"]]
+        if not section_m:
+            section_m = [r for r in rfp.get("requirements", [])
+                        if r.get("source_content_type") in ["section_m", "section_lm"]]
+
+        # v4.0 FIX: Get technical requirements (not section L or M)
+        technical = [r for r in rfp.get("requirements", [])
+                    if r.get("category") not in ["L_COMPLIANCE", "EVALUATION"]]
+        stats = {"is_non_ucf_format": len(section_l) == 0}
+
+        print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}, technical count: {len(technical)}")
+        outline_obj = generator.generate_from_compliance_matrix(
+            section_l_requirements=section_l,
+            section_m_requirements=section_m,
+            technical_requirements=technical,
+            stats=stats
+        )
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
     
