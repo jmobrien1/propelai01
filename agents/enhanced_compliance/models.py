@@ -77,6 +77,80 @@ class ConfidenceLevel(Enum):
 
 
 @dataclass
+class BoundingBox:
+    """
+    PDF coordinate bounding box for visual highlighting.
+    Uses PDF coordinate system (origin at bottom-left, units in points).
+
+    v4.0 Trust Gate: Enables one-click source verification.
+    """
+    x0: float              # Left edge (points from left)
+    y0: float              # Bottom edge (points from bottom)
+    x1: float              # Right edge (points from left)
+    y1: float              # Top edge (points from bottom)
+    page_width: float      # Page width for percentage calculation
+    page_height: float     # Page height for percentage calculation
+
+    def to_css_percent(self) -> Dict[str, float]:
+        """
+        Convert PDF coordinates to CSS percentage positioning.
+        Used for overlay positioning in frontend PDF viewer.
+
+        Returns:
+            Dict with left, top, width, height as percentages (0-100)
+        """
+        if self.page_width <= 0 or self.page_height <= 0:
+            return {"left": 0, "top": 0, "width": 0, "height": 0}
+
+        return {
+            "left": (self.x0 / self.page_width) * 100,
+            "top": ((self.page_height - self.y1) / self.page_height) * 100,  # Flip Y axis
+            "width": ((self.x1 - self.x0) / self.page_width) * 100,
+            "height": ((self.y1 - self.y0) / self.page_height) * 100,
+        }
+
+    def to_dict(self) -> Dict[str, float]:
+        """Serialize to dictionary"""
+        return {
+            "x0": self.x0,
+            "y0": self.y0,
+            "x1": self.x1,
+            "y1": self.y1,
+            "page_width": self.page_width,
+            "page_height": self.page_height,
+            "css_percent": self.to_css_percent(),
+        }
+
+
+@dataclass
+class SourceCoordinate:
+    """
+    Precise visual location of extracted text in source PDF.
+
+    v4.0 Trust Gate: Every requirement traces back to exact PDF location
+    for one-click verification. Clicking a requirement highlights its
+    source in the PDF viewer.
+    """
+    document_id: str              # Unique document identifier (hash or filename)
+    page_number: int              # 1-indexed page number
+    bounding_box: BoundingBox     # Visual coordinates for highlighting
+    text_snippet: str             # First 200 chars of extracted text
+    extraction_method: str        # "pdfplumber" | "pypdf" | "ocr" | "docx"
+    confidence: float             # 0.0 - 1.0 coordinate accuracy
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to dictionary"""
+        return {
+            "document_id": self.document_id,
+            "page_number": self.page_number,
+            "bounding_box": self.bounding_box.to_dict(),
+            "text_snippet": self.text_snippet[:200] if self.text_snippet else "",
+            "extraction_method": self.extraction_method,
+            "confidence": self.confidence,
+        }
+
+
+@dataclass
 class SourceLocation:
     """Precise location of requirement in source document"""
     document_name: str           # Filename or identifier
@@ -86,6 +160,8 @@ class SourceLocation:
     paragraph_index: int = 0     # Paragraph within section
     char_start: int = 0          # Character offset for precise citation
     char_end: int = 0
+    # v4.0: Add visual coordinates for Trust Gate
+    coordinates: Optional[SourceCoordinate] = None
 
 
 @dataclass

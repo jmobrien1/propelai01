@@ -2,7 +2,7 @@
 PropelAI Enhanced Compliance Module v3.0
 """
 
-__version__ = "3.0.0"
+__version__ = "4.0.0"
 __author__ = "PropelAI Team"
 
 # =============================================================================
@@ -205,3 +205,21 @@ except ImportError as e:
     UniversalExtractor = SectionClassifier = DocumentSOWInfo = None
     ResilientExtractor = create_resilient_extractor = None
     ExtractionValidator = ValidationMetrics = DiffResult = ReproducibilityTester = None
+
+# =============================================================================
+# v4.0: Trust Gate - PDF Coordinate Extraction
+# =============================================================================
+try:
+    from .models import BoundingBox, SourceCoordinate
+    from .pdf_coordinate_extractor import (
+        PDFCoordinateExtractor,
+        TextBlock,
+        PageCoordinates,
+        get_coordinate_extractor,
+    )
+    TRUST_GATE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Trust Gate (PDF coordinates) not available: {e}")
+    TRUST_GATE_AVAILABLE = False
+    BoundingBox = SourceCoordinate = None
+    PDFCoordinateExtractor = TextBlock = PageCoordinates = get_coordinate_extractor = None

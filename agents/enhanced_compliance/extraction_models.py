@@ -7,8 +7,11 @@ that extracts first, classifies later, and never silently drops requirements.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, TYPE_CHECKING
 import hashlib
+
+if TYPE_CHECKING:
+    from .models import SourceCoordinate
 
 
 class ConfidenceLevel(Enum):
@@ -72,6 +75,9 @@ class RequirementCandidate:
     source_page: int
     source_offset: int
 
+    # v4.0 Trust Gate: Visual coordinates for PDF highlighting
+    source_coordinates: Optional[List["SourceCoordinate"]] = None
+
     # Original context (RFP's own numbering if found)
     rfp_reference: Optional[str] = None         # e.g., "C.3.1.2", "L.4.B.2"
 
@@ -104,6 +110,7 @@ class RequirementCandidate:
             "text": self.text,
             "source_document": self.source_document,
             "source_page": self.source_page,
+            "source_coordinates": [c.to_dict() for c in self.source_coordinates] if self.source_coordinates else None,
             "rfp_reference": self.rfp_reference,
             "assigned_section": self.assigned_section,
             "category": self.category,
