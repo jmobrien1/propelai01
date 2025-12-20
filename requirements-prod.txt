@@ -18,7 +18,8 @@ asyncpg>=0.29.0
 pgvector>=0.2.0  # pgvector Python client for vector similarity search
 
 # AI/ML (v4.0 Phase 4: Embeddings for semantic search)
-openai>=1.0.0  # For text-embedding-3-small
+openai>=1.0.0  # For text-embedding-3-small embeddings
+# voyageai>=0.2.0  # Optional: Anthropic's recommended embedding provider
 
 # Utils
 httpx>=0.24.0

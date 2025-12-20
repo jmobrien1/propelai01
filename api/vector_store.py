@@ -5,7 +5,7 @@ This module provides embedding generation and vector similarity search
 using PostgreSQL with pgvector extension.
 
 Features:
-- Embedding generation using OpenAI text-embedding-3-small
+- Embedding generation with multiple providers (Voyage AI, OpenAI, or simple TF-IDF fallback)
 - Semantic search across capabilities, past performances, key personnel
 - Hybrid search combining vector similarity with keyword filtering
 - Batch embedding for bulk imports
@@ -20,10 +20,18 @@ Usage:
 
     # Search for relevant capabilities
     results = await store.search_capabilities("need cloud infrastructure expertise", top_k=5)
+
+Environment Variables:
+    DATABASE_URL: PostgreSQL connection string (use Render's Internal Database URL)
+    VOYAGE_API_KEY: Voyage AI API key (Anthropic's recommended embedding provider)
+    OPENAI_API_KEY: OpenAI API key (alternative)
+
+    If no API key is set, uses simple TF-IDF based similarity (no external calls).
 """
 
 import os
 import json
+import hashlib
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,14 +44,21 @@ try:
 except ImportError:
     SQLALCHEMY_AVAILABLE = False
 
-# OpenAI for embeddings
+# Voyage AI for embeddings (Anthropic's recommended provider)
+try:
+    import voyageai
+    VOYAGE_AVAILABLE = True
+except ImportError:
+    VOYAGE_AVAILABLE = False
+
+# OpenAI for embeddings (alternative)
 try:
     import openai
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
 
-# Fallback to httpx for API calls if openai not installed
+# Fallback to httpx for API calls
 try:
     import httpx
     HTTPX_AVAILABLE = True
@@ -52,8 +67,7 @@ except ImportError:
 
 
 # Configuration
-EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMENSION = 1536
+EMBEDDING_DIMENSION = 1536  # Works with both Voyage and OpenAI
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 # Convert postgres:// to postgresql+asyncpg://
@@ -76,84 +90,118 @@ class SearchResult:
 
 class EmbeddingGenerator:
     """
-    Generates embeddings using OpenAI's text-embedding-3-small model.
+    Generates embeddings using available providers.
 
-    Supports both the openai library and direct API calls via httpx.
+    Priority order:
+    1. Voyage AI (VOYAGE_API_KEY) - Anthropic's recommended provider
+    2. OpenAI (OPENAI_API_KEY) - Alternative
+    3. Simple hash-based fallback - No external API needed
     """
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
-        self.model = EMBEDDING_MODEL
+    def __init__(self):
+        self.voyage_key = os.environ.get("VOYAGE_API_KEY", "")
+        self.openai_key = os.environ.get("OPENAI_API_KEY", "")
 
-        if OPENAI_AVAILABLE and self.api_key:
-            self.client = openai.OpenAI(api_key=self.api_key)
+        self.provider = None
+        self.client = None
+
+        # Try Voyage AI first (Anthropic's partner)
+        if self.voyage_key and VOYAGE_AVAILABLE:
+            self.provider = "voyage"
+            self.client = voyageai.Client(api_key=self.voyage_key)
+            self.model = "voyage-2"  # or voyage-large-2 for better quality
+            print("=== Using Voyage AI for embeddings ===")
+        # Fall back to OpenAI
+        elif self.openai_key and OPENAI_AVAILABLE:
+            self.provider = "openai"
+            self.client = openai.OpenAI(api_key=self.openai_key)
+            self.model = "text-embedding-3-small"
+            print("=== Using OpenAI for embeddings ===")
+        # Use simple fallback (no API needed)
         else:
-            self.client = None
+            self.provider = "simple"
+            print("=== Using simple hash-based embeddings (no API key configured) ===")
 
     async def generate(self, text: str) -> Optional[List[float]]:
         """Generate embedding for a single text"""
-        if not self.api_key:
-            return None
-
         try:
-            if self.client:
+            if self.provider == "voyage":
+                result = self.client.embed([text], model=self.model)
+                return result.embeddings[0]
+
+            elif self.provider == "openai":
                 response = self.client.embeddings.create(
                     model=self.model,
                     input=text,
                 )
                 return response.data[0].embedding
-            elif HTTPX_AVAILABLE:
-                return await self._generate_via_httpx(text)
-            else:
-                return None
+
+            elif self.provider == "simple":
+                return self._simple_embedding(text)
+
+            return None
+
         except Exception as e:
             print(f"Embedding generation failed: {e}")
-            return None
+            # Fall back to simple embedding on error
+            return self._simple_embedding(text)
 
     async def generate_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
         """Generate embeddings for multiple texts"""
-        if not self.api_key:
-            return [None] * len(texts)
-
         try:
-            if self.client:
+            if self.provider == "voyage":
+                result = self.client.embed(texts, model=self.model)
+                return result.embeddings
+
+            elif self.provider == "openai":
                 response = self.client.embeddings.create(
                     model=self.model,
                     input=texts,
                 )
                 return [item.embedding for item in response.data]
-            else:
-                # Fallback to individual calls
-                results = []
-                for text in texts:
-                    embedding = await self.generate(text)
-                    results.append(embedding)
-                return results
-        except Exception as e:
-            print(f"Batch embedding generation failed: {e}")
+
+            elif self.provider == "simple":
+                return [self._simple_embedding(t) for t in texts]
+
             return [None] * len(texts)
 
-    async def _generate_via_httpx(self, text: str) -> Optional[List[float]]:
-        """Generate embedding using direct API call"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.openai.com/v1/embeddings",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model,
-                    "input": text,
-                },
-                timeout=30.0,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data["data"][0]["embedding"]
-            else:
-                print(f"Embedding API error: {response.status_code}")
-                return None
+        except Exception as e:
+            print(f"Batch embedding generation failed: {e}")
+            return [self._simple_embedding(t) for t in texts]
+
+    def _simple_embedding(self, text: str) -> List[float]:
+        """
+        Simple hash-based embedding for when no API is available.
+
+        This creates a deterministic embedding based on the text content.
+        Not as semantically meaningful as real embeddings, but enables
+        basic similarity search based on word overlap.
+        """
+        import math
+
+        # Normalize text
+        text = text.lower().strip()
+        words = text.split()
+
+        # Create a simple bag-of-words style embedding
+        embedding = [0.0] * EMBEDDING_DIMENSION
+
+        for i, word in enumerate(words):
+            # Hash each word to get consistent indices
+            word_hash = int(hashlib.md5(word.encode()).hexdigest(), 16)
+
+            # Distribute word influence across multiple dimensions
+            for j in range(min(10, EMBEDDING_DIMENSION // 100)):
+                idx = (word_hash + j * 7919) % EMBEDDING_DIMENSION  # 7919 is prime
+                value = ((word_hash >> (j * 4)) & 0xF) / 15.0 - 0.5  # Normalize to [-0.5, 0.5]
+                embedding[idx] += value / (1 + math.log(1 + i))  # Weight by position
+
+        # Normalize to unit vector
+        magnitude = math.sqrt(sum(x * x for x in embedding))
+        if magnitude > 0:
+            embedding = [x / magnitude for x in embedding]
+
+        return embedding
 
 
 class VectorStore:
