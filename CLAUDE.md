@@ -171,6 +171,20 @@ A winning proposal ensures:
 - User profile section with JWT-based session management
 - Modal dialogs for creating teams and adding members
 
+### Rate Limiting
+**Goal:** Prevent API abuse on authentication endpoints.
+
+**Implementation** (`api/main.py`):
+- In-memory sliding window rate limiter
+- Per-IP tracking with configurable limits
+- Returns 429 Too Many Requests with Retry-After header
+
+**Rate Limits:**
+- Login: 5 attempts per minute
+- Register: 3 attempts per minute
+- Forgot Password: 3 attempts per 5 minutes
+- General API: 100 requests per minute
+
 ## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation

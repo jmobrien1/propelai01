@@ -1681,6 +1681,37 @@ Response:
 }
 ```
 
+#### Rate Limiting
+
+All authentication endpoints are rate-limited to prevent abuse:
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| `/api/auth/login` | 5 requests | 60 seconds |
+| `/api/auth/register` | 3 requests | 60 seconds |
+| `/api/auth/forgot-password` | 3 requests | 300 seconds |
+
+Rate-limited responses return HTTP 429 with a Retry-After header:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 45
+Content-Type: application/json
+
+{
+  "detail": {
+    "error": "Too many requests",
+    "message": "Rate limit exceeded. Please try again in 45 seconds.",
+    "retry_after": 45
+  }
+}
+```
+
+**Implementation Notes:**
+- Uses in-memory sliding window algorithm
+- Per-IP address tracking (respects X-Forwarded-For header)
+- For production, consider Redis-based rate limiting for distributed deployments
+
 #### Team Management
 
 ```

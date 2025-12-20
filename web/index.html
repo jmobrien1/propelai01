@@ -682,6 +682,17 @@
             };
 
             // Auth functions
+            const getErrorMessage = (error, fallback) => {
+                // Handle rate limit and other structured error responses
+                if (error.detail) {
+                    if (typeof error.detail === 'object' && error.detail.message) {
+                        return error.detail.message;
+                    }
+                    return error.detail;
+                }
+                return fallback;
+            };
+
             const handleLogin = async (email, password) => {
                 try {
                     const formData = new FormData();
@@ -695,7 +706,7 @@
 
                     if (!response.ok) {
                         const error = await response.json();
-                        throw new Error(error.detail || 'Login failed');
+                        throw new Error(getErrorMessage(error, 'Login failed'));
                     }
 
                     const data = await response.json();
@@ -725,7 +736,7 @@
 
                     if (!response.ok) {
                         const error = await response.json();
-                        throw new Error(error.detail || 'Registration failed');
+                        throw new Error(getErrorMessage(error, 'Registration failed'));
                     }
 
                     const data = await response.json();
@@ -1095,7 +1106,11 @@
                             body: formData
                         });
                         const data = await response.json();
-                        if (data.reset_token) {
+                        if (!response.ok) {
+                            // Handle rate limit and other errors
+                            const errorMsg = data.detail?.message || data.detail || 'Failed to request password reset';
+                            setError(errorMsg);
+                        } else if (data.reset_token) {
                             // In dev mode, show the token
                             setResetToken(data.reset_token);
                             setSuccess('Reset token generated. In production, this would be sent to your email.');

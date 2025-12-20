@@ -23,11 +23,13 @@ import uuid
 import json
 import shutil
 import tempfile
+import time
+import asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Response, Header
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Response, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -3654,6 +3656,123 @@ async def get_user_from_token(token: str) -> Optional[Dict]:
 _current_user: Optional[Dict] = None
 
 
+# ============================================================================
+# RATE LIMITING
+# ============================================================================
+
+class RateLimiter:
+    """
+    In-memory rate limiter using sliding window algorithm.
+    For production, consider Redis-based rate limiting.
+    """
+
+    def __init__(self):
+        self._requests: Dict[str, List[float]] = {}
+        self._lock = asyncio.Lock()
+
+    async def is_rate_limited(
+        self,
+        key: str,
+        max_requests: int,
+        window_seconds: int = 60
+    ) -> tuple[bool, int]:
+        """
+        Check if a key is rate limited.
+
+        Returns:
+            tuple: (is_limited, retry_after_seconds)
+        """
+        async with self._lock:
+            now = time.time()
+            window_start = now - window_seconds
+
+            # Get existing requests for this key
+            if key not in self._requests:
+                self._requests[key] = []
+
+            # Remove expired requests (outside the window)
+            self._requests[key] = [
+                ts for ts in self._requests[key]
+                if ts > window_start
+            ]
+
+            # Check if over limit
+            if len(self._requests[key]) >= max_requests:
+                # Calculate retry-after time
+                oldest_request = min(self._requests[key])
+                retry_after = int(oldest_request + window_seconds - now) + 1
+                return True, max(retry_after, 1)
+
+            # Record this request
+            self._requests[key].append(now)
+            return False, 0
+
+    async def cleanup_old_entries(self, max_age_seconds: int = 3600):
+        """Remove entries older than max_age to prevent memory leaks"""
+        async with self._lock:
+            cutoff = time.time() - max_age_seconds
+            keys_to_remove = []
+
+            for key, timestamps in self._requests.items():
+                self._requests[key] = [ts for ts in timestamps if ts > cutoff]
+                if not self._requests[key]:
+                    keys_to_remove.append(key)
+
+            for key in keys_to_remove:
+                del self._requests[key]
+
+
+# Global rate limiter instance
+rate_limiter = RateLimiter()
+
+# Rate limit configurations (requests per minute)
+RATE_LIMITS = {
+    "login": {"max_requests": 5, "window_seconds": 60},         # 5 attempts per minute
+    "register": {"max_requests": 3, "window_seconds": 60},      # 3 registrations per minute
+    "forgot_password": {"max_requests": 3, "window_seconds": 300},  # 3 requests per 5 minutes
+    "api_general": {"max_requests": 100, "window_seconds": 60}, # 100 requests per minute
+}
+
+
+async def check_rate_limit(request, limit_type: str) -> None:
+    """
+    Check rate limit for a request. Raises HTTPException if rate limited.
+
+    Args:
+        request: FastAPI Request object
+        limit_type: Key from RATE_LIMITS dict
+    """
+    # Get client IP (handle proxies)
+    client_ip = request.client.host if request.client else "unknown"
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+
+    # Build rate limit key
+    key = f"{limit_type}:{client_ip}"
+
+    # Get limit config
+    config = RATE_LIMITS.get(limit_type, RATE_LIMITS["api_general"])
+
+    # Check rate limit
+    is_limited, retry_after = await rate_limiter.is_rate_limited(
+        key,
+        config["max_requests"],
+        config["window_seconds"]
+    )
+
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Too many requests",
+                "message": f"Rate limit exceeded. Please try again in {retry_after} seconds.",
+                "retry_after": retry_after
+            },
+            headers={"Retry-After": str(retry_after)}
+        )
+
+
 def get_current_user() -> Optional[Dict]:
     """Get current user from context"""
     return _current_user
@@ -3674,11 +3793,15 @@ def require_role(required_role: str, team_id: str = None):
 
 @app.post("/api/auth/register")
 async def register_user(
+    request: Request,
     email: str = Form(...),
     name: str = Form(...),
     password: str = Form(...),
 ):
     """Register a new user"""
+    # Rate limit: 3 registrations per minute
+    await check_rate_limit(request, "register")
+
     async with get_db_session() as session:
         if session is None:
             raise HTTPException(status_code=500, detail="Database not available")
@@ -3717,10 +3840,14 @@ async def register_user(
 
 @app.post("/api/auth/login")
 async def login_user(
+    request: Request,
     email: str = Form(...),
     password: str = Form(...),
 ):
     """Login user and return JWT token"""
+    # Rate limit: 5 attempts per minute
+    await check_rate_limit(request, "login")
+
     async with get_db_session() as session:
         if session is None:
             raise HTTPException(status_code=500, detail="Database not available")
@@ -3838,9 +3965,13 @@ def generate_reset_token() -> str:
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(
+    request: Request,
     email: str = Form(...),
 ):
     """Request a password reset token"""
+    # Rate limit: 3 requests per 5 minutes
+    await check_rate_limit(request, "forgot_password")
+
     async with get_db_session() as session:
         if session is None:
             # Still return success to prevent email enumeration
