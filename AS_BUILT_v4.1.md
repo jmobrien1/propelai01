@@ -21,6 +21,7 @@
 11. [Deployment Configuration](#11-deployment-configuration)
 12. [Security & Governance](#12-security--governance)
 13. [Version History](#13-version-history)
+14. [Team Workspaces (v4.1)](#14-team-workspaces-v41)
 
 ---
 
@@ -1468,6 +1469,328 @@ LogEntry = {
    - Storage type reporting
    - Database connection status
    - Loaded RFP count
+
+6. **Team Workspaces & RBAC** (v4.1.1)
+   - User authentication (register/login)
+   - Team creation and management
+   - Role-based access control (admin, contributor, viewer)
+   - Activity logging for audit trail
+   - Vector search UI with semantic filtering
+
+---
+
+## 14. Team Workspaces (v4.1)
+
+### 14.1 Overview
+
+Team Workspaces enable multi-user collaboration on Company Library content with role-based access control.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        TEAM WORKSPACE MODEL                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐│
+│  │      USER       │────▶│   MEMBERSHIP    │◀────│      TEAM       ││
+│  │                 │     │                 │     │                 ││
+│  │  - id           │     │  - user_id      │     │  - id           ││
+│  │  - email        │     │  - team_id      │     │  - name         ││
+│  │  - name         │     │  - role         │     │  - slug         ││
+│  │  - password_hash│     │  - joined_at    │     │  - settings     ││
+│  └─────────────────┘     └─────────────────┘     └─────────────────┘│
+│                                 │                                    │
+│                                 ▼                                    │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                         ROLES                                    ││
+│  │  admin       - Full access: manage team, members, all content   ││
+│  │  contributor - Can add and edit library content                 ││
+│  │  viewer      - Read-only access to library content              ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 14.2 Database Models
+
+**Location:** `api/database.py`
+
+```python
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    CONTRIBUTOR = "contributor"
+    VIEWER = "viewer"
+
+
+class UserModel(Base):
+    __tablename__ = "users"
+
+    id = Column(String(50), primary_key=True)
+    email = Column(String(255), nullable=False, unique=True)
+    name = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    last_login = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    memberships = relationship("TeamMembershipModel", back_populates="user")
+
+
+class TeamModel(Base):
+    __tablename__ = "teams"
+
+    id = Column(String(50), primary_key=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    settings = Column(JSONB, default=dict)
+    created_by = Column(String(50), ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    memberships = relationship("TeamMembershipModel", back_populates="team")
+    activity_logs = relationship("ActivityLogModel", back_populates="team")
+
+
+class TeamMembershipModel(Base):
+    __tablename__ = "team_memberships"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id", ondelete="CASCADE"))
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"))
+    role = Column(String(20), nullable=False, default="viewer")
+    invited_by = Column(String(50), ForeignKey("users.id"), nullable=True)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ActivityLogModel(Base):
+    __tablename__ = "activity_log"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id", ondelete="CASCADE"))
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"))
+    action = Column(String(100), nullable=False)
+    resource_type = Column(String(100), nullable=False)
+    resource_id = Column(String(50), nullable=True)
+    details = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+```
+
+### 14.3 API Endpoints
+
+#### Authentication
+
+```
+POST /api/auth/register
+Content-Type: application/x-www-form-urlencoded
+
+email=user@example.com&name=John+Doe&password=secret123
+
+Response:
+{
+  "id": "USR-A1B2C3D4",
+  "email": "user@example.com",
+  "name": "John Doe",
+  "is_active": true,
+  "created_at": "2024-12-20T10:00:00"
+}
+```
+
+```
+POST /api/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+email=user@example.com&password=secret123
+
+Response:
+{
+  "user": {
+    "id": "USR-A1B2C3D4",
+    "email": "user@example.com",
+    "name": "John Doe"
+  },
+  "message": "Login successful"
+}
+```
+
+#### Team Management
+
+```
+POST /api/teams
+Content-Type: application/x-www-form-urlencoded
+
+name=Proposal+Team&description=Main+proposal+development+team
+
+Response:
+{
+  "id": "TEAM-A1B2C3D4",
+  "name": "Proposal Team",
+  "slug": "proposal-team",
+  "description": "Main proposal development team",
+  "created_at": "2024-12-20T10:00:00"
+}
+```
+
+```
+GET /api/teams
+
+Response:
+{
+  "teams": [
+    {
+      "id": "TEAM-A1B2C3D4",
+      "name": "Proposal Team",
+      "slug": "proposal-team",
+      "member_count": 5,
+      "my_role": "admin"
+    }
+  ]
+}
+```
+
+```
+GET /api/teams/{team_id}
+
+Response:
+{
+  "id": "TEAM-A1B2C3D4",
+  "name": "Proposal Team",
+  "slug": "proposal-team",
+  "description": "Main proposal development team",
+  "members": [
+    {
+      "user_id": "USR-A1B2C3D4",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "role": "admin",
+      "joined_at": "2024-12-20T10:00:00"
+    }
+  ]
+}
+```
+
+#### Member Management
+
+```
+POST /api/teams/{team_id}/members
+Content-Type: application/x-www-form-urlencoded
+
+email=newmember@example.com&role=contributor
+
+Response:
+{
+  "message": "Member added",
+  "membership": {
+    "user_id": "USR-X1Y2Z3W4",
+    "team_id": "TEAM-A1B2C3D4",
+    "role": "contributor"
+  }
+}
+```
+
+```
+PUT /api/teams/{team_id}/members/{user_id}
+Content-Type: application/x-www-form-urlencoded
+
+role=admin
+
+Response:
+{
+  "message": "Role updated",
+  "new_role": "admin"
+}
+```
+
+```
+DELETE /api/teams/{team_id}/members/{user_id}
+
+Response:
+{
+  "message": "Member removed"
+}
+```
+
+#### Activity Log
+
+```
+GET /api/teams/{team_id}/activity?limit=50
+
+Response:
+{
+  "activities": [
+    {
+      "id": "ACT-A1B2C3D4",
+      "action": "create",
+      "resource_type": "capability",
+      "user_name": "John Doe",
+      "details": {"name": "Cloud Migration"},
+      "created_at": "2024-12-20T10:15:00"
+    }
+  ]
+}
+```
+
+### 14.4 Vector Search UI
+
+**Location:** `web/index.html` - VectorSearchPanel component
+
+The Vector Search UI provides AI-powered semantic search across Company Library content.
+
+```javascript
+function VectorSearchPanel() {
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState([]);
+    const [filters, setFilters] = useState({
+        types: ['capability', 'past_performance', 'key_personnel', 'differentiator'],
+        topK: 10
+    });
+
+    const handleSearch = async () => {
+        const response = await fetch(
+            `${API_BASE}/library/vector-search?` +
+            `query=${encodeURIComponent(query)}&` +
+            `types=${filters.types.join(',')}&` +
+            `top_k=${filters.topK}`
+        );
+        const data = await response.json();
+        setResults(data.results);
+    };
+
+    // Renders search input, type filters, and results with similarity scores
+}
+```
+
+**Features:**
+- Natural language query input
+- Type filtering (Capabilities, Past Performance, Key Personnel, Differentiators)
+- Configurable result count (Top 5/10/20)
+- Similarity score display (0-100%)
+- Real-time search feedback
+
+### 14.5 Frontend Components
+
+**TeamsView** - Team workspace management
+
+```javascript
+function TeamsView() {
+    const [teams, setTeams] = useState([]);
+    const [selectedTeam, setSelectedTeam] = useState(null);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+
+    // Team list with member counts
+    // Team detail view with member management
+    // Create team modal
+    // Add member modal with role selection
+}
+```
+
+**Role-based UI elements:**
+- Admin: Can manage team settings, add/remove members, change roles
+- Contributor: Can add/edit library content, view team
+- Viewer: Read-only access to library content
 
 ---
 

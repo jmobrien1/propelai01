@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-PropelAI v4.0 End-to-End Verification Tests
+PropelAI v4.0/v4.1 End-to-End Verification Tests
 
-Tests all four phases of the v4.0 architecture:
+Tests all five phases of the v4.x architecture:
 - Phase 1: Trust Gate (PDF coordinate extraction)
 - Phase 2: Iron Triangle (Strategy Agent)
 - Phase 3: Drafting Agent (LangGraph workflow)
 - Phase 4: Persistence (Database + Vector Store)
+- Phase 5: Team Workspaces (RBAC & Collaboration) - v4.1
 
 Run with: python -m pytest tests/test_e2e_v4.py -v
 Or standalone: python tests/test_e2e_v4.py
@@ -569,6 +570,216 @@ class V4EndToEndTests:
             )
 
     # =========================================================================
+    # Phase 5: Team Workspaces Tests (v4.1)
+    # =========================================================================
+
+    def test_phase5_team_models_imports(self):
+        """Test that Team Workspace models can be imported"""
+        try:
+            from api.database import (
+                UserModel,
+                TeamModel,
+                TeamMembershipModel,
+                ActivityLogModel,
+                UserRole,
+            )
+            self.record(
+                "Phase 5: Team model imports",
+                True,
+                "All Team Workspace models available"
+            )
+        except ImportError as e:
+            if "fastapi" in str(e).lower() or "sqlalchemy" in str(e).lower():
+                self.record(
+                    "Phase 5: Team model imports",
+                    True,
+                    "Database dependencies not installed",
+                    skipped=True
+                )
+            else:
+                self.record(
+                    "Phase 5: Team model imports",
+                    False,
+                    f"Import failed: {e}"
+                )
+
+    def test_phase5_user_role_enum(self):
+        """Test UserRole enum has correct values"""
+        try:
+            from api.database import UserRole
+
+            # Check all required roles exist
+            expected_roles = ['admin', 'contributor', 'viewer']
+            actual_roles = [role.value for role in UserRole]
+
+            missing = [r for r in expected_roles if r not in actual_roles]
+            if missing:
+                self.record(
+                    "Phase 5: UserRole enum",
+                    False,
+                    f"Missing roles: {missing}"
+                )
+            else:
+                self.record(
+                    "Phase 5: UserRole enum",
+                    True,
+                    "All RBAC roles defined (admin, contributor, viewer)",
+                    {"roles": actual_roles}
+                )
+        except ImportError as e:
+            if "fastapi" in str(e).lower() or "sqlalchemy" in str(e).lower():
+                self.record(
+                    "Phase 5: UserRole enum",
+                    True,
+                    "Database dependencies not installed",
+                    skipped=True
+                )
+            else:
+                self.record(
+                    "Phase 5: UserRole enum",
+                    False,
+                    f"UserRole test failed: {e}"
+                )
+
+    def test_phase5_team_model_structure(self):
+        """Test TeamModel has required fields"""
+        try:
+            from api.database import TeamModel
+
+            # Check model has required columns
+            required_fields = ['id', 'name', 'slug', 'description', 'settings', 'created_by']
+
+            # Get column names from model
+            if hasattr(TeamModel, '__table__'):
+                columns = [c.name for c in TeamModel.__table__.columns]
+                missing = [f for f in required_fields if f not in columns]
+
+                if missing:
+                    self.record(
+                        "Phase 5: TeamModel structure",
+                        False,
+                        f"Missing columns: {missing}"
+                    )
+                else:
+                    self.record(
+                        "Phase 5: TeamModel structure",
+                        True,
+                        "TeamModel has all required fields",
+                        {"columns": columns[:6]}
+                    )
+            else:
+                self.record(
+                    "Phase 5: TeamModel structure",
+                    True,
+                    "TeamModel exists (structure not validated)"
+                )
+        except ImportError as e:
+            if "fastapi" in str(e).lower() or "sqlalchemy" in str(e).lower():
+                self.record(
+                    "Phase 5: TeamModel structure",
+                    True,
+                    "Database dependencies not installed",
+                    skipped=True
+                )
+            else:
+                self.record(
+                    "Phase 5: TeamModel structure",
+                    False,
+                    f"TeamModel test failed: {e}"
+                )
+
+    def test_phase5_team_membership_model(self):
+        """Test TeamMembershipModel for role-based access"""
+        try:
+            from api.database import TeamMembershipModel
+
+            # Check for required columns
+            required_fields = ['id', 'team_id', 'user_id', 'role']
+
+            if hasattr(TeamMembershipModel, '__table__'):
+                columns = [c.name for c in TeamMembershipModel.__table__.columns]
+                missing = [f for f in required_fields if f not in columns]
+
+                if missing:
+                    self.record(
+                        "Phase 5: TeamMembershipModel",
+                        False,
+                        f"Missing columns: {missing}"
+                    )
+                else:
+                    self.record(
+                        "Phase 5: TeamMembershipModel",
+                        True,
+                        "TeamMembershipModel supports RBAC",
+                        {"columns": columns}
+                    )
+            else:
+                self.record(
+                    "Phase 5: TeamMembershipModel",
+                    True,
+                    "TeamMembershipModel exists"
+                )
+        except ImportError as e:
+            if "fastapi" in str(e).lower() or "sqlalchemy" in str(e).lower():
+                self.record(
+                    "Phase 5: TeamMembershipModel",
+                    True,
+                    "Database dependencies not installed",
+                    skipped=True
+                )
+            else:
+                self.record(
+                    "Phase 5: TeamMembershipModel",
+                    False,
+                    f"TeamMembershipModel test failed: {e}"
+                )
+
+    def test_phase5_activity_log_model(self):
+        """Test ActivityLogModel for audit trail"""
+        try:
+            from api.database import ActivityLogModel
+
+            required_fields = ['id', 'team_id', 'user_id', 'action', 'resource_type']
+
+            if hasattr(ActivityLogModel, '__table__'):
+                columns = [c.name for c in ActivityLogModel.__table__.columns]
+                missing = [f for f in required_fields if f not in columns]
+
+                if missing:
+                    self.record(
+                        "Phase 5: ActivityLogModel",
+                        False,
+                        f"Missing columns: {missing}"
+                    )
+                else:
+                    self.record(
+                        "Phase 5: ActivityLogModel",
+                        True,
+                        "ActivityLogModel supports audit trail",
+                        {"columns": columns[:6]}
+                    )
+            else:
+                self.record(
+                    "Phase 5: ActivityLogModel",
+                    True,
+                    "ActivityLogModel exists"
+                )
+        except ImportError as e:
+            if "fastapi" in str(e).lower() or "sqlalchemy" in str(e).lower():
+                self.record(
+                    "Phase 5: ActivityLogModel",
+                    True,
+                    "Database dependencies not installed",
+                    skipped=True
+                )
+            else:
+                self.record(
+                    "Phase 5: ActivityLogModel",
+                    False,
+                    f"ActivityLogModel test failed: {e}"
+                )
+
+    # =========================================================================
     # API Endpoint Tests
     # =========================================================================
 
@@ -607,6 +818,10 @@ class V4EndToEndTests:
                 "/api/health",
                 "/api/rfp/{rfp_id}/requirements",
                 "/api/library/vector-search",
+                # v4.1 Team Workspace endpoints
+                "/api/auth/register",
+                "/api/auth/login",
+                "/api/teams",
             ]
 
             found = []
@@ -688,6 +903,14 @@ class V4EndToEndTests:
         self.test_phase4_vector_store_imports()
         self.test_phase4_embedding_generator()
         self.test_phase4_vector_store_init()
+
+        # Phase 5: Team Workspaces (v4.1)
+        print("\n[Phase 5: Team Workspaces - RBAC & Collaboration]")
+        self.test_phase5_team_models_imports()
+        self.test_phase5_user_role_enum()
+        self.test_phase5_team_model_structure()
+        self.test_phase5_team_membership_model()
+        self.test_phase5_activity_log_model()
 
         # API Verification
         print("\n[API Endpoint Verification]")
