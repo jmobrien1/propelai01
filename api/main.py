@@ -3567,6 +3567,20 @@ from api.database import (
 import uuid
 import hashlib
 import secrets
+from datetime import timedelta
+
+# JWT Authentication
+try:
+    import jwt
+    JWT_AVAILABLE = True
+except ImportError:
+    JWT_AVAILABLE = False
+    jwt = None
+
+# JWT Configuration
+JWT_SECRET = os.environ.get("JWT_SECRET", "propelai-dev-secret-change-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = 24 * 7  # 7 days
 
 
 def generate_id() -> str:
@@ -3584,7 +3598,59 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hash_password(password) == password_hash
 
 
-# Current user context (simplified - use JWT in production)
+def create_jwt_token(user_id: str, email: str, name: str) -> str:
+    """Create a JWT token for a user"""
+    if not JWT_AVAILABLE:
+        return f"demo-token-{user_id}"
+
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "name": name,
+        "iat": datetime.utcnow(),
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def verify_jwt_token(token: str) -> dict:
+    """Verify and decode a JWT token. Returns payload or raises exception."""
+    if not JWT_AVAILABLE:
+        # Demo mode - extract user_id from demo token
+        if token.startswith("demo-token-"):
+            return {"sub": token.replace("demo-token-", ""), "demo": True}
+        raise ValueError("Invalid token")
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token has expired")
+    except jwt.InvalidTokenError:
+        raise ValueError("Invalid token")
+
+
+async def get_user_from_token(token: str) -> Optional[Dict]:
+    """Get the current user from a JWT token"""
+    try:
+        payload = verify_jwt_token(token)
+        user_id = payload.get("sub")
+
+        async with get_db_session() as session:
+            if session is None:
+                return None
+
+            from sqlalchemy import select
+            result = await session.execute(
+                select(UserModel).where(UserModel.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            return user.to_dict() if user else None
+    except ValueError:
+        return None
+
+
+# Current user context (for backwards compatibility)
 _current_user: Optional[Dict] = None
 
 
@@ -3636,9 +3702,15 @@ async def register_user(
         session.add(user)
         await session.flush()
 
+        # Generate JWT token for immediate login after registration
+        token = create_jwt_token(user.id, user.email, user.name)
+
         return {
             "success": True,
             "user": user.to_dict(),
+            "token": token,
+            "token_type": "bearer",
+            "expires_in": JWT_EXPIRY_HOURS * 3600,
             "message": "Registration successful",
         }
 
@@ -3648,7 +3720,7 @@ async def login_user(
     email: str = Form(...),
     password: str = Form(...),
 ):
-    """Login user (simplified - use JWT in production)"""
+    """Login user and return JWT token"""
     async with get_db_session() as session:
         if session is None:
             raise HTTPException(status_code=500, detail="Database not available")
@@ -3666,21 +3738,92 @@ async def login_user(
         user.last_login = datetime.utcnow()
         await session.flush()
 
-        # In production, return JWT token
+        # Generate JWT token
+        token = create_jwt_token(user.id, user.email, user.name)
+
         return {
             "success": True,
             "user": user.to_dict(),
-            "token": f"demo-token-{user.id}",  # Replace with JWT
+            "token": token,
+            "token_type": "bearer",
+            "expires_in": JWT_EXPIRY_HOURS * 3600,  # seconds
         }
 
 
 @app.get("/api/users/me")
-async def get_current_user_info():
-    """Get current user info"""
-    user = get_current_user()
+async def get_current_user_info(authorization: str = Header(None)):
+    """Get current user info from JWT token"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    # Extract token from "Bearer <token>" format
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    token = parts[1]
+    user = await get_user_from_token(token)
+
     if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     return user
+
+
+@app.post("/api/auth/verify")
+async def verify_token(authorization: str = Header(None)):
+    """Verify a JWT token and return user info"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    token = parts[1]
+
+    try:
+        payload = verify_jwt_token(token)
+        user = await get_user_from_token(token)
+
+        return {
+            "valid": True,
+            "user": user,
+            "expires_at": payload.get("exp"),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@app.post("/api/auth/refresh")
+async def refresh_token(authorization: str = Header(None)):
+    """Refresh a JWT token"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    token = parts[1]
+
+    try:
+        payload = verify_jwt_token(token)
+        user_id = payload.get("sub")
+        email = payload.get("email")
+        name = payload.get("name")
+
+        # Create a new token
+        new_token = create_jwt_token(user_id, email, name)
+
+        return {
+            "success": True,
+            "token": new_token,
+            "token_type": "bearer",
+            "expires_in": JWT_EXPIRY_HOURS * 3600,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
 
 @app.post("/api/teams")

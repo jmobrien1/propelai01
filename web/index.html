@@ -700,7 +700,9 @@
 
                     const data = await response.json();
                     setCurrentUser(data.user);
+                    // Store both user and token
                     localStorage.setItem('propelai_user', JSON.stringify(data.user));
+                    localStorage.setItem('propelai_token', data.token);
                     setShowAuthModal(false);
                     return true;
                 } catch (e) {
@@ -727,8 +729,10 @@
                     }
 
                     const data = await response.json();
-                    setCurrentUser(data);
-                    localStorage.setItem('propelai_user', JSON.stringify(data));
+                    setCurrentUser(data.user);
+                    // Store both user and token
+                    localStorage.setItem('propelai_user', JSON.stringify(data.user));
+                    localStorage.setItem('propelai_token', data.token);
                     setShowAuthModal(false);
                     return true;
                 } catch (e) {
@@ -740,6 +744,24 @@
             const handleLogout = () => {
                 setCurrentUser(null);
                 localStorage.removeItem('propelai_user');
+                localStorage.removeItem('propelai_token');
+            };
+
+            // Get auth token for API requests
+            const getAuthToken = () => {
+                return localStorage.getItem('propelai_token');
+            };
+
+            // Helper for authenticated API requests
+            const authFetch = async (url, options = {}) => {
+                const token = getAuthToken();
+                if (token) {
+                    options.headers = {
+                        ...options.headers,
+                        'Authorization': `Bearer ${token}`
+                    };
+                }
+                return fetch(url, options);
             };
 
             // Process files - accepts optional docTypes and files from guided upload

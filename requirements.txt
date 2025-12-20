@@ -14,3 +14,4 @@ openpyxl>=3.0.10
 
 # Utils
 httpx>=0.24.0
+PyJWT>=2.8.0  # v4.1: JWT token authentication
