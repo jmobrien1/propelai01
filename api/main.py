@@ -1,8 +1,13 @@
 """
-PropelAI API v2.3
-FastAPI backend with Enhanced Compliance Agent integration
+PropelAI API v4.0
+FastAPI backend with Enhanced Compliance Agent + Trust Gate integration
 
-Endpoints:
+v4.0 Endpoints (Trust Gate):
+- GET /api/requirements/{req_id}/source - Get source coordinates for a requirement
+- GET /api/documents/{doc_id}/page/{page_num}/image - Get PDF page as image
+- POST /api/rfp/{rfp_id}/strategy - Generate win themes and strategy
+
+Core Endpoints:
 - POST /api/rfp/upload - Upload RFP documents
 - POST /api/rfp/process - Process uploaded documents
 - GET /api/rfp/{rfp_id} - Get RFP details and requirements
@@ -79,14 +84,120 @@ except ImportError as e:
     print(f"Warning: Annotated outline exporter not available: {e}")
     ANNOTATED_OUTLINE_AVAILABLE = False
 
+# v3.0: Resilient Extraction Pipeline (Extract-First Architecture)
+try:
+    from agents.enhanced_compliance.resilient_extractor import (
+        ResilientExtractor,
+        create_resilient_extractor,
+    )
+    from agents.enhanced_compliance.extraction_models import (
+        ExtractionResult as ResilientExtractionResult,
+        ConfidenceLevel,
+    )
+    from agents.enhanced_compliance.extraction_validator import (
+        ExtractionValidator,
+        ReproducibilityTester,
+    )
+    from agents.enhanced_compliance.resilient_extractor import PIPELINE_VERSION
+    from agents.enhanced_compliance.universal_extractor import EXTRACTOR_VERSION
+    RESILIENT_EXTRACTION_AVAILABLE = True
+    resilient_extractor = create_resilient_extractor()
+    print(f"=== PropelAI Resilient Extraction v{PIPELINE_VERSION} (extractor v{EXTRACTOR_VERSION}) ===")
+except ImportError as e:
+    print(f"Warning: Resilient extraction not available: {e}")
+    RESILIENT_EXTRACTION_AVAILABLE = False
+    resilient_extractor = None
+
+# v3.2: Guided Document Upload
+try:
+    from agents.enhanced_compliance.document_types import (
+        DocumentType,
+        DocumentSlot,
+        UPLOAD_SLOTS,
+        SKIP_DOCUMENTS,
+        get_slot_by_id,
+        classify_document_by_filename,
+        get_ui_config,
+    )
+    GUIDED_UPLOAD_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Guided upload not available: {e}")
+    GUIDED_UPLOAD_AVAILABLE = False
+
+# v4.0: Trust Gate - PDF Coordinate Extraction
+try:
+    from agents.enhanced_compliance import (
+        TRUST_GATE_AVAILABLE,
+        BoundingBox,
+        SourceCoordinate,
+        PDFCoordinateExtractor,
+        get_coordinate_extractor,
+    )
+    if TRUST_GATE_AVAILABLE:
+        coordinate_extractor = get_coordinate_extractor()
+        print("=== PropelAI Trust Gate v4.0 (PDF coordinate extraction) ===")
+    else:
+        coordinate_extractor = None
+except ImportError as e:
+    print(f"Warning: Trust Gate not available: {e}")
+    TRUST_GATE_AVAILABLE = False
+    coordinate_extractor = None
+
+# v4.0: Strategy Agent + Competitive Analysis
+try:
+    from agents.strategy_agent import (
+        StrategyAgent,
+        CompetitorAnalyzer,
+        GhostingLanguageGenerator,
+    )
+    STRATEGY_AGENT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Strategy Agent not available: {e}")
+    STRATEGY_AGENT_AVAILABLE = False
+    StrategyAgent = None
+    CompetitorAnalyzer = None
+    GhostingLanguageGenerator = None
+
+# v4.0: Drafting Workflow
+try:
+    from agents.drafting_workflow import (
+        run_drafting_workflow,
+        build_drafting_graph,
+        LANGGRAPH_AVAILABLE,
+    )
+    DRAFTING_WORKFLOW_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Drafting workflow not available: {e}")
+    DRAFTING_WORKFLOW_AVAILABLE = False
+    run_drafting_workflow = None
+    LANGGRAPH_AVAILABLE = False
+
 
 # ============== Configuration ==============
 
-UPLOAD_DIR = Path(tempfile.gettempdir()) / "propelai_uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+# v4.1: Use persistent storage on Render Disk if available, otherwise temp directory
+PERSISTENT_DATA_DIR = Path("/data")
+if PERSISTENT_DATA_DIR.exists() and os.access(PERSISTENT_DATA_DIR, os.W_OK):
+    UPLOAD_DIR = PERSISTENT_DATA_DIR / "uploads"
+    OUTPUT_DIR = PERSISTENT_DATA_DIR / "outputs"
+    print(f"[Storage] Using persistent disk at /data")
+else:
+    UPLOAD_DIR = Path(tempfile.gettempdir()) / "propelai_uploads"
+    OUTPUT_DIR = Path(tempfile.gettempdir()) / "propelai_outputs"
+    print(f"[Storage] Using temporary storage (no persistent disk)")
 
-OUTPUT_DIR = Path(tempfile.gettempdir()) / "propelai_outputs"
-OUTPUT_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# v4.1: Database configuration
+try:
+    from api.database import init_db, is_db_available, db_store, DatabaseStore
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+    is_db_available = lambda: False
+    db_store = None
+    print("[DB] Database module not available")
 
 
 # ============== Pydantic Models ==============
@@ -137,15 +248,109 @@ class AmendmentUpload(BaseModel):
     amendment_date: Optional[str] = None
 
 
-# ============== In-Memory Store ==============
+# ============== Hybrid Store (In-Memory + Database) ==============
 
 class RFPStore:
-    """In-memory store for RFP data"""
-    
+    """
+    Hybrid store for RFP data (v4.1).
+
+    Uses in-memory storage for fast access during processing,
+    with async database persistence for durability.
+
+    - Processing status: in-memory only (transient)
+    - RFP data: in-memory + async sync to database
+    """
+
     def __init__(self):
         self.rfps: Dict[str, Dict] = {}
         self.processing_status: Dict[str, ProcessingStatus] = {}
-    
+        self._db_available = False
+        self._db_initialized = False
+
+    async def init_database(self):
+        """Initialize database connection and load existing data"""
+        if not DATABASE_AVAILABLE or not is_db_available():
+            print("[Store] Running in memory-only mode (no database)")
+            return
+
+        try:
+            success = await init_db()
+            if success:
+                self._db_available = True
+                self._db_initialized = True
+                # Load existing RFPs from database
+                await self._load_from_db()
+                print(f"[Store] Database initialized, loaded {len(self.rfps)} RFPs")
+            else:
+                print("[Store] Database init failed, using memory-only mode")
+        except Exception as e:
+            print(f"[Store] Database error: {e}, using memory-only mode")
+
+    async def _load_from_db(self):
+        """Load all RFPs from database into memory"""
+        if not self._db_available:
+            return
+        try:
+            rfps = await db_store.list_all()
+            for rfp_data in rfps:
+                self.rfps[rfp_data["id"]] = self._db_to_memory(rfp_data)
+        except Exception as e:
+            print(f"[Store] Error loading from DB: {e}")
+
+    def _db_to_memory(self, db_data: Dict) -> Dict:
+        """Convert database format to in-memory format"""
+        # Add fields that are only in memory
+        result = dict(db_data)
+        result.setdefault("requirements_graph", None)
+        result.setdefault("amendment_processor", None)
+        result.setdefault("best_practices_result", None)
+        result.setdefault("semantic_result", None)
+        result.setdefault("resilient_result", None)
+        return result
+
+    async def _sync_to_db(self, rfp_id: str):
+        """Sync an RFP to the database"""
+        if not self._db_available:
+            return
+        try:
+            rfp = self.rfps.get(rfp_id)
+            if not rfp:
+                return
+
+            # Filter out non-serializable fields
+            db_data = {k: v for k, v in rfp.items()
+                      if k not in ["requirements_graph", "amendment_processor",
+                                   "best_practices_result", "semantic_result", "resilient_result"]}
+
+            # Check if exists
+            existing = await db_store.get(rfp_id)
+            if existing:
+                await db_store.update(rfp_id, db_data)
+            else:
+                await db_store.create(rfp_id, db_data)
+                # Update with remaining fields
+                await db_store.update(rfp_id, db_data)
+        except Exception as e:
+            print(f"[Store] DB sync error for {rfp_id}: {e}")
+
+    def _schedule_db_sync(self, rfp_id: str):
+        """Schedule async database sync (non-blocking)"""
+        if not self._db_available:
+            return
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._sync_to_db(rfp_id))
+            else:
+                asyncio.run(self._sync_to_db(rfp_id))
+        except RuntimeError:
+            # No event loop, try to create one
+            try:
+                asyncio.run(self._sync_to_db(rfp_id))
+            except Exception as e:
+                print(f"[Store] Could not sync to DB: {e}")
+
     def create(self, rfp_id: str, data: Dict) -> Dict:
         """Create a new RFP entry"""
         self.rfps[rfp_id] = {
@@ -162,44 +367,54 @@ class RFPStore:
             "stats": None,
             "amendments": [],
             "amendment_processor": None,
+            "document_metadata": {},
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
+        self._schedule_db_sync(rfp_id)
         return self.rfps[rfp_id]
-    
+
     def get(self, rfp_id: str) -> Optional[Dict]:
         """Get RFP by ID"""
         return self.rfps.get(rfp_id)
-    
+
     def update(self, rfp_id: str, updates: Dict) -> Dict:
         """Update RFP"""
         if rfp_id not in self.rfps:
             raise KeyError(f"RFP not found: {rfp_id}")
-        
+
         self.rfps[rfp_id].update(updates)
         self.rfps[rfp_id]["updated_at"] = datetime.now().isoformat()
+        self._schedule_db_sync(rfp_id)
         return self.rfps[rfp_id]
-    
+
     def list_all(self) -> List[Dict]:
         """List all RFPs"""
         return list(self.rfps.values())
-    
+
     def delete(self, rfp_id: str) -> bool:
         """Delete RFP"""
         if rfp_id in self.rfps:
             del self.rfps[rfp_id]
+            # Also delete from database
+            if self._db_available:
+                import asyncio
+                try:
+                    asyncio.run(db_store.delete(rfp_id))
+                except Exception as e:
+                    print(f"[Store] DB delete error: {e}")
             return True
         return False
-    
+
     def set_status(self, rfp_id: str, status: str, progress: int, message: str, req_count: int = None):
-        """Set processing status"""
+        """Set processing status (in-memory only)"""
         self.processing_status[rfp_id] = ProcessingStatus(
             status=status,
             progress=progress,
             message=message,
             requirements_count=req_count
         )
-    
+
     def get_status(self, rfp_id: str) -> Optional[ProcessingStatus]:
         """Get processing status"""
         return self.processing_status.get(rfp_id)
@@ -235,8 +450,8 @@ if BEST_PRACTICES_AVAILABLE:
 
 app = FastAPI(
     title="PropelAI API",
-    description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices",
-    version="2.10.0"
+    description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices. v4.0 adds Trust Gate source traceability.",
+    version="4.0.0"
 )
 
 # CORS - allow all origins for development
@@ -247,6 +462,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============== Startup Event ==============
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    print("[Startup] PropelAI v4.1 starting...")
+    print(f"[Startup] Upload directory: {UPLOAD_DIR}")
+    print(f"[Startup] Database available: {DATABASE_AVAILABLE and is_db_available()}")
+
+    # Initialize database and load existing RFPs
+    await store.init_database()
+
+    print("[Startup] Ready to serve requests")
 
 
 # ============== Root Route (Web UI) ==============
@@ -279,17 +509,19 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
-    # Check pdfplumber availability for coordinate extraction
-    try:
-        import pdfplumber
-        coordinate_extractor_status = "ready"
-    except ImportError:
-        coordinate_extractor_status = "not available (install pdfplumber)"
+    # v4.1: Check storage type
+    storage_type = "persistent" if PERSISTENT_DATA_DIR.exists() else "temporary"
 
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "4.0.0-phase2",
+        "version": "4.1.0",
+        "storage": {
+            "type": storage_type,
+            "upload_dir": str(UPLOAD_DIR),
+            "database": "connected" if store._db_available else "not configured",
+            "rfps_loaded": len(store.rfps),
+        },
         "components": {
             "enhanced_compliance_agent": "ready",
             "amendment_processor": "ready",
@@ -298,8 +530,11 @@ async def health_check():
             "semantic_ctm_export": "ready" if semantic_ctm_exporter else "not available",
             "best_practices_extractor": "ready" if best_practices_extractor else "not available",
             "best_practices_ctm_export": "ready" if best_practices_exporter else "not available",
-            "coordinate_extractor": coordinate_extractor_status,  # v4.0 Phase 1: Trust Gate
-            "iron_triangle_analyzer": "ready",  # v4.0 Phase 2: L-M-C Cross-Walking
+            # v4.0 components
+            "trust_gate": "ready" if TRUST_GATE_AVAILABLE and coordinate_extractor else "not available",
+            "strategy_agent": "ready" if STRATEGY_AGENT_AVAILABLE else "not available",
+            "drafting_workflow": "ready" if DRAFTING_WORKFLOW_AVAILABLE else "not available",
+            "langgraph": "available" if LANGGRAPH_AVAILABLE else "not installed",
         }
     }
 
@@ -439,15 +674,285 @@ async def upload_files(
     }
 
 
+# ============== Guided Document Upload (v3.2) ==============
+
+@app.get("/api/upload-config")
+async def get_upload_config():
+    """
+    Get the guided upload UI configuration.
+
+    Returns the upload slots, skip documents list, and tips
+    for the guided document upload interface.
+    """
+    if not GUIDED_UPLOAD_AVAILABLE:
+        # Return a basic config if module not available
+        return {
+            "upload_slots": [
+                {
+                    "id": "all",
+                    "doc_type": "auto_detect",
+                    "title": "RFP Documents",
+                    "description": "Upload all RFP documents",
+                    "help_text": "Upload your RFP files here",
+                    "common_names": [],
+                    "required": True,
+                    "allows_multiple": True,
+                    "show_not_applicable": False,
+                    "order": 1,
+                    "icon": "📄",
+                    "color": "#4A5568"
+                }
+            ],
+            "skip_documents": [],
+            "tips": [],
+            "guided_mode_available": False
+        }
+
+    config = get_ui_config()
+    config["guided_mode_available"] = True
+    return config
+
+
+@app.post("/api/rfp/{rfp_id}/upload-guided")
+async def upload_files_guided(
+    rfp_id: str,
+    files: List[UploadFile] = File(...),
+    doc_types: str = Form(default="")  # Comma-separated doc_type values matching file order
+):
+    """
+    Upload RFP documents with explicit document type tags.
+
+    This endpoint supports the guided upload UI where users specify
+    what type of document each file is (SOW, Section L, Section M, etc.)
+
+    Args:
+        rfp_id: The RFP identifier
+        files: List of files to upload
+        doc_types: Comma-separated document types matching file order
+                   e.g., "sow,instructions,evaluation"
+                   Use "auto_detect" or empty for automatic classification
+
+    Returns:
+        Upload status with classified document info
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Parse document types
+    doc_type_list = [dt.strip() for dt in doc_types.split(",")] if doc_types else []
+
+    # Create upload directory
+    rfp_dir = UPLOAD_DIR / rfp_id
+    rfp_dir.mkdir(exist_ok=True)
+
+    uploaded = []
+    file_paths = list(rfp.get("file_paths", []))
+    file_names = list(rfp.get("files", []))
+
+    # Initialize document metadata if not present
+    doc_metadata = rfp.get("document_metadata", {})
+
+    for i, file in enumerate(files):
+        # Validate file type
+        ext = Path(file.filename).suffix.lower()
+        if ext not in [".pdf", ".docx", ".xlsx", ".doc", ".xls"]:
+            continue
+
+        # Get document type (from form or auto-detect)
+        if i < len(doc_type_list) and doc_type_list[i] and doc_type_list[i] != "auto_detect":
+            doc_type = doc_type_list[i]
+        elif GUIDED_UPLOAD_AVAILABLE:
+            doc_type = classify_document_by_filename(file.filename).value
+        else:
+            doc_type = "auto_detect"
+
+        # Save file
+        file_path = rfp_dir / file.filename
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        file_paths.append(str(file_path))
+        file_names.append(file.filename)
+
+        # Store document metadata
+        doc_metadata[file.filename] = {
+            "doc_type": doc_type,
+            "file_path": str(file_path),
+            "size": len(content),
+            "uploaded_at": datetime.now().isoformat()
+        }
+
+        uploaded.append({
+            "name": file.filename,
+            "size": len(content),
+            "type": ext[1:].upper(),
+            "doc_type": doc_type,
+            "doc_type_label": _get_doc_type_label(doc_type)
+        })
+
+    # Update store with metadata
+    store.update(rfp_id, {
+        "files": file_names,
+        "file_paths": file_paths,
+        "document_metadata": doc_metadata,
+        "status": "files_uploaded"
+    })
+
+    return {
+        "status": "uploaded",
+        "files": uploaded,
+        "total_files": len(file_names),
+        "document_summary": _summarize_documents(doc_metadata)
+    }
+
+
+def _get_doc_type_label(doc_type: str) -> str:
+    """Get human-readable label for document type"""
+    labels = {
+        "sow": "Statement of Work (SOW)",
+        "instructions": "Proposal Instructions (Section L)",
+        "evaluation": "Evaluation Criteria (Section M)",
+        "combined_lm": "Combined L & M",
+        "solicitation": "Main Solicitation",
+        "amendment": "Amendment",
+        "attachment": "Attachment",
+        "auto_detect": "Auto-Detected",
+        "not_applicable": "Not Applicable"
+    }
+    return labels.get(doc_type, doc_type.title())
+
+
+def _summarize_documents(doc_metadata: Dict) -> Dict:
+    """Summarize uploaded documents by type"""
+    summary = {
+        "has_sow": False,
+        "has_instructions": False,
+        "has_evaluation": False,
+        "by_type": {}
+    }
+
+    for filename, meta in doc_metadata.items():
+        doc_type = meta.get("doc_type", "auto_detect")
+
+        if doc_type == "sow":
+            summary["has_sow"] = True
+        elif doc_type == "instructions":
+            summary["has_instructions"] = True
+        elif doc_type == "evaluation":
+            summary["has_evaluation"] = True
+        elif doc_type == "combined_lm":
+            summary["has_instructions"] = True
+            summary["has_evaluation"] = True
+
+        if doc_type not in summary["by_type"]:
+            summary["by_type"][doc_type] = []
+        summary["by_type"][doc_type].append(filename)
+
+    # Add warnings for missing required documents
+    summary["warnings"] = []
+    if not summary["has_sow"]:
+        summary["warnings"].append(
+            "No Statement of Work (SOW) identified. "
+            "Technical requirements extraction may be incomplete."
+        )
+    if not summary["has_instructions"]:
+        summary["warnings"].append(
+            "No Section L identified. "
+            "Proposal structure and page limits may not be detected."
+        )
+
+    return summary
+
+
+@app.get("/api/rfp/{rfp_id}/documents")
+async def get_rfp_documents(rfp_id: str):
+    """
+    Get detailed information about uploaded documents for an RFP.
+
+    Returns document metadata including types, sizes, and classification.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    doc_metadata = rfp.get("document_metadata", {})
+
+    # Build response with all documents
+    documents = []
+    for filename in rfp.get("files", []):
+        meta = doc_metadata.get(filename, {})
+        documents.append({
+            "filename": filename,
+            "doc_type": meta.get("doc_type", "auto_detect"),
+            "doc_type_label": _get_doc_type_label(meta.get("doc_type", "auto_detect")),
+            "size": meta.get("size", 0),
+            "uploaded_at": meta.get("uploaded_at")
+        })
+
+    return {
+        "rfp_id": rfp_id,
+        "documents": documents,
+        "summary": _summarize_documents(doc_metadata)
+    }
+
+
+@app.put("/api/rfp/{rfp_id}/documents/{filename}/type")
+async def update_document_type(rfp_id: str, filename: str, doc_type: str = Form(...)):
+    """
+    Update the document type for a specific file.
+
+    Allows users to correct misclassified documents.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    if filename not in rfp.get("files", []):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Validate document type
+    valid_types = ["sow", "instructions", "evaluation", "combined_lm",
+                   "solicitation", "amendment", "attachment", "auto_detect", "not_applicable"]
+    if doc_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid document type. Must be one of: {', '.join(valid_types)}"
+        )
+
+    # Update metadata
+    doc_metadata = rfp.get("document_metadata", {})
+    if filename not in doc_metadata:
+        doc_metadata[filename] = {}
+
+    doc_metadata[filename]["doc_type"] = doc_type
+    doc_metadata[filename]["manually_classified"] = True
+
+    store.update(rfp_id, {"document_metadata": doc_metadata})
+
+    return {
+        "status": "updated",
+        "filename": filename,
+        "doc_type": doc_type,
+        "doc_type_label": _get_doc_type_label(doc_type)
+    }
+
+
 # ============== Processing ==============
 
 def process_rfp_background(rfp_id: str):
-    """Background task to process RFP - uses best practices extractor when available"""
+    """Background task to process RFP - uses resilient extraction as default (v3.0)"""
     rfp = store.get(rfp_id)
     if not rfp:
         return
-    
-    # Use best practices extraction if available (v2.10+)
+
+    # Use resilient extraction if available (v3.0) - this is now the default
+    if RESILIENT_EXTRACTION_AVAILABLE and resilient_extractor:
+        process_rfp_resilient_background(rfp_id)
+        return
+
+    # Fall back to best practices extraction (v2.10)
     if BEST_PRACTICES_AVAILABLE and best_practices_extractor:
         process_rfp_best_practices_background(rfp_id)
         return
@@ -546,12 +1051,14 @@ def process_rfp_background(rfp_id: str):
         amendment_processor.load_base_requirements(result.requirements_graph)
         
         # Update store
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
         store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "requirements_graph": result.requirements_graph,
             "stats": stats,
-            "amendment_processor": amendment_processor
+            "amendment_processor": amendment_processor,
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
         })
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
@@ -705,6 +1212,7 @@ def process_rfp_semantic_background(rfp_id: str):
         store.set_status(rfp_id, "processing", 90, "Finalizing...")
         
         # Store semantic results
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
         store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
@@ -712,7 +1220,8 @@ def process_rfp_semantic_background(rfp_id: str):
             "stats": stats,
             "evaluation_factors": result.evaluation_factors,
             "warnings": result.warnings,
-            "extraction_mode": "semantic"
+            "extraction_mode": "semantic",
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
         })
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
@@ -913,12 +1422,14 @@ def process_rfp_best_practices_background(rfp_id: str):
         store.set_status(rfp_id, "processing", 95, "Finalizing...")
         
         # Store results
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
         store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "best_practices_result": result,  # Keep full result for export
             "stats": stats,
-            "extraction_mode": "best_practices"
+            "extraction_mode": "best_practices",
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
         })
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
@@ -964,6 +1475,331 @@ async def process_rfp_best_practices(rfp_id: str, background_tasks: BackgroundTa
         "rfp_id": rfp_id,
         "files_count": len(rfp["file_paths"]),
         "mode": "best_practices"
+    }
+
+
+# ============== v3.0: Resilient Extraction Pipeline ==============
+
+def process_rfp_resilient_background(rfp_id: str):
+    """
+    Background task to process RFP with Resilient Extraction Pipeline (v3.0).
+
+    Key features:
+    - Extract First, Classify Later architecture
+    - Multi-layer SOW detection (never misses due to typos)
+    - Graduated confidence scores (never binary found/not-found)
+    - Quality metrics and anomaly detection
+    - Review queue for low-confidence items
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        return
+
+    if not resilient_extractor:
+        store.set_status(rfp_id, "error", 0, "Resilient extractor not available")
+        store.update(rfp_id, {"status": "error"})
+        return
+
+    try:
+        import time
+        start_time = time.time()
+
+        # Log version for deployment verification
+        from agents.enhanced_compliance.resilient_extractor import PIPELINE_VERSION
+        from agents.enhanced_compliance.universal_extractor import EXTRACTOR_VERSION
+        print(f"Processing {rfp_id} with Resilient Extraction v{PIPELINE_VERSION} (extractor v{EXTRACTOR_VERSION})")
+
+        store.set_status(rfp_id, "processing", 10, "Initializing resilient extraction...")
+        store.update(rfp_id, {"status": "processing"})
+
+        file_paths = rfp["file_paths"]
+        if not file_paths:
+            store.set_status(rfp_id, "error", 0, "No files to process")
+            store.update(rfp_id, {"status": "error"})
+            return
+
+        # Get document metadata from guided upload (if available)
+        document_metadata = rfp.get("document_metadata", {})
+        print(f"[DEBUG] Guided upload document_metadata: {document_metadata}")
+
+        # Parse documents
+        store.set_status(rfp_id, "processing", 20, "Parsing documents...")
+        from agents.enhanced_compliance import MultiFormatParser, DocumentType
+        parser = MultiFormatParser()
+
+        def get_doc_type_from_metadata(filename: str) -> tuple:
+            """
+            Get document type from guided upload metadata.
+            Returns (DocumentType, content_type) where content_type is used for categorization.
+            """
+            meta = document_metadata.get(filename, {})
+            guided_doc_type = meta.get("doc_type", "auto_detect")
+
+            # Map guided upload doc_type to DocumentType and content categorization
+            if guided_doc_type == "sow":
+                return (DocumentType.STATEMENT_OF_WORK, "technical")
+            elif guided_doc_type in ["instructions", "instructions_only"]:
+                return (DocumentType.MAIN_SOLICITATION, "section_l")
+            elif guided_doc_type in ["evaluation", "evaluation_only"]:
+                return (DocumentType.MAIN_SOLICITATION, "section_m")
+            elif guided_doc_type in ["combined_lm", "instructions_evaluation"]:
+                return (DocumentType.MAIN_SOLICITATION, "section_lm")
+            elif guided_doc_type == "combined_rfp":
+                return (DocumentType.MAIN_SOLICITATION, "combined")
+            elif guided_doc_type == "amendments":
+                return (DocumentType.AMENDMENT, "amendment")
+            elif guided_doc_type == "solicitation":
+                return (DocumentType.MAIN_SOLICITATION, "cover")
+            else:
+                return (None, None)  # Fall back to inference
+
+        def infer_doc_type(filename: str) -> DocumentType:
+            """Infer document type from filename (with typo tolerance for SOW)"""
+            fname_lower = filename.lower()
+            if 'amendment' in fname_lower:
+                return DocumentType.AMENDMENT
+            elif 'attachment' in fname_lower or 'exhibit' in fname_lower:
+                return DocumentType.ATTACHMENT
+            # SOW detection with typo tolerance
+            elif any(x in fname_lower for x in ['sow', 'statement of work', 'stament of work', 'statment of work']):
+                return DocumentType.STATEMENT_OF_WORK
+            elif any(x in fname_lower for x in ['pws', 'performance work statement', 'performace work']):
+                return DocumentType.STATEMENT_OF_WORK
+            elif 'section_l' in fname_lower or 'instructions' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            elif 'section_m' in fname_lower or 'evaluation' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            elif 'rfp' in fname_lower or 'solicitation' in fname_lower:
+                return DocumentType.MAIN_SOLICITATION
+            else:
+                return DocumentType.ATTACHMENT
+
+        documents = []
+        for file_path in file_paths:
+            try:
+                import os
+                filename = os.path.basename(file_path)
+
+                # First try guided upload metadata, then fall back to inference
+                doc_type, content_type = get_doc_type_from_metadata(filename)
+                if doc_type is None:
+                    doc_type = infer_doc_type(filename)
+                    # v3.1: Infer content_type from filename patterns
+                    fname_lower = filename.lower()
+                    if any(x in fname_lower for x in ['attachment 2', 'attachment_2', 'placement', 'procedure']):
+                        content_type = "section_lm"  # Attachment 2 typically contains L/M content
+                    elif any(x in fname_lower for x in ['attachment 1', 'attachment_1', 'sow', 'statement']):
+                        content_type = "technical"  # Attachment 1 typically contains SOW
+                    else:
+                        content_type = "auto"
+
+                parsed = parser.parse_file(file_path, doc_type)
+                if parsed:
+                    documents.append({
+                        'text': parsed.full_text,
+                        'filename': parsed.filename,
+                        'pages': parsed.pages if parsed.pages else [parsed.full_text],
+                        'content_type': content_type,  # Pass to extractor for categorization
+                    })
+            except Exception as e:
+                print(f"Warning: Could not parse {file_path}: {e}")
+
+        if not documents:
+            store.set_status(rfp_id, "error", 0, "No documents could be parsed")
+            store.update(rfp_id, {"status": "error"})
+            return
+
+        # Build filename to content_type mapping for post-processing
+        doc_content_types = {doc['filename']: doc.get('content_type', 'auto') for doc in documents}
+
+        # Run resilient extraction
+        store.set_status(rfp_id, "processing", 40, "Extracting requirements (resilient mode)...")
+        result = resilient_extractor.extract_from_parsed(documents, rfp_id)
+
+        store.set_status(rfp_id, "processing", 70, "Building compliance data...")
+
+        # Convert to API format with category assignment based on source document type
+        requirements = []
+        for req in result.requirements:
+            priority = "medium"
+            if req.binding_level == "SHALL":
+                priority = "high"
+            elif req.binding_level == "MAY":
+                priority = "low"
+
+            # Determine category based on source document's content_type (from guided upload)
+            source_content_type = doc_content_types.get(req.source_document, "auto")
+            category = req.category or "general"
+
+            # Override category based on guided upload document type
+            if source_content_type == "section_l":
+                category = "L_COMPLIANCE"
+            elif source_content_type == "section_m":
+                category = "EVALUATION"
+            elif source_content_type == "section_lm":
+                # For combined L+M docs, check text for clues
+                text_lower = req.text.lower()
+                if any(kw in text_lower for kw in ['evaluat', 'factor', 'rating', 'score', 'criterion', 'assessed']):
+                    category = "EVALUATION"
+                elif any(kw in text_lower for kw in ['submit', 'page limit', 'font', 'format', 'volume', 'shall include']):
+                    category = "L_COMPLIANCE"
+                else:
+                    category = "L_COMPLIANCE"  # Default to L for combined docs
+            elif source_content_type == "technical":
+                category = "TECHNICAL"
+            elif source_content_type == "combined":
+                # For all-in-one RFPs, keep original category or infer
+                pass  # Use extractor's category
+            elif source_content_type == "auto":
+                # Fallback: infer from source document filename when no guided upload metadata
+                source_lower = (req.source_document or "").lower()
+                # v3.1: Added 'attachment 2' - typically contains Section L/M (Placement Procedures)
+                if any(kw in source_lower for kw in ['placement', 'procedure', 'section l', 'section_l', 'instruction', 'attachment 2', 'attachment_2']):
+                    # Likely Section L content - check text for L vs M distinction
+                    text_lower = req.text.lower()
+                    if any(kw in text_lower for kw in ['evaluat', 'factor', 'rating', 'score', 'assessed', 'criteria']):
+                        category = "EVALUATION"
+                    else:
+                        category = "L_COMPLIANCE"
+                elif any(kw in source_lower for kw in ['section m', 'section_m', 'evaluation']):
+                    category = "EVALUATION"
+
+            requirements.append({
+                "id": req.id,
+                "text": req.text,
+                "section": req.assigned_section or "UNASSIGNED",
+                "type": req.category or "general",
+                "category": category,  # Add explicit category for outline generator
+                "source_content_type": source_content_type,  # v3.1: Save for fallback in outline generation
+                "priority": priority,
+                "confidence": req.confidence_score,
+                "confidence_level": req.confidence.value,
+                "source_page": req.source_page,
+                "source_doc": req.source_document,
+                "rfp_reference": req.rfp_reference,
+                "binding_level": req.binding_level,
+                "needs_review": req.needs_review,
+                "review_reasons": req.review_reasons,
+            })
+
+        # Build stats with quality metrics
+        metrics = result.quality_metrics
+
+        # Count requirements by category (for outline generator)
+        by_category = {}
+        for r in requirements:
+            cat = r.get("category", "general")
+            by_category[cat] = by_category.get(cat, 0) + 1
+
+        print(f"[DEBUG] Requirements by category: {by_category}")
+
+        stats = {
+            "total": len(requirements),
+            "by_section": metrics.section_counts,
+            "by_category": by_category,  # Track L_COMPLIANCE, EVALUATION, TECHNICAL
+            "by_confidence": {
+                "high": metrics.high_confidence_count,
+                "medium": metrics.medium_confidence_count,
+                "low": metrics.low_confidence_count,
+                "uncertain": metrics.uncertain_count,
+            },
+            "by_priority": {
+                "high": len([r for r in requirements if r["priority"] == "high"]),
+                "medium": len([r for r in requirements if r["priority"] == "medium"]),
+                "low": len([r for r in requirements if r["priority"] == "low"])
+            },
+            "processing_time": round(time.time() - start_time, 2),
+            "pages_processed": metrics.total_pages,
+            "documents_processed": metrics.total_documents,
+            "sow_detected": metrics.sow_detected,
+            "sow_source": metrics.sow_source,
+            "review_queue_size": len(result.review_queue),
+            "anomalies": metrics.anomalies,
+            "warnings": metrics.warnings,
+            "guided_upload_used": bool(document_metadata),  # Track if guided upload was used
+        }
+
+        store.set_status(rfp_id, "processing", 95, "Finalizing...")
+
+        # Store results
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
+        store.update(rfp_id, {
+            "status": "completed",
+            "requirements": requirements,
+            "resilient_result": result.to_dict(),
+            "stats": stats,
+            "extraction_mode": "resilient_v3",
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
+        })
+
+        # Log quality summary
+        if metrics.anomalies:
+            print(f"RFP {rfp_id} ANOMALIES: {metrics.anomalies}")
+        if metrics.warnings:
+            print(f"RFP {rfp_id} WARNINGS: {metrics.warnings}")
+
+        store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        store.set_status(rfp_id, "error", 0, f"Error: {str(e)}")
+        store.update(rfp_id, {"status": "error"})
+
+
+@app.post("/api/rfp/{rfp_id}/process-resilient")
+async def process_rfp_resilient(rfp_id: str, background_tasks: BackgroundTasks):
+    """
+    Start Resilient Extraction processing of RFP documents (v3.0)
+
+    This uses the Extract-First architecture that:
+    - Never loses requirements due to classification failures
+    - Provides graduated confidence scores
+    - Detects quality anomalies automatically
+    - Flags low-confidence items for review
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    if not rfp["file_paths"]:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    if not RESILIENT_EXTRACTION_AVAILABLE or not resilient_extractor:
+        raise HTTPException(
+            status_code=501,
+            detail="Resilient extraction not available. Use /process endpoint instead."
+        )
+
+    background_tasks.add_task(process_rfp_resilient_background, rfp_id)
+
+    return {
+        "status": "processing_started",
+        "rfp_id": rfp_id,
+        "files_count": len(rfp["file_paths"]),
+        "mode": "resilient_v3"
+    }
+
+
+@app.get("/api/rfp/{rfp_id}/quality")
+async def get_extraction_quality(rfp_id: str):
+    """Get extraction quality metrics and anomalies"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    stats = rfp.get("stats", {})
+
+    return {
+        "rfp_id": rfp_id,
+        "extraction_mode": rfp.get("extraction_mode", "unknown"),
+        "sow_detected": stats.get("sow_detected", False),
+        "sow_source": stats.get("sow_source"),
+        "section_counts": stats.get("by_section", {}),
+        "confidence_distribution": stats.get("by_confidence", {}),
+        "review_queue_size": stats.get("review_queue_size", 0),
+        "anomalies": stats.get("anomalies", []),
+        "warnings": stats.get("warnings", []),
     }
 
 
@@ -1048,28 +1884,28 @@ async def get_requirement(rfp_id: str, req_id: str):
     raise HTTPException(status_code=404, detail="Requirement not found")
 
 
+# ============== v4.0: Trust Gate - Source Coordinates ==============
+
 @app.get("/api/rfp/{rfp_id}/requirements/{req_id}/source")
 async def get_requirement_source(rfp_id: str, req_id: str):
     """
-    Get source coordinates for a requirement (Trust Gate API).
+    v4.0 Trust Gate: Get source coordinates for a requirement.
 
-    Returns bounding boxes for visual overlay highlighting in the frontend.
-    This is the "proof of extraction" - shows exactly where in the PDF
-    the requirement text was extracted from.
+    Returns the exact PDF location (page, bounding box) where this
+    requirement was extracted from, enabling one-click source verification.
 
-    Response format (compatible with react-pdf-highlighter):
-    {
-        "source_document_id": "filename.pdf",
-        "page_index": 5,
-        "boundingRect": {"x": 0.1, "y": 0.2, "width": 0.8, "height": 0.05},
-        "rects": [
-            {"x": 0.1, "y": 0.2, "width": 0.8, "height": 0.02},
-            {"x": 0.1, "y": 0.22, "width": 0.6, "height": 0.02}
-        ],
-        "extraction_confidence": 1.0
-    }
+    Response includes:
+    - document_id: PDF file hash
+    - page_number: 1-indexed page
+    - bounding_box: CSS-ready coordinates for highlighting
+    - text_snippet: Original text at that location
+    - confidence: Extraction confidence score
     """
-    from agents.enhanced_compliance.parser import get_coordinate_extractor
+    if not TRUST_GATE_AVAILABLE or not coordinate_extractor:
+        raise HTTPException(
+            status_code=501,
+            detail="Trust Gate not available. Install pdfplumber: pip install pdfplumber>=0.10.0"
+        )
 
     rfp = store.get(rfp_id)
     if not rfp:
@@ -1085,252 +1921,695 @@ async def get_requirement_source(rfp_id: str, req_id: str):
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
 
-    # Get requirement text and source info
-    req_text = requirement.get("text", "")
+    # Check if we have pre-computed source coordinates
+    if requirement.get("source_coordinates"):
+        return {
+            "requirement_id": req_id,
+            "source": requirement["source_coordinates"],
+            "cached": True
+        }
+
+    # Otherwise, search the source document for this requirement's text
     source_doc = requirement.get("source_doc", "")
-    source_page = requirement.get("page") or requirement.get("source_page")
+    req_text = requirement.get("text", "")
 
-    if not req_text:
-        raise HTTPException(status_code=400, detail="Requirement has no text")
+    if not source_doc or not req_text:
+        raise HTTPException(
+            status_code=404,
+            detail="Cannot locate source: missing source document or requirement text"
+        )
 
-    # Find the source file path
+    # Find the PDF file path
     file_paths = rfp.get("file_paths", [])
-    source_filepath = None
+    pdf_path = None
+    for fp in file_paths:
+        if source_doc in fp and fp.lower().endswith(".pdf"):
+            pdf_path = fp
+            break
 
-    if source_doc:
-        # Try to match by filename
+    if not pdf_path:
+        # Try fuzzy matching on filename
         for fp in file_paths:
-            if os.path.basename(fp) == source_doc or source_doc in fp:
-                source_filepath = fp
+            if fp.lower().endswith(".pdf"):
+                pdf_path = fp
                 break
 
-    # If no match, search all PDF files
-    if not source_filepath:
-        for fp in file_paths:
-            if fp.lower().endswith('.pdf'):
-                source_filepath = fp
+    if not pdf_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source PDF not found for document: {source_doc}"
+        )
+
+    try:
+        # Find requirement location in PDF
+        source_coord = coordinate_extractor.find_requirement_location(
+            pdf_path,
+            req_text,
+            context_words=10
+        )
+
+        if source_coord:
+            return {
+                "requirement_id": req_id,
+                "source": source_coord.to_dict(),
+                "cached": False,
+                "highlight_data": {
+                    "page_number": source_coord.page_number,
+                    "css_position": source_coord.bounding_box.to_css_percent(),
+                }
+            }
+        else:
+            # Text not found - return page info if available
+            source_page = requirement.get("source_page")
+            return {
+                "requirement_id": req_id,
+                "source": None,
+                "fallback": {
+                    "page_number": source_page,
+                    "document": source_doc,
+                    "message": "Exact location not found. Navigate to page manually."
+                }
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error extracting source coordinates: {str(e)}"
+        )
+
+
+@app.get("/api/documents/{doc_id}/page/{page_num}/image")
+async def get_page_image(doc_id: str, page_num: int, dpi: int = 150):
+    """
+    v4.0 Trust Gate: Get a rendered PDF page as an image.
+
+    Returns a PNG image of the specified page for display in the
+    PDF viewer with requirement highlighting overlay.
+
+    Args:
+        doc_id: Document hash (from extraction) or RFP ID
+        page_num: 1-indexed page number
+        dpi: Resolution (default 150, max 300)
+
+    Returns:
+        PNG image of the page
+    """
+    # Limit DPI for performance
+    dpi = min(dpi, 300)
+
+    # Find the document - doc_id could be RFP ID or document hash
+    rfp = store.get(doc_id)
+    pdf_path = None
+
+    if rfp:
+        # doc_id is RFP ID - get first PDF
+        for fp in rfp.get("file_paths", []):
+            if fp.lower().endswith(".pdf"):
+                pdf_path = fp
                 break
-
-    if not source_filepath:
-        return {
-            "source_document_id": source_doc or "unknown",
-            "page_index": source_page,
-            "boundingRect": None,
-            "rects": [],
-            "extraction_confidence": 0.0,
-            "error": "Source PDF not found"
-        }
-
-    # Use coordinate extractor to find the text
-    extractor = get_coordinate_extractor()
-
-    # Use first 200 chars of requirement for matching (avoid very long texts)
-    search_text = req_text[:200] if len(req_text) > 200 else req_text
-
-    source_coord = extractor.find_text_coordinates(
-        filepath=source_filepath,
-        search_text=search_text,
-        page_num=source_page,
-        fuzzy_match=True
-    )
-
-    if source_coord:
-        return source_coord.to_dict()
     else:
-        # Return partial info even if coordinates not found
+        # doc_id might be a document hash - search all RFPs
+        for rfp_data in store.list_all():
+            for fp in rfp_data.get("file_paths", []):
+                if fp.lower().endswith(".pdf"):
+                    # Check if this file's hash matches
+                    try:
+                        import hashlib
+                        with open(fp, "rb") as f:
+                            file_hash = hashlib.md5()
+                            for chunk in iter(lambda: f.read(8192), b""):
+                                file_hash.update(chunk)
+                            if file_hash.hexdigest()[:16] == doc_id:
+                                pdf_path = fp
+                                break
+                    except Exception:
+                        pass
+            if pdf_path:
+                break
+
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not Path(pdf_path).exists():
+        raise HTTPException(status_code=404, detail="PDF file no longer exists")
+
+    try:
+        # Try using pdf2image if available
+        try:
+            from pdf2image import convert_from_path
+            images = convert_from_path(
+                pdf_path,
+                first_page=page_num,
+                last_page=page_num,
+                dpi=dpi
+            )
+            if not images:
+                raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
+
+            # Convert to PNG bytes
+            import io
+            img_buffer = io.BytesIO()
+            images[0].save(img_buffer, format="PNG")
+            img_buffer.seek(0)
+
+            return Response(
+                content=img_buffer.getvalue(),
+                media_type="image/png",
+                headers={"Content-Disposition": f"inline; filename=page_{page_num}.png"}
+            )
+
+        except ImportError:
+            # Fallback: use pdfplumber for basic rendering
+            if not TRUST_GATE_AVAILABLE:
+                raise HTTPException(
+                    status_code=501,
+                    detail="PDF rendering requires pdf2image or pdfplumber. Install with: pip install pdf2image"
+                )
+
+            import pdfplumber
+            with pdfplumber.open(pdf_path) as pdf:
+                if page_num < 1 or page_num > len(pdf.pages):
+                    raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
+
+                page = pdf.pages[page_num - 1]
+                img = page.to_image(resolution=dpi)
+
+                import io
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format="PNG")
+                img_buffer.seek(0)
+
+                return Response(
+                    content=img_buffer.getvalue(),
+                    media_type="image/png",
+                    headers={"Content-Disposition": f"inline; filename=page_{page_num}.png"}
+                )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error rendering page: {str(e)}")
+
+
+@app.post("/api/rfp/{rfp_id}/highlight")
+async def get_requirement_highlight(rfp_id: str, requirement_text: str = Form(...)):
+    """
+    v4.0 Trust Gate: Get highlight data for requirement text in RFP PDFs.
+
+    Searches all PDF documents in the RFP for the given text and
+    returns coordinates for highlighting.
+
+    Args:
+        rfp_id: RFP identifier
+        requirement_text: Text to find and highlight
+
+    Returns:
+        Highlight data including page number and CSS positioning
+    """
+    if not TRUST_GATE_AVAILABLE or not coordinate_extractor:
+        raise HTTPException(
+            status_code=501,
+            detail="Trust Gate not available"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Search all PDFs for this text
+    results = []
+    for fp in rfp.get("file_paths", []):
+        if not fp.lower().endswith(".pdf"):
+            continue
+
+        try:
+            highlight_data = coordinate_extractor.highlight_requirement(
+                fp,
+                requirement_text
+            )
+            if highlight_data:
+                highlight_data["document"] = Path(fp).name
+                results.append(highlight_data)
+        except Exception as e:
+            # Continue searching other documents
+            pass
+
+    if results:
         return {
-            "source_document_id": os.path.basename(source_filepath),
-            "page_index": source_page,
-            "boundingRect": None,
-            "rects": [],
-            "extraction_confidence": 0.0,
-            "error": "Text coordinates not found in PDF"
+            "found": True,
+            "results": results,
+            "primary": results[0]  # First match is primary
+        }
+    else:
+        return {
+            "found": False,
+            "message": "Text not found in any RFP documents"
         }
 
 
-# ============== Phase 2: Strategy Analysis (Iron Triangle) ==============
+# ============== v4.0: Strategy Engine ==============
+
+@app.post("/api/rfp/{rfp_id}/strategy")
+async def generate_strategy(rfp_id: str):
+    """
+    v4.0 Strategy Engine: Generate win themes and strategy for RFP.
+
+    Analyzes evaluation factors (Section M) and requirements to produce:
+    - Ranked win themes with discriminators
+    - Suggested page allocations per theme
+    - Ghosting language library
+    - Storyboard outline
+
+    Requires processed RFP with requirements extracted.
+    """
+    if not STRATEGY_AGENT_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="Strategy Agent not available"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements = rfp.get("requirements", [])
+    if not requirements:
+        raise HTTPException(
+            status_code=400,
+            detail="No requirements found. Process RFP first."
+        )
+
+    try:
+        # Initialize strategy agent
+        strategy_agent = StrategyAgent()
+
+        # Get evaluation criteria (Section M requirements)
+        eval_requirements = [
+            r for r in requirements
+            if r.get("category") == "EVALUATION" or r.get("section", "").upper() == "M"
+        ]
+
+        # Get technical requirements for capability mapping
+        tech_requirements = [
+            r for r in requirements
+            if r.get("category") == "TECHNICAL" or r.get("section", "").upper() in ["C", "SOW", "PWS"]
+        ]
+
+        # Run strategy analysis
+        rfp_data = {
+            "id": rfp_id,
+            "name": rfp.get("name", ""),
+            "evaluation_requirements": eval_requirements,
+            "technical_requirements": tech_requirements,
+            "all_requirements": requirements,
+        }
+
+        strategy_result = strategy_agent.analyze(rfp_data)
+
+        # Store strategy in RFP
+        store.update(rfp_id, {"strategy": strategy_result})
+
+        return {
+            "status": "generated",
+            "rfp_id": rfp_id,
+            "strategy": strategy_result
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Strategy generation failed: {str(e)}"
+        )
+
 
 @app.get("/api/rfp/{rfp_id}/strategy")
-async def get_strategy_analysis(rfp_id: str):
-    """
-    Get Iron Triangle strategy analysis for an RFP.
+async def get_strategy(rfp_id: str):
+    """Get previously generated strategy for RFP"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
 
-    Performs L-M-C cross-walking analysis:
-    - Extracts evaluation factors from Section M
-    - Maps factors to Section L instructions
-    - Detects conflicts (page limits, missing sections)
-    - Returns cross-walk mappings and coverage score
+    strategy = rfp.get("strategy")
+    if not strategy:
+        raise HTTPException(
+            status_code=404,
+            detail="No strategy generated. Use POST /api/rfp/{rfp_id}/strategy first."
+        )
+
+    return {
+        "rfp_id": rfp_id,
+        "strategy": strategy
+    }
+
+
+@app.post("/api/rfp/{rfp_id}/competitive-analysis")
+async def analyze_competitors(
+    rfp_id: str,
+    competitors: Optional[str] = Form(None)
+):
     """
-    from agents.strategy_agent import create_iron_triangle_analyzer
+    v4.0 Strategy Engine: Analyze competitive landscape.
+
+    Performs competitor analysis including:
+    - Competitor profiling (strengths, weaknesses)
+    - Theme prediction for competitors
+    - Ghosting opportunity identification
+    - Win probability factors
+
+    Args:
+        rfp_id: RFP identifier
+        competitors: Optional JSON string of known competitors
+            Format: [{"name": "...", "is_incumbent": true, "strengths": [...], "weaknesses": [...]}]
+
+    Returns:
+        Comprehensive competitive analysis with ghosting library
+    """
+    if not STRATEGY_AGENT_AVAILABLE or not CompetitorAnalyzer:
+        raise HTTPException(
+            status_code=501,
+            detail="Competitive analysis not available"
+        )
 
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
 
-    # Check if we have cached strategy analysis
-    if rfp.get("strategy_analysis"):
-        return rfp["strategy_analysis"]
+    requirements = rfp.get("requirements", [])
 
-    # Get section content from structure or raw content
-    structure = rfp.get("document_structure")
-    section_l = rfp.get("section_l_content", "")
-    section_m = rfp.get("section_m_content", "")
-    section_c = rfp.get("section_c_content", "")
+    # Parse competitors JSON if provided
+    known_competitors = []
+    if competitors:
+        try:
+            known_competitors = json.loads(competitors)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid competitors JSON")
 
-    # If no section content, try to extract from full text
-    if not section_m and rfp.get("full_text"):
-        full_text = rfp["full_text"]
-        # Simple extraction - look for Section M header
-        import re
-        m_match = re.search(r'SECTION\s+M[:\s\-]+(.+?)(?=SECTION\s+[A-LN-Z]|$)', full_text, re.IGNORECASE | re.DOTALL)
-        if m_match:
-            section_m = m_match.group(1)
+    try:
+        analyzer = CompetitorAnalyzer(use_llm=True)
 
-        l_match = re.search(r'SECTION\s+L[:\s\-]+(.+?)(?=SECTION\s+M|$)', full_text, re.IGNORECASE | re.DOTALL)
-        if l_match:
-            section_l = l_match.group(1)
+        # Build RFP data for analysis
+        rfp_data = {
+            "id": rfp_id,
+            "requirements": requirements,
+            "evaluation_criteria": [
+                r for r in requirements
+                if r.get("category") == "EVALUATION" or r.get("section", "").upper() == "M"
+            ]
+        }
 
-    # Perform Iron Triangle analysis
-    analyzer = create_iron_triangle_analyzer()
-    analysis = analyzer.analyze(
-        structure=structure,
-        section_l_content=section_l,
-        section_m_content=section_m,
-        section_c_content=section_c,
-        requirements=rfp.get("requirements", [])
+        analysis = analyzer.analyze_competitive_landscape(
+            rfp_data,
+            known_competitors=known_competitors
+        )
+
+        # Store analysis in RFP
+        store.update(rfp_id, {"competitive_analysis": analysis})
+
+        return {
+            "status": "analyzed",
+            "rfp_id": rfp_id,
+            "analysis": analysis
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Competitive analysis failed: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/ghosting-library")
+async def get_ghosting_library(rfp_id: str):
+    """
+    v4.0: Get ghosting language library for proposal writing.
+
+    Returns ready-to-use ghosting statements aligned with
+    evaluation criteria and competitor weaknesses.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Check if competitive analysis exists
+    comp_analysis = rfp.get("competitive_analysis")
+    if comp_analysis and comp_analysis.get("ghosting_library"):
+        return {
+            "rfp_id": rfp_id,
+            "ghosting_library": comp_analysis["ghosting_library"],
+            "source": "competitive_analysis"
+        }
+
+    # Check if strategy has ghosting language
+    strategy = rfp.get("strategy")
+    if strategy:
+        win_themes = strategy.get("win_themes", [])
+        ghosting_from_themes = []
+        for theme in win_themes:
+            if theme.get("ghosting_language"):
+                ghosting_from_themes.append({
+                    "theme_id": theme.get("id"),
+                    "language": theme["ghosting_language"],
+                    "eval_criteria_link": theme.get("linked_eval_criteria", [])
+                })
+        if ghosting_from_themes:
+            return {
+                "rfp_id": rfp_id,
+                "ghosting_library": ghosting_from_themes,
+                "source": "win_themes"
+            }
+
+    raise HTTPException(
+        status_code=404,
+        detail="No ghosting library available. Run competitive analysis or strategy generation first."
     )
 
-    # Add RFP metadata
-    analysis["rfp_id"] = rfp_id
-    analysis["solicitation_number"] = rfp.get("solicitation_number", rfp_id)
 
-    # Cache the analysis
-    rfp["strategy_analysis"] = analysis
-    store[rfp_id] = rfp
+# ============== v4.0: Drafting Workflow ==============
 
-    return analysis
-
-
-@app.get("/api/rfp/{rfp_id}/conflicts")
-async def get_conflicts(rfp_id: str, severity: Optional[str] = None):
+@app.post("/api/rfp/{rfp_id}/draft")
+async def start_drafting(
+    rfp_id: str,
+    requirement_id: str = Form(...),
+    target_word_count: int = Form(250),
+    background_tasks: BackgroundTasks = None
+):
     """
-    Get detected conflicts for an RFP.
+    v4.0 Drafting Agent: Generate proposal content for a requirement.
 
-    Returns conflicts between Section L, M, and C:
-    - page_limit_exceeded: Page limits may be insufficient
-    - unaddressed_factor: Evaluation factor without L instruction
-    - missing_section: Required volume not found
+    Uses the LangGraph F-B-P workflow to:
+    1. Research company library for evidence
+    2. Structure Feature-Benefit-Proof blocks
+    3. Generate narrative prose
+    4. Quality check and revise
 
-    Query params:
-    - severity: Filter by 'critical', 'high', 'medium', 'low'
+    Args:
+        rfp_id: RFP identifier
+        requirement_id: Specific requirement to draft for
+        target_word_count: Target length for the draft
+
+    Returns:
+        Draft content with quality scores and F-B-P structure
     """
+    if not DRAFTING_WORKFLOW_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="Drafting workflow not available. Install langgraph: pip install langgraph"
+        )
+
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
 
-    # Get or compute strategy analysis
-    if not rfp.get("strategy_analysis"):
-        # Trigger analysis
-        analysis_response = await get_strategy_analysis(rfp_id)
-        conflicts = analysis_response.get("conflicts", [])
-    else:
-        conflicts = rfp["strategy_analysis"].get("conflicts", [])
+    # Find the requirement
+    requirements = rfp.get("requirements", [])
+    requirement = None
+    for req in requirements:
+        if req.get("id") == requirement_id:
+            requirement = req
+            break
 
-    # Filter by severity if specified
-    if severity:
-        conflicts = [c for c in conflicts if c.get("severity") == severity]
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # Get strategy (win themes) if available
+    strategy = rfp.get("strategy", {})
+    win_themes = strategy.get("win_themes", [])
+    primary_theme = win_themes[0] if win_themes else None
+
+    try:
+        # Run the drafting workflow
+        result = run_drafting_workflow(
+            requirement=requirement,
+            win_theme=primary_theme,
+            target_word_count=target_word_count,
+        )
+
+        # Store draft in RFP
+        drafts = rfp.get("drafts", {})
+        drafts[requirement_id] = {
+            "draft_text": result.get("draft_text", ""),
+            "quality_scores": result.get("quality_scores", {}),
+            "fbp_blocks": result.get("fbp_blocks", []),
+            "revision_count": result.get("revision_count", 0),
+            "word_count": result.get("draft_word_count", 0),
+            "generated_at": datetime.now().isoformat()
+        }
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": "completed",
+            "requirement_id": requirement_id,
+            "draft": result.get("draft_text", ""),
+            "word_count": result.get("draft_word_count", 0),
+            "quality_scores": result.get("quality_scores", {}),
+            "fbp_blocks": result.get("fbp_blocks", []),
+            "approved": result.get("approved", False),
+            "langgraph_used": LANGGRAPH_AVAILABLE
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Drafting failed: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/drafts")
+async def get_drafts(rfp_id: str):
+    """Get all generated drafts for an RFP"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
 
     return {
         "rfp_id": rfp_id,
-        "total_conflicts": len(conflicts),
-        "conflicts": conflicts
+        "drafts": rfp.get("drafts", {}),
+        "count": len(rfp.get("drafts", {}))
     }
 
 
-@app.post("/api/rfp/{rfp_id}/win-themes")
-async def add_win_theme(rfp_id: str, win_theme: Dict[str, Any]):
-    """
-    Add a win theme to an RFP.
-
-    Win themes are competitive discriminators that answer:
-    "Why should the government choose us?"
-
-    Request body:
-    {
-        "discriminator": "What makes us unique",
-        "benefit_statement": "How this helps the client",
-        "proof_points": ["PP-001", "PP-002"],
-        "addresses_factors": ["M-01", "M-02"],
-        "priority": 1
-    }
-    """
+@app.get("/api/rfp/{rfp_id}/drafts/{requirement_id}")
+async def get_draft(rfp_id: str, requirement_id: str):
+    """Get a specific draft by requirement ID"""
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
 
-    # Initialize win_themes list if needed
-    if "win_themes" not in rfp:
-        rfp["win_themes"] = []
+    drafts = rfp.get("drafts", {})
+    draft = drafts.get(requirement_id)
 
-    # Generate theme ID
-    theme_id = f"WT-{len(rfp['win_themes']) + 1:03d}"
-
-    # Build win theme
-    new_theme = {
-        "theme_id": theme_id,
-        "discriminator": win_theme.get("discriminator", ""),
-        "benefit_statement": win_theme.get("benefit_statement", ""),
-        "proof_points": win_theme.get("proof_points", []),
-        "addresses_factors": win_theme.get("addresses_factors", []),
-        "addresses_requirements": win_theme.get("addresses_requirements", []),
-        "priority": win_theme.get("priority", len(rfp["win_themes"]) + 1),
-        "confidence": win_theme.get("confidence", 0.8),
-        "created_at": datetime.now().isoformat()
-    }
-
-    rfp["win_themes"].append(new_theme)
-    store[rfp_id] = rfp
-
-    return new_theme
-
-
-@app.get("/api/rfp/{rfp_id}/win-themes")
-async def get_win_themes(rfp_id: str):
-    """Get all win themes for an RFP."""
-    rfp = store.get(rfp_id)
-    if not rfp:
-        raise HTTPException(status_code=404, detail="RFP not found")
+    if not draft:
+        raise HTTPException(
+            status_code=404,
+            detail="No draft found for this requirement. Use POST /api/rfp/{rfp_id}/draft first."
+        )
 
     return {
         "rfp_id": rfp_id,
-        "win_themes": rfp.get("win_themes", [])
+        "requirement_id": requirement_id,
+        "draft": draft
     }
 
 
-@app.get("/api/rfp/{rfp_id}/cross-walks")
-async def get_cross_walks(rfp_id: str):
+@app.post("/api/rfp/{rfp_id}/drafts/{requirement_id}/feedback")
+async def submit_draft_feedback(
+    rfp_id: str,
+    requirement_id: str,
+    feedback: str = Form(...),
+    approved: bool = Form(False)
+):
     """
-    Get L-M-C cross-walk mappings for an RFP.
+    Submit feedback on a draft and trigger revision.
 
-    Shows how Section L instructions map to Section M factors,
-    which in turn relate to Section C requirements.
+    This is the human-in-the-loop endpoint that allows users to
+    provide feedback that gets incorporated into the next revision.
     """
+    if not DRAFTING_WORKFLOW_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Drafting workflow not available")
+
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
 
-    # Get or compute strategy analysis
-    if not rfp.get("strategy_analysis"):
-        analysis_response = await get_strategy_analysis(rfp_id)
-        cross_walks = analysis_response.get("cross_walks", [])
-    else:
-        cross_walks = rfp["strategy_analysis"].get("cross_walks", [])
+    drafts = rfp.get("drafts", {})
+    draft = drafts.get(requirement_id)
 
-    return {
-        "rfp_id": rfp_id,
-        "cross_walks": cross_walks,
-        "coverage_score": rfp.get("strategy_analysis", {}).get("summary", {}).get("coverage_score", 0)
-    }
+    if not draft:
+        raise HTTPException(status_code=404, detail="No draft found for this requirement")
+
+    if approved:
+        # Mark as approved
+        draft["approved"] = True
+        draft["feedback_history"] = draft.get("feedback_history", [])
+        draft["feedback_history"].append({
+            "feedback": feedback,
+            "approved": True,
+            "timestamp": datetime.now().isoformat()
+        })
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": "approved",
+            "requirement_id": requirement_id,
+            "draft": draft
+        }
+
+    # Find the requirement
+    requirement = None
+    for req in rfp.get("requirements", []):
+        if req.get("id") == requirement_id:
+            requirement = req
+            break
+
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # Get strategy
+    strategy = rfp.get("strategy", {})
+    win_themes = strategy.get("win_themes", [])
+    primary_theme = win_themes[0] if win_themes else None
+
+    try:
+        # Re-run workflow with feedback
+        result = run_drafting_workflow(
+            requirement=requirement,
+            win_theme=primary_theme,
+            target_word_count=draft.get("word_count", 250),
+        )
+
+        # Update draft
+        draft["draft_text"] = result.get("draft_text", "")
+        draft["quality_scores"] = result.get("quality_scores", {})
+        draft["revision_count"] = draft.get("revision_count", 0) + 1
+        draft["word_count"] = result.get("draft_word_count", 0)
+        draft["revised_at"] = datetime.now().isoformat()
+        draft["feedback_history"] = draft.get("feedback_history", [])
+        draft["feedback_history"].append({
+            "feedback": feedback,
+            "approved": False,
+            "timestamp": datetime.now().isoformat()
+        })
+
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": "revised",
+            "requirement_id": requirement_id,
+            "draft": draft,
+            "revision_count": draft["revision_count"]
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Revision failed: {str(e)}"
+        )
 
 
 # ============== Export ==============
@@ -1734,21 +3013,69 @@ async def export_annotated_outline(rfp_id: str):
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
+    # v4.0: Debug logging for data isolation tracing
+    print(f"[DEBUG] export_annotated_outline called for RFP: {rfp_id}")
+    print(f"[DEBUG] RFP name: {rfp.get('name')}, solicitation: {rfp.get('solicitation_number')}")
+    print(f"[DEBUG] Requirements count in store: {len(rfp.get('requirements', []))}")
+
     outline = rfp.get("outline")
+    if outline:
+        print(f"[DEBUG] Using CACHED outline (already generated)")
     if not outline:
         generator = SmartOutlineGenerator()
-        section_l = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("L")]
-        section_m = [r for r in rfp.get("requirements", []) if r.get("section", "").upper().startswith("M")]
-        outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, rfp.get("documents", []))
+        # v3.1 FIX: Use category field (set by extraction), not section field
+        # The category field contains: L_COMPLIANCE, EVALUATION, TECHNICAL
+        # The section field contains SOW references like "2.1" which never start with L/M
+        section_l = [r for r in rfp.get("requirements", []) if r.get("category") == "L_COMPLIANCE"]
+        section_m = [r for r in rfp.get("requirements", []) if r.get("category") == "EVALUATION"]
+
+        # Fallback: also include requirements from documents categorized as section_lm
+        if not section_l:
+            section_l = [r for r in rfp.get("requirements", [])
+                        if r.get("source_content_type") in ["section_l", "section_lm"]]
+        if not section_m:
+            section_m = [r for r in rfp.get("requirements", [])
+                        if r.get("source_content_type") in ["section_m", "section_lm"]]
+
+        # v4.0 FIX: Get technical requirements (not section L or M)
+        technical = [r for r in rfp.get("requirements", [])
+                    if r.get("category") not in ["L_COMPLIANCE", "EVALUATION"]]
+        stats = {"is_non_ucf_format": len(section_l) == 0}
+
+        print(f"[DEBUG] REGENERATING outline from {len(rfp.get('requirements', []))} requirements")
+        print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}, technical count: {len(technical)}")
+
+        # Log sample requirement to verify data isolation
+        if section_l:
+            print(f"[DEBUG] Sample section_l requirement: {section_l[0].get('text', '')[:100]}...")
+
+        outline_obj = generator.generate_from_compliance_matrix(
+            section_l_requirements=section_l,
+            section_m_requirements=section_m,
+            technical_requirements=technical,
+            stats=stats
+        )
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
     
     requirements = rfp.get("requirements", [])
-    
+
+    # v3.2: Use proper proposal title, not source document filename
+    # The RFP name might be "Attachment 1. Stament Of Work" which is wrong
+    # v4.0 FIX: Use 'or' to handle None values (not just missing keys)
+    solicitation_number = rfp.get("solicitation_number") or rfp_id
+    rfp_name = rfp.get("name") or ""
+
+    # Don't use source document names as title
+    if any(x in rfp_name.lower() for x in ["attachment", "sow", "statement of work", "stament"]):
+        rfp_title = f"Proposal Response to {solicitation_number}"
+    else:
+        rfp_title = rfp_name or f"Proposal Response to {solicitation_number}"
+
     config = AnnotatedOutlineConfig(
-        rfp_title=rfp.get("name", rfp.get("title", "RFP")),
-        solicitation_number=rfp.get("solicitation_number", rfp_id),
+        rfp_title=rfp_title,
+        solicitation_number=solicitation_number,
         due_date=outline.get("submission", {}).get("due_date", "TBD"),
         submission_method=outline.get("submission", {}).get("method", "Not Specified"),
         total_pages=outline.get("total_pages"),
@@ -1757,9 +3084,19 @@ async def export_annotated_outline(rfp_id: str):
     
     try:
         exporter = AnnotatedOutlineExporter()
-        doc_bytes = exporter.export(outline, requirements, outline.get("format_requirements", {}), config)
+        # v4.0 FIX: Explicitly handle None format_requirements
+        format_reqs = outline.get("format_requirements") or {}
+
+        # Debug: Log what we're passing to the exporter
+        print(f"[DEBUG] export_annotated_outline: outline keys = {list(outline.keys()) if outline else 'None'}")
+        print(f"[DEBUG] export_annotated_outline: requirements count = {len(requirements) if requirements else 'None'}")
+        print(f"[DEBUG] export_annotated_outline: format_reqs = {format_reqs}")
+        print(f"[DEBUG] export_annotated_outline: volumes = {outline.get('volumes', 'MISSING')}")
+
+        doc_bytes = exporter.export(outline, requirements, format_reqs, config)
         
-        safe_name = "".join(c for c in rfp.get("name", rfp_id) if c.isalnum() or c in " -_")[:50]
+        # v3.2: Use solicitation number for filename, not source document name
+        safe_name = "".join(c for c in solicitation_number if c.isalnum() or c in " -_")[:50]
         filename = f"{safe_name}_Annotated_Outline.docx"
         
         return Response(
