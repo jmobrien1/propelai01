@@ -116,29 +116,49 @@ class AnnotatedOutlineExporter:
             import traceback
             traceback.print_exc()
             raise
-        
+
         # Create temporary files
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(input_data, f)
-            input_path = f.name
-        
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(input_data, f)
+                input_path = f.name
+            print(f"[DEBUG] Wrote input JSON to: {input_path}")
+        except Exception as e:
+            print(f"[DEBUG] JSON dump FAILED: {type(e).__name__}: {e}")
+            raise
+
         output_path = tempfile.mktemp(suffix='.docx')
-        
+        print(f"[DEBUG] Output path: {output_path}")
+        print(f"[DEBUG] Script path: {self.script_path}")
+
         try:
             # Run the Node.js exporter
+            print(f"[DEBUG] Running Node.js exporter...")
             result = subprocess.run(
                 ["node", str(self.script_path), input_path, output_path],
                 capture_output=True,
                 text=True,
                 timeout=60
             )
-            
+            print(f"[DEBUG] Node.js returncode: {result.returncode}")
+            if result.stdout:
+                print(f"[DEBUG] Node.js stdout: {result.stdout[:500]}")
+            if result.stderr:
+                print(f"[DEBUG] Node.js stderr: {result.stderr[:500]}")
+
             if result.returncode != 0:
                 raise RuntimeError(f"Document generation failed: {result.stderr}")
-            
+
+            # Check if output file exists
+            if not os.path.exists(output_path):
+                raise RuntimeError(f"Node.js did not create output file: {output_path}")
+
+            print(f"[DEBUG] Reading output file...")
             # Read the generated document
             with open(output_path, 'rb') as f:
-                return f.read()
+                doc_bytes = f.read()
+            print(f"[DEBUG] Successfully read {len(doc_bytes)} bytes")
+            return doc_bytes
                 
         finally:
             # Cleanup temp files
