@@ -2333,6 +2333,11 @@
             const [newTeam, setNewTeam] = useState({ name: '', description: '' });
             const [showAddMember, setShowAddMember] = useState(false);
             const [newMember, setNewMember] = useState({ email: '', role: 'viewer' });
+            // API Key state
+            const [apiKeys, setApiKeys] = useState([]);
+            const [showCreateApiKey, setShowCreateApiKey] = useState(false);
+            const [newApiKey, setNewApiKey] = useState({ name: '', permissions: 'read', expires_days: '' });
+            const [createdKey, setCreatedKey] = useState(null);
 
             useEffect(() => {
                 loadTeams();
@@ -2378,6 +2383,7 @@
                     const response = await fetch(`/api/teams/${teamId}`);
                     const data = await response.json();
                     setSelectedTeam(data);
+                    loadApiKeys(teamId);
                 } catch (error) {
                     console.error('Error loading team:', error);
                 }
@@ -2428,6 +2434,65 @@
                     setSelectedTeam(null);
                 } catch (error) {
                     console.error('Error deleting team:', error);
+                }
+            };
+
+            // API Key functions
+            const loadApiKeys = async (teamId) => {
+                try {
+                    const response = await fetch(`/api/teams/${teamId}/api-keys`);
+                    const data = await response.json();
+                    setApiKeys(data.api_keys || []);
+                } catch (error) {
+                    console.error('Error loading API keys:', error);
+                }
+            };
+
+            const createApiKey = async () => {
+                if (!newApiKey.name.trim() || !selectedTeam) return;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('name', newApiKey.name);
+                    formData.append('permissions', newApiKey.permissions);
+                    if (newApiKey.expires_days) {
+                        formData.append('expires_days', newApiKey.expires_days);
+                    }
+
+                    const response = await fetch(`/api/teams/${selectedTeam.id}/api-keys`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    if (result.key) {
+                        setCreatedKey(result);
+                        loadApiKeys(selectedTeam.id);
+                        setNewApiKey({ name: '', permissions: 'read', expires_days: '' });
+                    }
+                } catch (error) {
+                    console.error('Error creating API key:', error);
+                }
+            };
+
+            const revokeApiKey = async (keyId, keyName) => {
+                if (!confirm(`Revoke API key "${keyName}"? This cannot be undone.`)) return;
+
+                try {
+                    await fetch(`/api/teams/${selectedTeam.id}/api-keys/${keyId}`, {
+                        method: 'DELETE'
+                    });
+                    loadApiKeys(selectedTeam.id);
+                } catch (error) {
+                    console.error('Error revoking API key:', error);
+                }
+            };
+
+            const copyToClipboard = async (text) => {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    alert('Copied to clipboard!');
+                } catch (error) {
+                    console.error('Error copying:', error);
                 }
             };
 
@@ -2596,6 +2661,64 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* API Keys Section */}
+                                <div style={{ padding: 16, borderTop: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                        <h4 style={{ fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                                            API Keys
+                                        </h4>
+                                        <button
+                                            className="btn"
+                                            style={{ fontSize: 12, padding: '4px 8px' }}
+                                            onClick={() => setShowCreateApiKey(true)}
+                                        >
+                                            + New Key
+                                        </button>
+                                    </div>
+
+                                    {apiKeys.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)', fontSize: 13 }}>
+                                            <Icon name="Key" style={{ width: 24, height: 24, marginBottom: 8, opacity: 0.5 }} />
+                                            <p>No API keys yet</p>
+                                            <p style={{ fontSize: 12 }}>Create keys for programmatic access</p>
+                                        </div>
+                                    ) : (
+                                        apiKeys.map(key => (
+                                            <div
+                                                key={key.id}
+                                                style={{
+                                                    padding: 12,
+                                                    background: 'var(--bg-tertiary)',
+                                                    borderRadius: 8,
+                                                    marginBottom: 8
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                    <div>
+                                                        <div style={{ fontWeight: 500, marginBottom: 4 }}>{key.name}</div>
+                                                        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                                            {key.key_prefix}...
+                                                        </div>
+                                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                                            {key.permissions?.join(', ') || 'read'}
+                                                            {key.is_expired && <span style={{ color: 'var(--accent-red)', marginLeft: 8 }}>Expired</span>}
+                                                            {key.last_used && <span style={{ marginLeft: 8 }}>Last used: {new Date(key.last_used).toLocaleDateString()}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        className="btn"
+                                                        style={{ padding: 4, color: 'var(--accent-red)' }}
+                                                        onClick={() => revokeApiKey(key.id, key.name)}
+                                                        title="Revoke key"
+                                                    >
+                                                        <Icon name="Trash2" style={{ width: 14, height: 14 }} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2663,6 +2786,132 @@
                                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                                     <button className="btn" onClick={() => setShowAddMember(false)}>Cancel</button>
                                     <button className="btn btn-primary" onClick={addMember}>Add Member</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Create API Key Modal */}
+                    {showCreateApiKey && (
+                        <div className="modal-overlay" onClick={() => setShowCreateApiKey(false)}>
+                            <div className="modal" onClick={e => e.stopPropagation()}>
+                                <h3 style={{ marginBottom: 16 }}>Create API Key</h3>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Key Name</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="e.g., CI/CD Pipeline"
+                                        value={newApiKey.name}
+                                        onChange={(e) => setNewApiKey(prev => ({ ...prev, name: e.target.value }))}
+                                    />
+                                </div>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Permissions</label>
+                                    <select
+                                        className="form-input"
+                                        value={newApiKey.permissions}
+                                        onChange={(e) => setNewApiKey(prev => ({ ...prev, permissions: e.target.value }))}
+                                    >
+                                        <option value="read">Read - View data only</option>
+                                        <option value="read,write">Read & Write - Modify data</option>
+                                        <option value="read,write,admin">Full Access - All permissions</option>
+                                    </select>
+                                </div>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Expiration (optional)</label>
+                                    <select
+                                        className="form-input"
+                                        value={newApiKey.expires_days}
+                                        onChange={(e) => setNewApiKey(prev => ({ ...prev, expires_days: e.target.value }))}
+                                    >
+                                        <option value="">Never expires</option>
+                                        <option value="30">30 days</option>
+                                        <option value="90">90 days</option>
+                                        <option value="180">180 days</option>
+                                        <option value="365">1 year</option>
+                                    </select>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                    <button className="btn" onClick={() => setShowCreateApiKey(false)}>Cancel</button>
+                                    <button className="btn btn-primary" onClick={createApiKey}>Create Key</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Created API Key Display Modal */}
+                    {createdKey && (
+                        <div className="modal-overlay" onClick={() => setCreatedKey(null)}>
+                            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+                                <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                                    <div style={{
+                                        width: 48,
+                                        height: 48,
+                                        borderRadius: '50%',
+                                        background: 'var(--accent-green)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        marginBottom: 12
+                                    }}>
+                                        <Icon name="Check" style={{ width: 24, height: 24, color: 'white' }} />
+                                    </div>
+                                    <h3>API Key Created</h3>
+                                </div>
+
+                                <div style={{
+                                    background: 'var(--bg-tertiary)',
+                                    padding: 16,
+                                    borderRadius: 8,
+                                    marginBottom: 16
+                                }}>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Your API Key</div>
+                                    <div style={{
+                                        fontFamily: 'monospace',
+                                        fontSize: 13,
+                                        wordBreak: 'break-all',
+                                        background: 'var(--bg-primary)',
+                                        padding: 12,
+                                        borderRadius: 4,
+                                        marginBottom: 8
+                                    }}>
+                                        {createdKey.key}
+                                    </div>
+                                    <button
+                                        className="btn btn-primary"
+                                        style={{ width: '100%' }}
+                                        onClick={() => copyToClipboard(createdKey.key)}
+                                    >
+                                        <Icon name="Copy" style={{ width: 14, height: 14, marginRight: 8 }} />
+                                        Copy to Clipboard
+                                    </button>
+                                </div>
+
+                                <div style={{
+                                    background: 'rgba(251, 191, 36, 0.1)',
+                                    border: '1px solid var(--accent-amber)',
+                                    padding: 12,
+                                    borderRadius: 8,
+                                    marginBottom: 16,
+                                    fontSize: 13
+                                }}>
+                                    <strong style={{ color: 'var(--accent-amber)' }}>Important:</strong> This key will only be shown once.
+                                    Store it securely - you won't be able to see it again.
+                                </div>
+
+                                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                                    <div><strong>Name:</strong> {createdKey.name}</div>
+                                    <div><strong>Permissions:</strong> {createdKey.permissions?.join(', ')}</div>
+                                    {createdKey.expires_at && (
+                                        <div><strong>Expires:</strong> {new Date(createdKey.expires_at).toLocaleDateString()}</div>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                                    <button className="btn btn-primary" onClick={() => { setCreatedKey(null); setShowCreateApiKey(false); }}>
+                                        Done
+                                    </button>
                                 </div>
                             </div>
                         </div>
