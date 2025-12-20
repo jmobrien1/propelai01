@@ -119,3 +119,8 @@ A winning proposal ensures:
 1. Every L instruction is followed (compliance)
 2. Every M factor is addressed with evidence (scoring)
 3. Every C requirement is mapped to proposal content (traceability)
+
+## 8. Reference Documents
+- `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
+- `AS_BUILT_v4.1.md`: Comprehensive technical documentation
+- `HANDOFF_DOCUMENT.md`: Legacy v2.9 documentation (Shipley methodology)
