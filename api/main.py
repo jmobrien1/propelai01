@@ -143,14 +143,20 @@ except ImportError as e:
     TRUST_GATE_AVAILABLE = False
     coordinate_extractor = None
 
-# v4.0: Strategy Agent
+# v4.0: Strategy Agent + Competitive Analysis
 try:
-    from agents.strategy_agent import StrategyAgent
+    from agents.strategy_agent import (
+        StrategyAgent,
+        CompetitorAnalyzer,
+        GhostingLanguageGenerator,
+    )
     STRATEGY_AGENT_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Strategy Agent not available: {e}")
     STRATEGY_AGENT_AVAILABLE = False
     StrategyAgent = None
+    CompetitorAnalyzer = None
+    GhostingLanguageGenerator = None
 
 # v4.0: Drafting Workflow
 try:
@@ -2102,6 +2108,130 @@ async def get_strategy(rfp_id: str):
         "rfp_id": rfp_id,
         "strategy": strategy
     }
+
+
+@app.post("/api/rfp/{rfp_id}/competitive-analysis")
+async def analyze_competitors(
+    rfp_id: str,
+    competitors: Optional[str] = Form(None)
+):
+    """
+    v4.0 Strategy Engine: Analyze competitive landscape.
+
+    Performs competitor analysis including:
+    - Competitor profiling (strengths, weaknesses)
+    - Theme prediction for competitors
+    - Ghosting opportunity identification
+    - Win probability factors
+
+    Args:
+        rfp_id: RFP identifier
+        competitors: Optional JSON string of known competitors
+            Format: [{"name": "...", "is_incumbent": true, "strengths": [...], "weaknesses": [...]}]
+
+    Returns:
+        Comprehensive competitive analysis with ghosting library
+    """
+    if not STRATEGY_AGENT_AVAILABLE or not CompetitorAnalyzer:
+        raise HTTPException(
+            status_code=501,
+            detail="Competitive analysis not available"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements = rfp.get("requirements", [])
+
+    # Parse competitors JSON if provided
+    known_competitors = []
+    if competitors:
+        try:
+            known_competitors = json.loads(competitors)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid competitors JSON")
+
+    try:
+        analyzer = CompetitorAnalyzer(use_llm=True)
+
+        # Build RFP data for analysis
+        rfp_data = {
+            "id": rfp_id,
+            "requirements": requirements,
+            "evaluation_criteria": [
+                r for r in requirements
+                if r.get("category") == "EVALUATION" or r.get("section", "").upper() == "M"
+            ]
+        }
+
+        analysis = analyzer.analyze_competitive_landscape(
+            rfp_data,
+            known_competitors=known_competitors
+        )
+
+        # Store analysis in RFP
+        store.update(rfp_id, {"competitive_analysis": analysis})
+
+        return {
+            "status": "analyzed",
+            "rfp_id": rfp_id,
+            "analysis": analysis
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Competitive analysis failed: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/ghosting-library")
+async def get_ghosting_library(rfp_id: str):
+    """
+    v4.0: Get ghosting language library for proposal writing.
+
+    Returns ready-to-use ghosting statements aligned with
+    evaluation criteria and competitor weaknesses.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Check if competitive analysis exists
+    comp_analysis = rfp.get("competitive_analysis")
+    if comp_analysis and comp_analysis.get("ghosting_library"):
+        return {
+            "rfp_id": rfp_id,
+            "ghosting_library": comp_analysis["ghosting_library"],
+            "source": "competitive_analysis"
+        }
+
+    # Check if strategy has ghosting language
+    strategy = rfp.get("strategy")
+    if strategy:
+        win_themes = strategy.get("win_themes", [])
+        ghosting_from_themes = []
+        for theme in win_themes:
+            if theme.get("ghosting_language"):
+                ghosting_from_themes.append({
+                    "theme_id": theme.get("id"),
+                    "language": theme["ghosting_language"],
+                    "eval_criteria_link": theme.get("linked_eval_criteria", [])
+                })
+        if ghosting_from_themes:
+            return {
+                "rfp_id": rfp_id,
+                "ghosting_library": ghosting_from_themes,
+                "source": "win_themes"
+            }
+
+    raise HTTPException(
+        status_code=404,
+        detail="No ghosting library available. Run competitive analysis or strategy generation first."
+    )
 
 
 # ============== v4.0: Drafting Workflow ==============

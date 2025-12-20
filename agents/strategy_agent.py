@@ -1153,6 +1153,588 @@ Return ONLY valid JSON matching the schema above."""
         }
 
 
+# ============================================================================
+# v4.0: Ghosting Language Generator (Task 2.2.3)
+# ============================================================================
+
+class GhostingLanguageGenerator:
+    """
+    v4.0: Generates subtle competitive positioning language.
+
+    Ghosting is the art of positioning against competitors without
+    naming them directly. Good ghosting:
+    - Highlights our strengths in areas where competitors are weak
+    - Uses positive framing ("We offer X" not "They lack X")
+    - Aligns with evaluation criteria
+    - Is subtle enough to pass legal/ethical review
+    """
+
+    # Ghosting templates by weakness category
+    GHOSTING_TEMPLATES = {
+        "experience": {
+            "weakness_pattern": ["new", "limited experience", "lack", "first time"],
+            "our_strength": "directly relevant experience",
+            "templates": [
+                "Our team brings {years}+ years of directly relevant experience, ensuring mission continuity from day one.",
+                "Unlike approaches based on theoretical knowledge, our methodology is battle-tested across {count} similar contracts.",
+                "We offer proven past performance with the same customer base, not aspirational claims.",
+            ]
+        },
+        "transition_risk": {
+            "weakness_pattern": ["transition", "startup", "ramp", "learning curve"],
+            "our_strength": "seamless transition",
+            "templates": [
+                "Our zero-defect transition track record eliminates startup risk and ensures continuous operations.",
+                "Rather than extended learning curves, we deliver Day 1 readiness through our proven onboarding process.",
+                "Our incumbent-like knowledge eliminates the transition gaps that often plague new contractors.",
+            ]
+        },
+        "scale": {
+            "weakness_pattern": ["small", "limited resources", "capacity", "scale"],
+            "our_strength": "enterprise scale",
+            "templates": [
+                "Our enterprise-scale resources ensure we can flex to meet surge requirements without compromising quality.",
+                "Unlike capacity-constrained alternatives, our nationwide bench provides immediate access to cleared talent.",
+                "Our financial stability ensures uninterrupted service delivery throughout the contract lifecycle.",
+            ]
+        },
+        "innovation": {
+            "weakness_pattern": ["legacy", "outdated", "traditional", "conventional"],
+            "our_strength": "modern innovation",
+            "templates": [
+                "Our modern, cloud-native approach delivers capabilities that legacy systems cannot match.",
+                "We bring innovation without risk—proven technologies already successfully deployed in similar environments.",
+                "Our forward-leaning technical approach positions you for future requirements, not just today's needs.",
+            ]
+        },
+        "personnel": {
+            "weakness_pattern": ["staff", "personnel", "turnover", "retention"],
+            "our_strength": "committed personnel",
+            "templates": [
+                "Our named key personnel have committed to this contract, ensuring continuity and accountability.",
+                "With industry-leading retention rates of {retention}%, we deliver consistent service quality.",
+                "All proposed staff hold current {clearance} clearances—no delays, no substitutions.",
+            ]
+        },
+        "price_realism": {
+            "weakness_pattern": ["low price", "underbid", "unrealistic", "buy-in"],
+            "our_strength": "realistic pricing",
+            "templates": [
+                "Our pricing reflects realistic labor categories and proven efficiency—not optimistic assumptions.",
+                "We invest in contract success upfront, avoiding the performance issues that plague underbid contracts.",
+                "Our cost model is built on actual performance data, ensuring sustainable service delivery.",
+            ]
+        },
+        "technical_depth": {
+            "weakness_pattern": ["generic", "superficial", "boilerplate", "off-the-shelf"],
+            "our_strength": "tailored solution",
+            "templates": [
+                "Our solution is purpose-built for your mission, not adapted from a generic commercial offering.",
+                "Every aspect of our technical approach addresses your specific requirements—no boilerplate.",
+                "We bring deep domain expertise in {domain}, not surface-level familiarity.",
+            ]
+        },
+    }
+
+    def __init__(self, use_llm: bool = True, llm_caller: Optional[callable] = None):
+        """
+        Initialize the ghosting generator.
+
+        Args:
+            use_llm: Whether to use LLM for generation (enhances templates)
+            llm_caller: Optional function to call LLM (signature: prompt -> str)
+        """
+        self.use_llm = use_llm
+        self.llm_caller = llm_caller
+
+    def generate_ghosting_library(
+        self,
+        win_themes: List[WinTheme],
+        competitor_weaknesses: List[str],
+        eval_criteria: List[Dict]
+    ) -> List[GhostingStrategy]:
+        """
+        Generate a library of ghosting language for the proposal.
+
+        Args:
+            win_themes: Our win themes to reinforce
+            competitor_weaknesses: Known/suspected competitor weaknesses
+            eval_criteria: Evaluation criteria to align with
+
+        Returns:
+            List of GhostingStrategy objects ready for integration
+        """
+        strategies = []
+
+        for weakness in competitor_weaknesses:
+            weakness_lower = weakness.lower()
+
+            # Find matching template category
+            for category, config in self.GHOSTING_TEMPLATES.items():
+                if any(pattern in weakness_lower for pattern in config["weakness_pattern"]):
+                    # Find aligned evaluation criterion
+                    aligned_criterion = self._find_aligned_criterion(
+                        category, eval_criteria
+                    )
+
+                    # Select best template
+                    template = self._select_template(
+                        config["templates"],
+                        win_themes,
+                        weakness
+                    )
+
+                    strategy = GhostingStrategy(
+                        competitor_weakness=weakness,
+                        our_strength=config["our_strength"],
+                        language_template=template,
+                        eval_criteria_link=aligned_criterion,
+                        subtlety_level=3
+                    )
+                    strategies.append(strategy)
+                    break
+
+        # Try LLM enhancement if available
+        if self.use_llm and self.llm_caller and strategies:
+            enhanced = self._enhance_with_llm(strategies, win_themes)
+            if enhanced:
+                strategies = enhanced
+
+        return strategies
+
+    def generate_for_section(
+        self,
+        section_type: str,
+        our_discriminators: List[Discriminator],
+        competitor_profile: Optional[CompetitorProfile] = None
+    ) -> List[str]:
+        """
+        Generate ghosting language for a specific proposal section.
+
+        Args:
+            section_type: "technical", "management", "past_performance", etc.
+            our_discriminators: Our discriminators to reinforce
+            competitor_profile: Optional specific competitor to ghost
+
+        Returns:
+            List of ghosting sentences ready to weave into content
+        """
+        sentences = []
+
+        # Section-specific ghosting
+        section_ghosts = {
+            "technical": [
+                "Our approach is specifically designed for {domain} environments, not adapted from commercial solutions.",
+                "We integrate proven technologies that eliminate the risks associated with experimental approaches.",
+            ],
+            "management": [
+                "Our management team has direct experience with {agency}, not just theoretical familiarity.",
+                "We provide named, committed key personnel—not placeholder positions to be filled post-award.",
+            ],
+            "past_performance": [
+                "Our past performance is directly relevant to this requirement, not tangentially related.",
+                "We offer recent, verifiable results with current customer references.",
+            ],
+            "transition": [
+                "Our transition approach is based on proven playbooks, not first-time execution.",
+                "We eliminate transition risk through incumbency-level knowledge and ready personnel.",
+            ],
+        }
+
+        base_ghosts = section_ghosts.get(section_type.lower(), [])
+        sentences.extend(base_ghosts)
+
+        # Add discriminator-based ghosting
+        for disc in our_discriminators:
+            if disc.ghosting_angle:
+                sentences.append(disc.ghosting_angle)
+
+        # Add competitor-specific ghosting if provided
+        if competitor_profile and competitor_profile.weaknesses:
+            for weakness in competitor_profile.weaknesses[:3]:
+                ghost = self._generate_single_ghost(weakness, section_type)
+                if ghost:
+                    sentences.append(ghost)
+
+        return sentences[:5]  # Limit to avoid over-ghosting
+
+    def _find_aligned_criterion(
+        self,
+        category: str,
+        eval_criteria: List[Dict]
+    ) -> str:
+        """Find evaluation criterion that aligns with ghosting category"""
+        category_to_criteria = {
+            "experience": ["past performance", "experience", "relevant"],
+            "transition_risk": ["management", "transition", "risk"],
+            "scale": ["resources", "capacity", "staffing"],
+            "innovation": ["technical", "approach", "solution"],
+            "personnel": ["staffing", "key personnel", "qualifications"],
+            "price_realism": ["price", "cost", "value"],
+            "technical_depth": ["technical", "approach", "methodology"],
+        }
+
+        keywords = category_to_criteria.get(category, [])
+
+        for criterion in eval_criteria:
+            criterion_text = criterion.get("factor_name", "").lower()
+            if any(kw in criterion_text for kw in keywords):
+                return criterion.get("criterion_id", criterion.get("factor_name", ""))
+
+        return ""
+
+    def _select_template(
+        self,
+        templates: List[str],
+        win_themes: List[WinTheme],
+        weakness: str
+    ) -> str:
+        """Select and customize the best template"""
+        # Simple selection - first template that matches context
+        template = templates[0]
+
+        # Basic variable substitution
+        template = template.replace("{years}", "15")
+        template = template.replace("{count}", "12")
+        template = template.replace("{retention}", "95")
+        template = template.replace("{clearance}", "TS/SCI")
+        template = template.replace("{domain}", "government IT")
+        template = template.replace("{agency}", "the customer")
+
+        return template
+
+    def _generate_single_ghost(self, weakness: str, section_type: str) -> Optional[str]:
+        """Generate a single ghosting sentence for a specific weakness"""
+        weakness_lower = weakness.lower()
+
+        for category, config in self.GHOSTING_TEMPLATES.items():
+            if any(pattern in weakness_lower for pattern in config["weakness_pattern"]):
+                template = config["templates"][0]
+                return self._select_template([template], [], weakness)
+
+        return None
+
+    def _enhance_with_llm(
+        self,
+        strategies: List[GhostingStrategy],
+        win_themes: List[WinTheme]
+    ) -> Optional[List[GhostingStrategy]]:
+        """Enhance ghosting with LLM"""
+        if not self.llm_caller:
+            return None
+
+        prompt = f"""Enhance these ghosting statements to be more subtle and persuasive while maintaining professional tone.
+
+CURRENT GHOSTING STRATEGIES:
+{json.dumps([{"weakness": s.competitor_weakness, "template": s.language_template} for s in strategies], indent=2)}
+
+WIN THEMES TO REINFORCE:
+{json.dumps([t.theme_headline for t in win_themes], indent=2)}
+
+Requirements:
+1. Make language more subtle (never name competitors)
+2. Focus on positive framing ("We offer..." not "They lack...")
+3. Align with government proposal writing standards
+4. Keep each statement to 1-2 sentences
+
+Return enhanced statements in JSON format:
+{{"enhanced": [{{"weakness": "...", "statement": "..."}}]}}
+"""
+
+        try:
+            response = self.llm_caller(prompt)
+            if response:
+                data = json.loads(re.search(r'\{[\s\S]*\}', response).group())
+                enhanced_list = data.get("enhanced", [])
+
+                for i, item in enumerate(enhanced_list):
+                    if i < len(strategies):
+                        strategies[i].language_template = item.get("statement", strategies[i].language_template)
+
+                return strategies
+        except Exception:
+            pass
+
+        return None
+
+
+# ============================================================================
+# v4.0: Competitor Analyzer (Task 2.3.1)
+# ============================================================================
+
+class CompetitorAnalyzer:
+    """
+    v4.0: Analyzes competitive landscape for strategic positioning.
+
+    Capabilities:
+    - Profile known/likely competitors
+    - Identify competitor strengths and weaknesses
+    - Predict competitor themes and strategies
+    - Generate ghosting opportunities
+    """
+
+    def __init__(self, use_llm: bool = True, llm_caller: Optional[callable] = None):
+        """
+        Initialize the competitor analyzer.
+
+        Args:
+            use_llm: Whether to use LLM for analysis
+            llm_caller: Optional function to call LLM
+        """
+        self.use_llm = use_llm
+        self.llm_caller = llm_caller
+        self.ghosting_generator = GhostingLanguageGenerator(use_llm, llm_caller)
+
+    def analyze_competitive_landscape(
+        self,
+        rfp_data: Dict,
+        known_competitors: Optional[List[Dict]] = None,
+        market_intel: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive competitive analysis.
+
+        Args:
+            rfp_data: RFP information including requirements and eval criteria
+            known_competitors: Optional list of known competitor data
+            market_intel: Optional market intelligence
+
+        Returns:
+            Comprehensive competitive analysis
+        """
+        analysis = {
+            "competitor_profiles": [],
+            "competitive_gaps": [],
+            "ghosting_library": [],
+            "win_probability_factors": [],
+            "recommended_positioning": [],
+        }
+
+        # Analyze known competitors
+        if known_competitors:
+            for comp_data in known_competitors:
+                profile = self._build_competitor_profile(comp_data, rfp_data)
+                analysis["competitor_profiles"].append(profile)
+
+        # Identify competitive gaps (opportunities)
+        analysis["competitive_gaps"] = self._identify_gaps(
+            analysis["competitor_profiles"],
+            rfp_data.get("requirements", [])
+        )
+
+        # Generate ghosting library
+        all_weaknesses = []
+        for profile in analysis["competitor_profiles"]:
+            all_weaknesses.extend(profile.get("weaknesses", []))
+
+        if all_weaknesses:
+            eval_criteria = rfp_data.get("evaluation_criteria", [])
+            analysis["ghosting_library"] = [
+                self._ghosting_to_dict(gs)
+                for gs in self.ghosting_generator.generate_ghosting_library(
+                    [],  # Win themes not yet generated
+                    all_weaknesses,
+                    eval_criteria
+                )
+            ]
+
+        # Calculate win probability factors
+        analysis["win_probability_factors"] = self._calculate_win_factors(
+            analysis["competitor_profiles"],
+            rfp_data
+        )
+
+        # Generate recommended positioning
+        analysis["recommended_positioning"] = self._generate_positioning(
+            analysis["competitive_gaps"],
+            rfp_data.get("evaluation_criteria", [])
+        )
+
+        return analysis
+
+    def _build_competitor_profile(
+        self,
+        comp_data: Dict,
+        rfp_data: Dict
+    ) -> Dict[str, Any]:
+        """Build a detailed competitor profile"""
+        profile = {
+            "name": comp_data.get("name", "Unknown Competitor"),
+            "is_incumbent": comp_data.get("is_incumbent", False),
+            "strengths": comp_data.get("strengths", []),
+            "weaknesses": comp_data.get("weaknesses", []),
+            "likely_themes": [],
+            "threat_level": "medium",
+            "ghosting_opportunities": [],
+        }
+
+        # Predict likely themes
+        profile["likely_themes"] = self._predict_themes(comp_data, rfp_data)
+
+        # Assess threat level
+        profile["threat_level"] = self._assess_threat(comp_data, rfp_data)
+
+        # Identify ghosting opportunities
+        for weakness in profile["weaknesses"]:
+            opp = self._weakness_to_opportunity(weakness)
+            if opp:
+                profile["ghosting_opportunities"].append(opp)
+
+        return profile
+
+    def _predict_themes(self, comp_data: Dict, rfp_data: Dict) -> List[str]:
+        """Predict competitor's likely win themes"""
+        themes = []
+        strengths = comp_data.get("strengths", [])
+        strengths_text = " ".join(strengths).lower()
+
+        # Theme prediction based on strengths
+        if "incumbent" in strengths_text:
+            themes.append("Leverage existing relationships and institutional knowledge")
+        if "large" in strengths_text or "enterprise" in strengths_text:
+            themes.append("Emphasize resources and stability")
+        if "technical" in strengths_text or "innovation" in strengths_text:
+            themes.append("Lead with technical differentiation")
+        if "price" in strengths_text or "cost" in strengths_text:
+            themes.append("Compete on price competitiveness")
+        if "local" in strengths_text or "small business" in strengths_text:
+            themes.append("Position as agile small business partner")
+
+        return themes if themes else ["Generic best value approach"]
+
+    def _assess_threat(self, comp_data: Dict, rfp_data: Dict) -> str:
+        """Assess competitor threat level"""
+        score = 0
+
+        if comp_data.get("is_incumbent"):
+            score += 3
+
+        strengths = comp_data.get("strengths", [])
+        weaknesses = comp_data.get("weaknesses", [])
+
+        score += len(strengths) * 0.5
+        score -= len(weaknesses) * 0.3
+
+        if score >= 4:
+            return "high"
+        elif score >= 2:
+            return "medium"
+        else:
+            return "low"
+
+    def _weakness_to_opportunity(self, weakness: str) -> Optional[str]:
+        """Convert competitor weakness to ghosting opportunity"""
+        weakness_lower = weakness.lower()
+
+        opportunities = {
+            "transition": "Emphasize our proven transition capability and Day 1 readiness",
+            "experience": "Highlight our directly relevant past performance",
+            "size": "Demonstrate our scalable resources and financial stability",
+            "turnover": "Feature our committed, named personnel with retention track record",
+            "price": "Position our realistic, sustainable pricing model",
+            "technology": "Showcase our modern, proven technical approach",
+        }
+
+        for keyword, opp in opportunities.items():
+            if keyword in weakness_lower:
+                return opp
+
+        return None
+
+    def _identify_gaps(
+        self,
+        profiles: List[Dict],
+        requirements: List[Dict]
+    ) -> List[Dict]:
+        """Identify gaps in competitive landscape we can exploit"""
+        gaps = []
+
+        # Collect all competitor weaknesses
+        all_weaknesses = []
+        for profile in profiles:
+            all_weaknesses.extend(profile.get("weaknesses", []))
+
+        # Find common weaknesses (opportunities for us)
+        weakness_counts = {}
+        for w in all_weaknesses:
+            key = w.lower()[:20]
+            weakness_counts[key] = weakness_counts.get(key, 0) + 1
+
+        for weakness, count in weakness_counts.items():
+            if count >= 2:  # Multiple competitors share this weakness
+                gaps.append({
+                    "gap_type": "common_weakness",
+                    "description": f"Multiple competitors weak in: {weakness}",
+                    "opportunity": f"Strongly emphasize our strength in this area",
+                    "competitor_count": count
+                })
+
+        return gaps
+
+    def _calculate_win_factors(
+        self,
+        profiles: List[Dict],
+        rfp_data: Dict
+    ) -> List[Dict]:
+        """Calculate factors affecting win probability"""
+        factors = []
+
+        # Incumbent presence
+        incumbents = [p for p in profiles if p.get("is_incumbent")]
+        if incumbents:
+            factors.append({
+                "factor": "Incumbent Competition",
+                "impact": "negative",
+                "weight": 0.3,
+                "mitigation": "Emphasize fresh perspective and innovation",
+            })
+        else:
+            factors.append({
+                "factor": "No Strong Incumbent",
+                "impact": "positive",
+                "weight": 0.2,
+                "action": "Position as most qualified with low transition risk",
+            })
+
+        # Competition level
+        if len(profiles) > 5:
+            factors.append({
+                "factor": "High Competition",
+                "impact": "negative",
+                "weight": 0.2,
+                "mitigation": "Focus on strong discriminators and unique value",
+            })
+
+        return factors
+
+    def _generate_positioning(
+        self,
+        gaps: List[Dict],
+        eval_criteria: List[Dict]
+    ) -> List[Dict]:
+        """Generate recommended strategic positioning"""
+        positioning = []
+
+        for gap in gaps[:5]:
+            positioning.append({
+                "recommendation": gap.get("opportunity", ""),
+                "priority": "high" if gap.get("competitor_count", 0) >= 2 else "medium",
+                "integration_point": "All major sections",
+            })
+
+        return positioning
+
+    def _ghosting_to_dict(self, gs: GhostingStrategy) -> Dict[str, Any]:
+        """Convert GhostingStrategy to dictionary"""
+        return {
+            "competitor_weakness": gs.competitor_weakness,
+            "our_strength": gs.our_strength,
+            "language_template": gs.language_template,
+            "eval_criteria_link": gs.eval_criteria_link,
+            "subtlety_level": gs.subtlety_level,
+        }
+
+
 def create_strategy_agent(
     llm_client: Optional[Any] = None,
     past_performance_store: Optional[Any] = None,
