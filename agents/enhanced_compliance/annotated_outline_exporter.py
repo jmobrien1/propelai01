@@ -195,17 +195,21 @@ class AnnotatedOutlineExporter:
         
         if "format_requirements" in outline_data:
             # Merge with any explicit format requirements
+            # v4.0 FIX: Check for None before iterating
             outline_fmt = outline_data["format_requirements"]
-            for key, value in outline_fmt.items():
-                if value and key not in format_requirements:
-                    data["formatRequirements"][key] = value
+            if outline_fmt and isinstance(outline_fmt, dict):
+                for key, value in outline_fmt.items():
+                    if value and key not in format_requirements:
+                        data["formatRequirements"][key] = value
         
         if "submission" in outline_data:
+            # v4.0 FIX: Check for None before accessing
             sub = outline_data["submission"]
-            if sub.get("due_date") and data["dueDate"] == "TBD":
-                data["dueDate"] = sub["due_date"]
-            if sub.get("method") and data["submissionMethod"] == "Not Specified":
-                data["submissionMethod"] = sub["method"]
+            if sub and isinstance(sub, dict):
+                if sub.get("due_date") and data["dueDate"] == "TBD":
+                    data["dueDate"] = sub["due_date"]
+                if sub.get("method") and data["submissionMethod"] == "Not Specified":
+                    data["submissionMethod"] = sub["method"]
         
         if "total_pages" in outline_data and outline_data["total_pages"]:
             data["totalPages"] = outline_data["total_pages"]
