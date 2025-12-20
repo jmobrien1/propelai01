@@ -20,5 +20,10 @@ langgraph>=0.0.40            # v4.0 Drafting Agent: LangGraph workflow orchestra
 # anthropic>=0.18.0           # Claude API
 # openai>=1.10.0              # OpenAI API
 
+# Database (v4.1 Persistent Storage)
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0              # Async Postgres driver
+psycopg2-binary>=2.9.0       # Sync Postgres driver (for migrations)
+
 # Utils
 httpx>=0.24.0

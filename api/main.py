@@ -175,11 +175,29 @@ except ImportError as e:
 
 # ============== Configuration ==============
 
-UPLOAD_DIR = Path(tempfile.gettempdir()) / "propelai_uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+# v4.1: Use persistent storage on Render Disk if available, otherwise temp directory
+PERSISTENT_DATA_DIR = Path("/data")
+if PERSISTENT_DATA_DIR.exists() and os.access(PERSISTENT_DATA_DIR, os.W_OK):
+    UPLOAD_DIR = PERSISTENT_DATA_DIR / "uploads"
+    OUTPUT_DIR = PERSISTENT_DATA_DIR / "outputs"
+    print(f"[Storage] Using persistent disk at /data")
+else:
+    UPLOAD_DIR = Path(tempfile.gettempdir()) / "propelai_uploads"
+    OUTPUT_DIR = Path(tempfile.gettempdir()) / "propelai_outputs"
+    print(f"[Storage] Using temporary storage (no persistent disk)")
 
-OUTPUT_DIR = Path(tempfile.gettempdir()) / "propelai_outputs"
-OUTPUT_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# v4.1: Database configuration
+try:
+    from api.database import init_db, is_db_available, db_store, DatabaseStore
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+    is_db_available = lambda: False
+    db_store = None
+    print("[DB] Database module not available")
 
 
 # ============== Pydantic Models ==============
@@ -230,15 +248,109 @@ class AmendmentUpload(BaseModel):
     amendment_date: Optional[str] = None
 
 
-# ============== In-Memory Store ==============
+# ============== Hybrid Store (In-Memory + Database) ==============
 
 class RFPStore:
-    """In-memory store for RFP data"""
-    
+    """
+    Hybrid store for RFP data (v4.1).
+
+    Uses in-memory storage for fast access during processing,
+    with async database persistence for durability.
+
+    - Processing status: in-memory only (transient)
+    - RFP data: in-memory + async sync to database
+    """
+
     def __init__(self):
         self.rfps: Dict[str, Dict] = {}
         self.processing_status: Dict[str, ProcessingStatus] = {}
-    
+        self._db_available = False
+        self._db_initialized = False
+
+    async def init_database(self):
+        """Initialize database connection and load existing data"""
+        if not DATABASE_AVAILABLE or not is_db_available():
+            print("[Store] Running in memory-only mode (no database)")
+            return
+
+        try:
+            success = await init_db()
+            if success:
+                self._db_available = True
+                self._db_initialized = True
+                # Load existing RFPs from database
+                await self._load_from_db()
+                print(f"[Store] Database initialized, loaded {len(self.rfps)} RFPs")
+            else:
+                print("[Store] Database init failed, using memory-only mode")
+        except Exception as e:
+            print(f"[Store] Database error: {e}, using memory-only mode")
+
+    async def _load_from_db(self):
+        """Load all RFPs from database into memory"""
+        if not self._db_available:
+            return
+        try:
+            rfps = await db_store.list_all()
+            for rfp_data in rfps:
+                self.rfps[rfp_data["id"]] = self._db_to_memory(rfp_data)
+        except Exception as e:
+            print(f"[Store] Error loading from DB: {e}")
+
+    def _db_to_memory(self, db_data: Dict) -> Dict:
+        """Convert database format to in-memory format"""
+        # Add fields that are only in memory
+        result = dict(db_data)
+        result.setdefault("requirements_graph", None)
+        result.setdefault("amendment_processor", None)
+        result.setdefault("best_practices_result", None)
+        result.setdefault("semantic_result", None)
+        result.setdefault("resilient_result", None)
+        return result
+
+    async def _sync_to_db(self, rfp_id: str):
+        """Sync an RFP to the database"""
+        if not self._db_available:
+            return
+        try:
+            rfp = self.rfps.get(rfp_id)
+            if not rfp:
+                return
+
+            # Filter out non-serializable fields
+            db_data = {k: v for k, v in rfp.items()
+                      if k not in ["requirements_graph", "amendment_processor",
+                                   "best_practices_result", "semantic_result", "resilient_result"]}
+
+            # Check if exists
+            existing = await db_store.get(rfp_id)
+            if existing:
+                await db_store.update(rfp_id, db_data)
+            else:
+                await db_store.create(rfp_id, db_data)
+                # Update with remaining fields
+                await db_store.update(rfp_id, db_data)
+        except Exception as e:
+            print(f"[Store] DB sync error for {rfp_id}: {e}")
+
+    def _schedule_db_sync(self, rfp_id: str):
+        """Schedule async database sync (non-blocking)"""
+        if not self._db_available:
+            return
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._sync_to_db(rfp_id))
+            else:
+                asyncio.run(self._sync_to_db(rfp_id))
+        except RuntimeError:
+            # No event loop, try to create one
+            try:
+                asyncio.run(self._sync_to_db(rfp_id))
+            except Exception as e:
+                print(f"[Store] Could not sync to DB: {e}")
+
     def create(self, rfp_id: str, data: Dict) -> Dict:
         """Create a new RFP entry"""
         self.rfps[rfp_id] = {
@@ -255,44 +367,54 @@ class RFPStore:
             "stats": None,
             "amendments": [],
             "amendment_processor": None,
+            "document_metadata": {},
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
+        self._schedule_db_sync(rfp_id)
         return self.rfps[rfp_id]
-    
+
     def get(self, rfp_id: str) -> Optional[Dict]:
         """Get RFP by ID"""
         return self.rfps.get(rfp_id)
-    
+
     def update(self, rfp_id: str, updates: Dict) -> Dict:
         """Update RFP"""
         if rfp_id not in self.rfps:
             raise KeyError(f"RFP not found: {rfp_id}")
-        
+
         self.rfps[rfp_id].update(updates)
         self.rfps[rfp_id]["updated_at"] = datetime.now().isoformat()
+        self._schedule_db_sync(rfp_id)
         return self.rfps[rfp_id]
-    
+
     def list_all(self) -> List[Dict]:
         """List all RFPs"""
         return list(self.rfps.values())
-    
+
     def delete(self, rfp_id: str) -> bool:
         """Delete RFP"""
         if rfp_id in self.rfps:
             del self.rfps[rfp_id]
+            # Also delete from database
+            if self._db_available:
+                import asyncio
+                try:
+                    asyncio.run(db_store.delete(rfp_id))
+                except Exception as e:
+                    print(f"[Store] DB delete error: {e}")
             return True
         return False
-    
+
     def set_status(self, rfp_id: str, status: str, progress: int, message: str, req_count: int = None):
-        """Set processing status"""
+        """Set processing status (in-memory only)"""
         self.processing_status[rfp_id] = ProcessingStatus(
             status=status,
             progress=progress,
             message=message,
             requirements_count=req_count
         )
-    
+
     def get_status(self, rfp_id: str) -> Optional[ProcessingStatus]:
         """Get processing status"""
         return self.processing_status.get(rfp_id)
@@ -342,6 +464,21 @@ app.add_middleware(
 )
 
 
+# ============== Startup Event ==============
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    print("[Startup] PropelAI v4.1 starting...")
+    print(f"[Startup] Upload directory: {UPLOAD_DIR}")
+    print(f"[Startup] Database available: {DATABASE_AVAILABLE and is_db_available()}")
+
+    # Initialize database and load existing RFPs
+    await store.init_database()
+
+    print("[Startup] Ready to serve requests")
+
+
 # ============== Root Route (Web UI) ==============
 
 @app.get("/")
@@ -372,10 +509,19 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
+    # v4.1: Check storage type
+    storage_type = "persistent" if PERSISTENT_DATA_DIR.exists() else "temporary"
+
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "4.0.0",
+        "version": "4.1.0",
+        "storage": {
+            "type": storage_type,
+            "upload_dir": str(UPLOAD_DIR),
+            "database": "connected" if store._db_available else "not configured",
+            "rfps_loaded": len(store.rfps),
+        },
         "components": {
             "enhanced_compliance_agent": "ready",
             "amendment_processor": "ready",

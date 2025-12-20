@@ -1,0 +1,426 @@
+"""
+PropelAI Database Module (v4.1)
+
+Provides persistent storage using PostgreSQL for RFP data.
+File uploads are stored on Render Disk at /data/uploads.
+
+Usage:
+    from api.database import get_db, init_db, RFPModel
+
+    # Initialize on startup
+    await init_db()
+
+    # Use in endpoints
+    async with get_db() as db:
+        rfp = await db.get_rfp(rfp_id)
+"""
+
+import os
+import json
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+from contextlib import asynccontextmanager
+
+from sqlalchemy import (
+    Column, String, Text, Integer, Float, Boolean, DateTime, JSON,
+    ForeignKey, create_engine, Index
+)
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.dialects.postgresql import JSONB
+
+# Database URL from environment (Render provides this automatically)
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+# Convert postgres:// to postgresql:// for SQLAlchemy 2.0
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Async version for asyncpg
+ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1) if DATABASE_URL else ""
+
+# Base for models
+Base = declarative_base()
+
+
+# ============== Models ==============
+
+class RFPModel(Base):
+    """RFP project metadata"""
+    __tablename__ = "rfps"
+
+    id = Column(String(50), primary_key=True)
+    name = Column(String(500), nullable=False, default="Untitled RFP")
+    solicitation_number = Column(String(200), nullable=True)
+    agency = Column(String(500), nullable=True)
+    due_date = Column(String(100), nullable=True)
+    status = Column(String(50), default="created")
+    extraction_mode = Column(String(50), nullable=True)
+
+    # File tracking (paths on disk)
+    files = Column(JSONB, default=list)  # List of filenames
+    file_paths = Column(JSONB, default=list)  # List of full paths
+
+    # Document metadata from guided upload
+    document_metadata = Column(JSONB, default=dict)
+
+    # Extracted data (stored as JSON for flexibility)
+    stats = Column(JSONB, nullable=True)
+    outline = Column(JSONB, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    requirements = relationship("RequirementModel", back_populates="rfp", cascade="all, delete-orphan")
+    amendments = relationship("AmendmentModel", back_populates="rfp", cascade="all, delete-orphan")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API responses"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "solicitation_number": self.solicitation_number,
+            "agency": self.agency,
+            "due_date": self.due_date,
+            "status": self.status,
+            "extraction_mode": self.extraction_mode,
+            "files": self.files or [],
+            "file_paths": self.file_paths or [],
+            "document_metadata": self.document_metadata or {},
+            "stats": self.stats,
+            "outline": self.outline,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "requirements": [r.to_dict() for r in self.requirements] if self.requirements else [],
+            "amendments": [a.to_dict() for a in self.amendments] if self.amendments else [],
+        }
+
+
+class RequirementModel(Base):
+    """Extracted requirement from RFP"""
+    __tablename__ = "requirements"
+
+    id = Column(String(100), primary_key=True)
+    rfp_id = Column(String(50), ForeignKey("rfps.id", ondelete="CASCADE"), nullable=False)
+
+    # Requirement content
+    text = Column(Text, nullable=False)
+    rfp_reference = Column(String(200), nullable=True)  # Original RFP section reference
+
+    # Classification
+    category = Column(String(100), nullable=True)  # L_COMPLIANCE, EVALUATION, TECHNICAL
+    type = Column(String(100), nullable=True)
+    section = Column(String(100), nullable=True)
+    subsection = Column(String(200), nullable=True)
+
+    # Priority and binding
+    priority = Column(String(20), default="medium")
+    binding_level = Column(String(50), nullable=True)  # SHALL, SHOULD, MAY
+    binding_keyword = Column(String(50), nullable=True)
+
+    # Confidence
+    confidence = Column(Float, default=0.7)
+    confidence_level = Column(String(20), nullable=True)
+    needs_review = Column(Boolean, default=False)
+    review_reasons = Column(JSONB, default=list)
+
+    # Source tracking
+    source_page = Column(Integer, nullable=True)
+    source_doc = Column(String(500), nullable=True)
+    source_content_type = Column(String(50), nullable=True)
+    parent_title = Column(String(500), nullable=True)
+
+    # Cross-references
+    cross_references = Column(JSONB, default=list)
+
+    # Relationship
+    rfp = relationship("RFPModel", back_populates="requirements")
+
+    # Index for faster queries
+    __table_args__ = (
+        Index('idx_requirements_rfp_id', 'rfp_id'),
+        Index('idx_requirements_category', 'category'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "rfp_id": self.rfp_id,
+            "text": self.text,
+            "rfp_reference": self.rfp_reference,
+            "category": self.category,
+            "type": self.type,
+            "section": self.section,
+            "subsection": self.subsection,
+            "priority": self.priority,
+            "binding_level": self.binding_level,
+            "binding_keyword": self.binding_keyword,
+            "confidence": self.confidence,
+            "confidence_level": self.confidence_level,
+            "needs_review": self.needs_review,
+            "review_reasons": self.review_reasons or [],
+            "source_page": self.source_page,
+            "source_doc": self.source_doc,
+            "source_content_type": self.source_content_type,
+            "parent_title": self.parent_title,
+            "cross_references": self.cross_references or [],
+        }
+
+
+class AmendmentModel(Base):
+    """RFP amendment tracking"""
+    __tablename__ = "amendments"
+
+    id = Column(String(100), primary_key=True)
+    rfp_id = Column(String(50), ForeignKey("rfps.id", ondelete="CASCADE"), nullable=False)
+
+    amendment_number = Column(Integer, nullable=False)
+    amendment_date = Column(String(100), nullable=True)
+    filename = Column(String(500), nullable=True)
+    file_path = Column(String(1000), nullable=True)
+
+    # Changes detected
+    changes = Column(JSONB, default=list)
+    summary = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    rfp = relationship("RFPModel", back_populates="amendments")
+
+    __table_args__ = (
+        Index('idx_amendments_rfp_id', 'rfp_id'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "rfp_id": self.rfp_id,
+            "amendment_number": self.amendment_number,
+            "amendment_date": self.amendment_date,
+            "filename": self.filename,
+            "file_path": self.file_path,
+            "changes": self.changes or [],
+            "summary": self.summary,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============== Database Connection ==============
+
+# Engine and session factory (initialized lazily)
+_engine = None
+_async_session_factory = None
+
+
+def _get_engine():
+    """Get or create the async engine"""
+    global _engine
+    if _engine is None and ASYNC_DATABASE_URL:
+        _engine = create_async_engine(
+            ASYNC_DATABASE_URL,
+            echo=False,  # Set to True for SQL debugging
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+        )
+    return _engine
+
+
+def _get_session_factory():
+    """Get or create the session factory"""
+    global _async_session_factory
+    if _async_session_factory is None:
+        engine = _get_engine()
+        if engine:
+            _async_session_factory = async_sessionmaker(
+                engine,
+                class_=AsyncSession,
+                expire_on_commit=False
+            )
+    return _async_session_factory
+
+
+async def init_db():
+    """Initialize the database (create tables if needed)"""
+    engine = _get_engine()
+    if engine is None:
+        print("[DB] No DATABASE_URL configured, using in-memory store")
+        return False
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("[DB] Database initialized successfully")
+        return True
+    except Exception as e:
+        print(f"[DB] Failed to initialize database: {e}")
+        return False
+
+
+@asynccontextmanager
+async def get_db_session():
+    """Get a database session (async context manager)"""
+    factory = _get_session_factory()
+    if factory is None:
+        yield None
+        return
+
+    async with factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+def is_db_available() -> bool:
+    """Check if database is configured and available"""
+    return bool(ASYNC_DATABASE_URL)
+
+
+# ============== High-Level Database Operations ==============
+
+class DatabaseStore:
+    """
+    High-level database operations that mirror the in-memory RFPStore interface.
+    This allows easy swapping between in-memory and database storage.
+    """
+
+    async def create(self, rfp_id: str, data: Dict) -> Dict:
+        """Create a new RFP entry"""
+        async with get_db_session() as session:
+            if session is None:
+                raise RuntimeError("Database not available")
+
+            rfp = RFPModel(
+                id=rfp_id,
+                name=data.get("name", "Untitled RFP"),
+                solicitation_number=data.get("solicitation_number"),
+                agency=data.get("agency"),
+                due_date=data.get("due_date"),
+                status="created",
+                files=[],
+                file_paths=[],
+            )
+            session.add(rfp)
+            await session.flush()
+            return rfp.to_dict()
+
+    async def get(self, rfp_id: str) -> Optional[Dict]:
+        """Get RFP by ID"""
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        async with get_db_session() as session:
+            if session is None:
+                return None
+
+            result = await session.execute(
+                select(RFPModel)
+                .options(selectinload(RFPModel.requirements))
+                .options(selectinload(RFPModel.amendments))
+                .where(RFPModel.id == rfp_id)
+            )
+            rfp = result.scalar_one_or_none()
+            return rfp.to_dict() if rfp else None
+
+    async def update(self, rfp_id: str, updates: Dict) -> Dict:
+        """Update RFP fields"""
+        from sqlalchemy import select
+
+        async with get_db_session() as session:
+            if session is None:
+                raise RuntimeError("Database not available")
+
+            result = await session.execute(
+                select(RFPModel).where(RFPModel.id == rfp_id)
+            )
+            rfp = result.scalar_one_or_none()
+            if not rfp:
+                raise KeyError(f"RFP not found: {rfp_id}")
+
+            # Handle requirements specially - they go to separate table
+            if "requirements" in updates:
+                # Delete existing requirements
+                from sqlalchemy import delete
+                await session.execute(
+                    delete(RequirementModel).where(RequirementModel.rfp_id == rfp_id)
+                )
+
+                # Insert new requirements
+                for req_data in updates["requirements"]:
+                    req = RequirementModel(
+                        id=f"{rfp_id}_{req_data.get('id', '')}",
+                        rfp_id=rfp_id,
+                        text=req_data.get("text", ""),
+                        rfp_reference=req_data.get("rfp_reference"),
+                        category=req_data.get("category"),
+                        type=req_data.get("type"),
+                        section=req_data.get("section"),
+                        subsection=req_data.get("subsection"),
+                        priority=req_data.get("priority", "medium"),
+                        binding_level=req_data.get("binding_level"),
+                        binding_keyword=req_data.get("binding_keyword"),
+                        confidence=req_data.get("confidence", 0.7),
+                        confidence_level=req_data.get("confidence_level"),
+                        needs_review=req_data.get("needs_review", False),
+                        review_reasons=req_data.get("review_reasons", []),
+                        source_page=req_data.get("source_page"),
+                        source_doc=req_data.get("source_doc"),
+                        source_content_type=req_data.get("source_content_type"),
+                        parent_title=req_data.get("parent_title"),
+                        cross_references=req_data.get("cross_references", []),
+                    )
+                    session.add(req)
+                del updates["requirements"]
+
+            # Update other fields
+            for key, value in updates.items():
+                if hasattr(rfp, key):
+                    setattr(rfp, key, value)
+
+            rfp.updated_at = datetime.utcnow()
+            await session.flush()
+
+            # Reload with relationships
+            return await self.get(rfp_id)
+
+    async def delete(self, rfp_id: str) -> bool:
+        """Delete RFP"""
+        from sqlalchemy import select, delete
+
+        async with get_db_session() as session:
+            if session is None:
+                return False
+
+            result = await session.execute(
+                select(RFPModel).where(RFPModel.id == rfp_id)
+            )
+            rfp = result.scalar_one_or_none()
+            if not rfp:
+                return False
+
+            await session.delete(rfp)
+            return True
+
+    async def list_all(self) -> List[Dict]:
+        """List all RFPs"""
+        from sqlalchemy import select
+
+        async with get_db_session() as session:
+            if session is None:
+                return []
+
+            result = await session.execute(
+                select(RFPModel).order_by(RFPModel.created_at.desc())
+            )
+            rfps = result.scalars().all()
+            return [rfp.to_dict() for rfp in rfps]
+
+
+# Global database store instance
+db_store = DatabaseStore()
