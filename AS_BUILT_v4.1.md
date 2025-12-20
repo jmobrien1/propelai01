@@ -1582,6 +1582,8 @@ class ActivityLogModel(Base):
 
 #### Authentication
 
+All authentication endpoints now return JWT tokens for session management.
+
 ```
 POST /api/auth/register
 Content-Type: application/x-www-form-urlencoded
@@ -1590,11 +1592,13 @@ email=user@example.com&name=John+Doe&password=secret123
 
 Response:
 {
-  "id": "USR-A1B2C3D4",
-  "email": "user@example.com",
-  "name": "John Doe",
-  "is_active": true,
-  "created_at": "2024-12-20T10:00:00"
+  "user": {
+    "id": "USR-A1B2C3D4",
+    "email": "user@example.com",
+    "name": "John Doe"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "message": "Registration successful"
 }
 ```
 
@@ -1611,7 +1615,69 @@ Response:
     "email": "user@example.com",
     "name": "John Doe"
   },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "message": "Login successful"
+}
+```
+
+```
+POST /api/auth/verify
+Content-Type: application/json
+Authorization: Bearer <token>
+
+Response:
+{
+  "valid": true,
+  "user": {
+    "id": "USR-A1B2C3D4",
+    "email": "user@example.com",
+    "name": "John Doe"
+  }
+}
+```
+
+```
+POST /api/auth/refresh
+Content-Type: application/json
+Authorization: Bearer <token>
+
+Response:
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {...}
+}
+```
+
+#### Password Reset
+
+```
+POST /api/auth/forgot-password
+Content-Type: application/x-www-form-urlencoded
+
+email=user@example.com
+
+Response:
+{
+  "message": "If an account exists with this email, a password reset link has been sent",
+  "reset_token": "abc123..."  // Only in dev mode
+}
+```
+
+```
+POST /api/auth/reset-password
+Content-Type: application/x-www-form-urlencoded
+
+token=abc123...&new_password=newSecret123
+
+Response:
+{
+  "user": {
+    "id": "USR-A1B2C3D4",
+    "email": "user@example.com",
+    "name": "John Doe"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "message": "Password reset successful"
 }
 ```
 

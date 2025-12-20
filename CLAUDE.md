@@ -137,8 +137,12 @@ A winning proposal ensures:
 - `viewer`: Read-only access to library content
 
 **API Endpoints**:
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
+- `POST /api/auth/register` - Register new user (returns JWT token)
+- `POST /api/auth/login` - Login user (returns JWT token)
+- `POST /api/auth/verify` - Verify JWT token
+- `POST /api/auth/refresh` - Refresh JWT token
+- `POST /api/auth/forgot-password` - Request password reset token
+- `POST /api/auth/reset-password` - Reset password with token
 - `POST /api/auth/verify-key` - Verify API key
 - `POST /api/teams` - Create team
 - `GET /api/teams` - List teams
@@ -162,7 +166,9 @@ A winning proposal ensures:
 
 **Frontend Components**:
 - `VectorSearchPanel`: AI search tab in Library view
-- `TeamsView`: Team workspace management UI
+- `TeamsView`: Team workspace management UI with API key management
+- `AuthModal`: Login/register/forgot-password/reset-password UI
+- User profile section with JWT-based session management
 - Modal dialogs for creating teams and adding members
 
 ## 9. Reference Documents

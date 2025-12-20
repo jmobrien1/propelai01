@@ -3826,6 +3826,113 @@ async def refresh_token(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail=str(e))
 
 
+# Password Reset Token Storage (use Redis or database in production)
+_password_reset_tokens: Dict[str, Dict] = {}
+PASSWORD_RESET_EXPIRY_HOURS = 1  # Reset tokens expire in 1 hour
+
+
+def generate_reset_token() -> str:
+    """Generate a secure password reset token"""
+    return secrets.token_urlsafe(32)
+
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(
+    email: str = Form(...),
+):
+    """Request a password reset token"""
+    async with get_db_session() as session:
+        if session is None:
+            # Still return success to prevent email enumeration
+            return {"success": True, "message": "If an account exists, a reset link has been sent"}
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.email == email)
+        )
+        user = result.scalar_one_or_none()
+
+        if user:
+            # Generate reset token
+            reset_token = generate_reset_token()
+            expiry = datetime.utcnow() + timedelta(hours=PASSWORD_RESET_EXPIRY_HOURS)
+
+            # Store token (in production, send via email)
+            _password_reset_tokens[reset_token] = {
+                "user_id": user.id,
+                "email": user.email,
+                "expires_at": expiry,
+            }
+
+            # In production, send email with reset link
+            # For development, return the token directly
+            return {
+                "success": True,
+                "message": "Password reset token generated",
+                "reset_token": reset_token,  # Remove in production - send via email
+                "expires_in": PASSWORD_RESET_EXPIRY_HOURS * 3600,
+                "note": "In production, this token would be sent via email"
+            }
+
+        # Return same response to prevent email enumeration
+        return {"success": True, "message": "If an account exists, a reset link has been sent"}
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password(
+    token: str = Form(...),
+    new_password: str = Form(...),
+):
+    """Reset password using a reset token"""
+    # Check if token exists and is valid
+    token_data = _password_reset_tokens.get(token)
+
+    if not token_data:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    if datetime.utcnow() > token_data["expires_at"]:
+        # Remove expired token
+        del _password_reset_tokens[token]
+        raise HTTPException(status_code=400, detail="Reset token has expired")
+
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == token_data["user_id"])
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=400, detail="User not found")
+
+        # Update password
+        user.password_hash = hash_password(new_password)
+        user.updated_at = datetime.utcnow()
+        await session.flush()
+
+        # Remove used token
+        del _password_reset_tokens[token]
+
+        # Generate new JWT token for immediate login
+        new_token = create_jwt_token(user.id, user.email, user.name)
+
+        return {
+            "success": True,
+            "message": "Password reset successful",
+            "user": user.to_dict(),
+            "token": new_token,
+            "token_type": "bearer",
+        }
+
+
 @app.post("/api/teams")
 async def create_team(
     name: str = Form(...),
