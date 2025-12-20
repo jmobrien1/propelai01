@@ -1,8 +1,13 @@
 """
-PropelAI API v2.3
-FastAPI backend with Enhanced Compliance Agent integration
+PropelAI API v4.0
+FastAPI backend with Enhanced Compliance Agent + Trust Gate integration
 
-Endpoints:
+v4.0 Endpoints (Trust Gate):
+- GET /api/requirements/{req_id}/source - Get source coordinates for a requirement
+- GET /api/documents/{doc_id}/page/{page_num}/image - Get PDF page as image
+- POST /api/rfp/{rfp_id}/strategy - Generate win themes and strategy
+
+Core Endpoints:
 - POST /api/rfp/upload - Upload RFP documents
 - POST /api/rfp/process - Process uploaded documents
 - GET /api/rfp/{rfp_id} - Get RFP details and requirements
@@ -118,6 +123,48 @@ try:
 except ImportError as e:
     print(f"Warning: Guided upload not available: {e}")
     GUIDED_UPLOAD_AVAILABLE = False
+
+# v4.0: Trust Gate - PDF Coordinate Extraction
+try:
+    from agents.enhanced_compliance import (
+        TRUST_GATE_AVAILABLE,
+        BoundingBox,
+        SourceCoordinate,
+        PDFCoordinateExtractor,
+        get_coordinate_extractor,
+    )
+    if TRUST_GATE_AVAILABLE:
+        coordinate_extractor = get_coordinate_extractor()
+        print("=== PropelAI Trust Gate v4.0 (PDF coordinate extraction) ===")
+    else:
+        coordinate_extractor = None
+except ImportError as e:
+    print(f"Warning: Trust Gate not available: {e}")
+    TRUST_GATE_AVAILABLE = False
+    coordinate_extractor = None
+
+# v4.0: Strategy Agent
+try:
+    from agents.strategy_agent import StrategyAgent
+    STRATEGY_AGENT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Strategy Agent not available: {e}")
+    STRATEGY_AGENT_AVAILABLE = False
+    StrategyAgent = None
+
+# v4.0: Drafting Workflow
+try:
+    from agents.drafting_workflow import (
+        run_drafting_workflow,
+        build_drafting_graph,
+        LANGGRAPH_AVAILABLE,
+    )
+    DRAFTING_WORKFLOW_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Drafting workflow not available: {e}")
+    DRAFTING_WORKFLOW_AVAILABLE = False
+    run_drafting_workflow = None
+    LANGGRAPH_AVAILABLE = False
 
 
 # ============== Configuration ==============
@@ -275,8 +322,8 @@ if BEST_PRACTICES_AVAILABLE:
 
 app = FastAPI(
     title="PropelAI API",
-    description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices",
-    version="2.10.0"
+    description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices. v4.0 adds Trust Gate source traceability.",
+    version="4.0.0"
 )
 
 # CORS - allow all origins for development
@@ -322,7 +369,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.9.0",
+        "version": "4.0.0",
         "components": {
             "enhanced_compliance_agent": "ready",
             "amendment_processor": "ready",
@@ -331,6 +378,11 @@ async def health_check():
             "semantic_ctm_export": "ready" if semantic_ctm_exporter else "not available",
             "best_practices_extractor": "ready" if best_practices_extractor else "not available",
             "best_practices_ctm_export": "ready" if best_practices_exporter else "not available",
+            # v4.0 components
+            "trust_gate": "ready" if TRUST_GATE_AVAILABLE and coordinate_extractor else "not available",
+            "strategy_agent": "ready" if STRATEGY_AGENT_AVAILABLE else "not available",
+            "drafting_workflow": "ready" if DRAFTING_WORKFLOW_AVAILABLE else "not available",
+            "langgraph": "available" if LANGGRAPH_AVAILABLE else "not installed",
         }
     }
 
@@ -1664,12 +1716,616 @@ async def get_requirement(rfp_id: str, req_id: str):
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     for req in rfp["requirements"]:
         if req["id"] == req_id:
             return req
-    
+
     raise HTTPException(status_code=404, detail="Requirement not found")
+
+
+# ============== v4.0: Trust Gate - Source Coordinates ==============
+
+@app.get("/api/rfp/{rfp_id}/requirements/{req_id}/source")
+async def get_requirement_source(rfp_id: str, req_id: str):
+    """
+    v4.0 Trust Gate: Get source coordinates for a requirement.
+
+    Returns the exact PDF location (page, bounding box) where this
+    requirement was extracted from, enabling one-click source verification.
+
+    Response includes:
+    - document_id: PDF file hash
+    - page_number: 1-indexed page
+    - bounding_box: CSS-ready coordinates for highlighting
+    - text_snippet: Original text at that location
+    - confidence: Extraction confidence score
+    """
+    if not TRUST_GATE_AVAILABLE or not coordinate_extractor:
+        raise HTTPException(
+            status_code=501,
+            detail="Trust Gate not available. Install pdfplumber: pip install pdfplumber>=0.10.0"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Find the requirement
+    requirement = None
+    for req in rfp["requirements"]:
+        if req["id"] == req_id:
+            requirement = req
+            break
+
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # Check if we have pre-computed source coordinates
+    if requirement.get("source_coordinates"):
+        return {
+            "requirement_id": req_id,
+            "source": requirement["source_coordinates"],
+            "cached": True
+        }
+
+    # Otherwise, search the source document for this requirement's text
+    source_doc = requirement.get("source_doc", "")
+    req_text = requirement.get("text", "")
+
+    if not source_doc or not req_text:
+        raise HTTPException(
+            status_code=404,
+            detail="Cannot locate source: missing source document or requirement text"
+        )
+
+    # Find the PDF file path
+    file_paths = rfp.get("file_paths", [])
+    pdf_path = None
+    for fp in file_paths:
+        if source_doc in fp and fp.lower().endswith(".pdf"):
+            pdf_path = fp
+            break
+
+    if not pdf_path:
+        # Try fuzzy matching on filename
+        for fp in file_paths:
+            if fp.lower().endswith(".pdf"):
+                pdf_path = fp
+                break
+
+    if not pdf_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source PDF not found for document: {source_doc}"
+        )
+
+    try:
+        # Find requirement location in PDF
+        source_coord = coordinate_extractor.find_requirement_location(
+            pdf_path,
+            req_text,
+            context_words=10
+        )
+
+        if source_coord:
+            return {
+                "requirement_id": req_id,
+                "source": source_coord.to_dict(),
+                "cached": False,
+                "highlight_data": {
+                    "page_number": source_coord.page_number,
+                    "css_position": source_coord.bounding_box.to_css_percent(),
+                }
+            }
+        else:
+            # Text not found - return page info if available
+            source_page = requirement.get("source_page")
+            return {
+                "requirement_id": req_id,
+                "source": None,
+                "fallback": {
+                    "page_number": source_page,
+                    "document": source_doc,
+                    "message": "Exact location not found. Navigate to page manually."
+                }
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error extracting source coordinates: {str(e)}"
+        )
+
+
+@app.get("/api/documents/{doc_id}/page/{page_num}/image")
+async def get_page_image(doc_id: str, page_num: int, dpi: int = 150):
+    """
+    v4.0 Trust Gate: Get a rendered PDF page as an image.
+
+    Returns a PNG image of the specified page for display in the
+    PDF viewer with requirement highlighting overlay.
+
+    Args:
+        doc_id: Document hash (from extraction) or RFP ID
+        page_num: 1-indexed page number
+        dpi: Resolution (default 150, max 300)
+
+    Returns:
+        PNG image of the page
+    """
+    # Limit DPI for performance
+    dpi = min(dpi, 300)
+
+    # Find the document - doc_id could be RFP ID or document hash
+    rfp = store.get(doc_id)
+    pdf_path = None
+
+    if rfp:
+        # doc_id is RFP ID - get first PDF
+        for fp in rfp.get("file_paths", []):
+            if fp.lower().endswith(".pdf"):
+                pdf_path = fp
+                break
+    else:
+        # doc_id might be a document hash - search all RFPs
+        for rfp_data in store.list_all():
+            for fp in rfp_data.get("file_paths", []):
+                if fp.lower().endswith(".pdf"):
+                    # Check if this file's hash matches
+                    try:
+                        import hashlib
+                        with open(fp, "rb") as f:
+                            file_hash = hashlib.md5()
+                            for chunk in iter(lambda: f.read(8192), b""):
+                                file_hash.update(chunk)
+                            if file_hash.hexdigest()[:16] == doc_id:
+                                pdf_path = fp
+                                break
+                    except Exception:
+                        pass
+            if pdf_path:
+                break
+
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not Path(pdf_path).exists():
+        raise HTTPException(status_code=404, detail="PDF file no longer exists")
+
+    try:
+        # Try using pdf2image if available
+        try:
+            from pdf2image import convert_from_path
+            images = convert_from_path(
+                pdf_path,
+                first_page=page_num,
+                last_page=page_num,
+                dpi=dpi
+            )
+            if not images:
+                raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
+
+            # Convert to PNG bytes
+            import io
+            img_buffer = io.BytesIO()
+            images[0].save(img_buffer, format="PNG")
+            img_buffer.seek(0)
+
+            return Response(
+                content=img_buffer.getvalue(),
+                media_type="image/png",
+                headers={"Content-Disposition": f"inline; filename=page_{page_num}.png"}
+            )
+
+        except ImportError:
+            # Fallback: use pdfplumber for basic rendering
+            if not TRUST_GATE_AVAILABLE:
+                raise HTTPException(
+                    status_code=501,
+                    detail="PDF rendering requires pdf2image or pdfplumber. Install with: pip install pdf2image"
+                )
+
+            import pdfplumber
+            with pdfplumber.open(pdf_path) as pdf:
+                if page_num < 1 or page_num > len(pdf.pages):
+                    raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
+
+                page = pdf.pages[page_num - 1]
+                img = page.to_image(resolution=dpi)
+
+                import io
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format="PNG")
+                img_buffer.seek(0)
+
+                return Response(
+                    content=img_buffer.getvalue(),
+                    media_type="image/png",
+                    headers={"Content-Disposition": f"inline; filename=page_{page_num}.png"}
+                )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error rendering page: {str(e)}")
+
+
+@app.post("/api/rfp/{rfp_id}/highlight")
+async def get_requirement_highlight(rfp_id: str, requirement_text: str = Form(...)):
+    """
+    v4.0 Trust Gate: Get highlight data for requirement text in RFP PDFs.
+
+    Searches all PDF documents in the RFP for the given text and
+    returns coordinates for highlighting.
+
+    Args:
+        rfp_id: RFP identifier
+        requirement_text: Text to find and highlight
+
+    Returns:
+        Highlight data including page number and CSS positioning
+    """
+    if not TRUST_GATE_AVAILABLE or not coordinate_extractor:
+        raise HTTPException(
+            status_code=501,
+            detail="Trust Gate not available"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Search all PDFs for this text
+    results = []
+    for fp in rfp.get("file_paths", []):
+        if not fp.lower().endswith(".pdf"):
+            continue
+
+        try:
+            highlight_data = coordinate_extractor.highlight_requirement(
+                fp,
+                requirement_text
+            )
+            if highlight_data:
+                highlight_data["document"] = Path(fp).name
+                results.append(highlight_data)
+        except Exception as e:
+            # Continue searching other documents
+            pass
+
+    if results:
+        return {
+            "found": True,
+            "results": results,
+            "primary": results[0]  # First match is primary
+        }
+    else:
+        return {
+            "found": False,
+            "message": "Text not found in any RFP documents"
+        }
+
+
+# ============== v4.0: Strategy Engine ==============
+
+@app.post("/api/rfp/{rfp_id}/strategy")
+async def generate_strategy(rfp_id: str):
+    """
+    v4.0 Strategy Engine: Generate win themes and strategy for RFP.
+
+    Analyzes evaluation factors (Section M) and requirements to produce:
+    - Ranked win themes with discriminators
+    - Suggested page allocations per theme
+    - Ghosting language library
+    - Storyboard outline
+
+    Requires processed RFP with requirements extracted.
+    """
+    if not STRATEGY_AGENT_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="Strategy Agent not available"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements = rfp.get("requirements", [])
+    if not requirements:
+        raise HTTPException(
+            status_code=400,
+            detail="No requirements found. Process RFP first."
+        )
+
+    try:
+        # Initialize strategy agent
+        strategy_agent = StrategyAgent()
+
+        # Get evaluation criteria (Section M requirements)
+        eval_requirements = [
+            r for r in requirements
+            if r.get("category") == "EVALUATION" or r.get("section", "").upper() == "M"
+        ]
+
+        # Get technical requirements for capability mapping
+        tech_requirements = [
+            r for r in requirements
+            if r.get("category") == "TECHNICAL" or r.get("section", "").upper() in ["C", "SOW", "PWS"]
+        ]
+
+        # Run strategy analysis
+        rfp_data = {
+            "id": rfp_id,
+            "name": rfp.get("name", ""),
+            "evaluation_requirements": eval_requirements,
+            "technical_requirements": tech_requirements,
+            "all_requirements": requirements,
+        }
+
+        strategy_result = strategy_agent.analyze(rfp_data)
+
+        # Store strategy in RFP
+        store.update(rfp_id, {"strategy": strategy_result})
+
+        return {
+            "status": "generated",
+            "rfp_id": rfp_id,
+            "strategy": strategy_result
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Strategy generation failed: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/strategy")
+async def get_strategy(rfp_id: str):
+    """Get previously generated strategy for RFP"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    strategy = rfp.get("strategy")
+    if not strategy:
+        raise HTTPException(
+            status_code=404,
+            detail="No strategy generated. Use POST /api/rfp/{rfp_id}/strategy first."
+        )
+
+    return {
+        "rfp_id": rfp_id,
+        "strategy": strategy
+    }
+
+
+# ============== v4.0: Drafting Workflow ==============
+
+@app.post("/api/rfp/{rfp_id}/draft")
+async def start_drafting(
+    rfp_id: str,
+    requirement_id: str = Form(...),
+    target_word_count: int = Form(250),
+    background_tasks: BackgroundTasks = None
+):
+    """
+    v4.0 Drafting Agent: Generate proposal content for a requirement.
+
+    Uses the LangGraph F-B-P workflow to:
+    1. Research company library for evidence
+    2. Structure Feature-Benefit-Proof blocks
+    3. Generate narrative prose
+    4. Quality check and revise
+
+    Args:
+        rfp_id: RFP identifier
+        requirement_id: Specific requirement to draft for
+        target_word_count: Target length for the draft
+
+    Returns:
+        Draft content with quality scores and F-B-P structure
+    """
+    if not DRAFTING_WORKFLOW_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="Drafting workflow not available. Install langgraph: pip install langgraph"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Find the requirement
+    requirements = rfp.get("requirements", [])
+    requirement = None
+    for req in requirements:
+        if req.get("id") == requirement_id:
+            requirement = req
+            break
+
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # Get strategy (win themes) if available
+    strategy = rfp.get("strategy", {})
+    win_themes = strategy.get("win_themes", [])
+    primary_theme = win_themes[0] if win_themes else None
+
+    try:
+        # Run the drafting workflow
+        result = run_drafting_workflow(
+            requirement=requirement,
+            win_theme=primary_theme,
+            target_word_count=target_word_count,
+        )
+
+        # Store draft in RFP
+        drafts = rfp.get("drafts", {})
+        drafts[requirement_id] = {
+            "draft_text": result.get("draft_text", ""),
+            "quality_scores": result.get("quality_scores", {}),
+            "fbp_blocks": result.get("fbp_blocks", []),
+            "revision_count": result.get("revision_count", 0),
+            "word_count": result.get("draft_word_count", 0),
+            "generated_at": datetime.now().isoformat()
+        }
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": "completed",
+            "requirement_id": requirement_id,
+            "draft": result.get("draft_text", ""),
+            "word_count": result.get("draft_word_count", 0),
+            "quality_scores": result.get("quality_scores", {}),
+            "fbp_blocks": result.get("fbp_blocks", []),
+            "approved": result.get("approved", False),
+            "langgraph_used": LANGGRAPH_AVAILABLE
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Drafting failed: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/drafts")
+async def get_drafts(rfp_id: str):
+    """Get all generated drafts for an RFP"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    return {
+        "rfp_id": rfp_id,
+        "drafts": rfp.get("drafts", {}),
+        "count": len(rfp.get("drafts", {}))
+    }
+
+
+@app.get("/api/rfp/{rfp_id}/drafts/{requirement_id}")
+async def get_draft(rfp_id: str, requirement_id: str):
+    """Get a specific draft by requirement ID"""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    drafts = rfp.get("drafts", {})
+    draft = drafts.get(requirement_id)
+
+    if not draft:
+        raise HTTPException(
+            status_code=404,
+            detail="No draft found for this requirement. Use POST /api/rfp/{rfp_id}/draft first."
+        )
+
+    return {
+        "rfp_id": rfp_id,
+        "requirement_id": requirement_id,
+        "draft": draft
+    }
+
+
+@app.post("/api/rfp/{rfp_id}/drafts/{requirement_id}/feedback")
+async def submit_draft_feedback(
+    rfp_id: str,
+    requirement_id: str,
+    feedback: str = Form(...),
+    approved: bool = Form(False)
+):
+    """
+    Submit feedback on a draft and trigger revision.
+
+    This is the human-in-the-loop endpoint that allows users to
+    provide feedback that gets incorporated into the next revision.
+    """
+    if not DRAFTING_WORKFLOW_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Drafting workflow not available")
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    drafts = rfp.get("drafts", {})
+    draft = drafts.get(requirement_id)
+
+    if not draft:
+        raise HTTPException(status_code=404, detail="No draft found for this requirement")
+
+    if approved:
+        # Mark as approved
+        draft["approved"] = True
+        draft["feedback_history"] = draft.get("feedback_history", [])
+        draft["feedback_history"].append({
+            "feedback": feedback,
+            "approved": True,
+            "timestamp": datetime.now().isoformat()
+        })
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": "approved",
+            "requirement_id": requirement_id,
+            "draft": draft
+        }
+
+    # Find the requirement
+    requirement = None
+    for req in rfp.get("requirements", []):
+        if req.get("id") == requirement_id:
+            requirement = req
+            break
+
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # Get strategy
+    strategy = rfp.get("strategy", {})
+    win_themes = strategy.get("win_themes", [])
+    primary_theme = win_themes[0] if win_themes else None
+
+    try:
+        # Re-run workflow with feedback
+        result = run_drafting_workflow(
+            requirement=requirement,
+            win_theme=primary_theme,
+            target_word_count=draft.get("word_count", 250),
+        )
+
+        # Update draft
+        draft["draft_text"] = result.get("draft_text", "")
+        draft["quality_scores"] = result.get("quality_scores", {})
+        draft["revision_count"] = draft.get("revision_count", 0) + 1
+        draft["word_count"] = result.get("draft_word_count", 0)
+        draft["revised_at"] = datetime.now().isoformat()
+        draft["feedback_history"] = draft.get("feedback_history", [])
+        draft["feedback_history"].append({
+            "feedback": feedback,
+            "approved": False,
+            "timestamp": datetime.now().isoformat()
+        })
+
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": "revised",
+            "requirement_id": requirement_id,
+            "draft": draft,
+            "revision_count": draft["revision_count"]
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Revision failed: {str(e)}"
+        )
 
 
 # ============== Export ==============

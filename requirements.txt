@@ -12,5 +12,13 @@ pdfplumber>=0.10.0           # v4.0 Trust Gate: PDF coordinate extraction
 python-docx>=0.8.11
 openpyxl>=3.0.10
 
+# v4.0 Agentic Workflow
+langgraph>=0.0.40            # v4.0 Drafting Agent: LangGraph workflow orchestration
+
+# LLM Providers (optional - at least one recommended)
+# google-generativeai>=0.3.0  # Gemini API
+# anthropic>=0.18.0           # Claude API
+# openai>=1.10.0              # OpenAI API
+
 # Utils
 httpx>=0.24.0
