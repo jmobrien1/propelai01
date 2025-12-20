@@ -3559,6 +3559,430 @@ async def add_differentiator_vector(
         raise HTTPException(status_code=500, detail="Failed to add differentiator")
 
 
+# ============== v4.1: Team Workspaces & Role-Based Access ==============
+
+from api.database import (
+    UserModel, TeamModel, TeamMembershipModel, ActivityLogModel, UserRole
+)
+import uuid
+import hashlib
+import secrets
+
+
+def generate_id() -> str:
+    """Generate a short unique ID"""
+    return str(uuid.uuid4())[:8].upper()
+
+
+def hash_password(password: str) -> str:
+    """Simple password hashing (use bcrypt in production)"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against hash"""
+    return hash_password(password) == password_hash
+
+
+# Current user context (simplified - use JWT in production)
+_current_user: Optional[Dict] = None
+
+
+def get_current_user() -> Optional[Dict]:
+    """Get current user from context"""
+    return _current_user
+
+
+def require_role(required_role: str, team_id: str = None):
+    """Decorator to require a specific role"""
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            user = get_current_user()
+            if not user:
+                raise HTTPException(status_code=401, detail="Authentication required")
+            # In production, check user's role for the team
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+@app.post("/api/auth/register")
+async def register_user(
+    email: str = Form(...),
+    name: str = Form(...),
+    password: str = Form(...),
+):
+    """Register a new user"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        # Check if email exists
+        result = await session.execute(
+            select(UserModel).where(UserModel.email == email)
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        user_id = generate_id()
+        user = UserModel(
+            id=user_id,
+            email=email,
+            name=name,
+            password_hash=hash_password(password),
+        )
+        session.add(user)
+        await session.flush()
+
+        return {
+            "success": True,
+            "user": user.to_dict(),
+            "message": "Registration successful",
+        }
+
+
+@app.post("/api/auth/login")
+async def login_user(
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    """Login user (simplified - use JWT in production)"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.email == email)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user or not verify_password(password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        user.last_login = datetime.utcnow()
+        await session.flush()
+
+        # In production, return JWT token
+        return {
+            "success": True,
+            "user": user.to_dict(),
+            "token": f"demo-token-{user.id}",  # Replace with JWT
+        }
+
+
+@app.get("/api/users/me")
+async def get_current_user_info():
+    """Get current user info"""
+    user = get_current_user()
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+@app.post("/api/teams")
+async def create_team(
+    name: str = Form(...),
+    slug: str = Form(None),
+    description: str = Form(None),
+):
+    """Create a new team workspace"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        # Generate slug if not provided
+        if not slug:
+            slug = name.lower().replace(" ", "-").replace("_", "-")
+            slug = "".join(c for c in slug if c.isalnum() or c == "-")
+
+        # Check if slug exists
+        result = await session.execute(
+            select(TeamModel).where(TeamModel.slug == slug)
+        )
+        if result.scalar_one_or_none():
+            slug = f"{slug}-{generate_id().lower()}"
+
+        team_id = generate_id()
+        team = TeamModel(
+            id=team_id,
+            name=name,
+            slug=slug,
+            description=description,
+        )
+        session.add(team)
+        await session.flush()
+
+        return {
+            "success": True,
+            "team": team.to_dict(),
+        }
+
+
+@app.get("/api/teams")
+async def list_teams():
+    """List all teams (for demo - in production, filter by user)"""
+    async with get_db_session() as session:
+        if session is None:
+            return {"teams": []}
+
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        result = await session.execute(
+            select(TeamModel)
+            .options(selectinload(TeamModel.memberships))
+            .order_by(TeamModel.created_at.desc())
+        )
+        teams = result.scalars().all()
+        return {"teams": [t.to_dict() for t in teams]}
+
+
+@app.get("/api/teams/{team_id}")
+async def get_team(team_id: str):
+    """Get team details"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        result = await session.execute(
+            select(TeamModel)
+            .options(selectinload(TeamModel.memberships).selectinload(TeamMembershipModel.user))
+            .where(TeamModel.id == team_id)
+        )
+        team = result.scalar_one_or_none()
+
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+
+        team_dict = team.to_dict()
+        team_dict["members"] = [m.to_dict() for m in team.memberships]
+        return team_dict
+
+
+@app.put("/api/teams/{team_id}")
+async def update_team(
+    team_id: str,
+    name: str = Form(None),
+    description: str = Form(None),
+    settings: str = Form(None),  # JSON string
+):
+    """Update team settings (admin only)"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(TeamModel).where(TeamModel.id == team_id)
+        )
+        team = result.scalar_one_or_none()
+
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+
+        if name:
+            team.name = name
+        if description:
+            team.description = description
+        if settings:
+            import json
+            team.settings = json.loads(settings)
+
+        await session.flush()
+        return {"success": True, "team": team.to_dict()}
+
+
+@app.delete("/api/teams/{team_id}")
+async def delete_team(team_id: str):
+    """Delete team (admin only)"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(TeamModel).where(TeamModel.id == team_id)
+        )
+        team = result.scalar_one_or_none()
+
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+
+        await session.delete(team)
+        return {"success": True, "message": f"Team {team_id} deleted"}
+
+
+@app.post("/api/teams/{team_id}/members")
+async def add_team_member(
+    team_id: str,
+    email: str = Form(...),
+    role: str = Form("viewer"),  # admin, contributor, viewer
+):
+    """Add a member to the team"""
+    if role not in ["admin", "contributor", "viewer"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        # Find user by email
+        result = await session.execute(
+            select(UserModel).where(UserModel.email == email)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Check if already a member
+        result = await session.execute(
+            select(TeamMembershipModel).where(
+                TeamMembershipModel.team_id == team_id,
+                TeamMembershipModel.user_id == user.id
+            )
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="User already a member")
+
+        membership = TeamMembershipModel(
+            id=generate_id(),
+            team_id=team_id,
+            user_id=user.id,
+            role=role,
+        )
+        session.add(membership)
+        await session.flush()
+
+        return {
+            "success": True,
+            "membership": membership.to_dict(),
+        }
+
+
+@app.put("/api/teams/{team_id}/members/{user_id}")
+async def update_member_role(
+    team_id: str,
+    user_id: str,
+    role: str = Form(...),
+):
+    """Update member's role (admin only)"""
+    if role not in ["admin", "contributor", "viewer"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(TeamMembershipModel).where(
+                TeamMembershipModel.team_id == team_id,
+                TeamMembershipModel.user_id == user_id
+            )
+        )
+        membership = result.scalar_one_or_none()
+
+        if not membership:
+            raise HTTPException(status_code=404, detail="Membership not found")
+
+        membership.role = role
+        await session.flush()
+
+        return {"success": True, "membership": membership.to_dict()}
+
+
+@app.delete("/api/teams/{team_id}/members/{user_id}")
+async def remove_team_member(team_id: str, user_id: str):
+    """Remove member from team (admin only)"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(TeamMembershipModel).where(
+                TeamMembershipModel.team_id == team_id,
+                TeamMembershipModel.user_id == user_id
+            )
+        )
+        membership = result.scalar_one_or_none()
+
+        if not membership:
+            raise HTTPException(status_code=404, detail="Membership not found")
+
+        await session.delete(membership)
+        return {"success": True, "message": "Member removed"}
+
+
+@app.get("/api/teams/{team_id}/activity")
+async def get_team_activity(
+    team_id: str,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Get team activity log"""
+    async with get_db_session() as session:
+        if session is None:
+            return {"activities": []}
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(ActivityLogModel)
+            .where(ActivityLogModel.team_id == team_id)
+            .order_by(ActivityLogModel.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        activities = result.scalars().all()
+        return {"activities": [a.to_dict() for a in activities]}
+
+
+async def log_activity(
+    team_id: str,
+    user_id: str,
+    action: str,
+    resource_type: str,
+    resource_id: str = None,
+    details: Dict = None,
+):
+    """Log an activity for audit trail"""
+    try:
+        async with get_db_session() as session:
+            if session is None:
+                return
+
+            activity = ActivityLogModel(
+                id=generate_id(),
+                team_id=team_id,
+                user_id=user_id,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                details=details or {},
+            )
+            session.add(activity)
+            await session.flush()
+    except Exception as e:
+        print(f"[Activity Log] Error: {e}")
+
+
 # ============== Main Entry ==============
 
 if __name__ == "__main__":

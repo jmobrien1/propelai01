@@ -176,6 +176,118 @@ CREATE INDEX IF NOT EXISTS idx_capabilities_category ON capabilities(category);
 CREATE INDEX IF NOT EXISTS idx_past_performances_agency ON past_performances(client_agency);
 CREATE INDEX IF NOT EXISTS idx_key_personnel_role ON key_personnel(role);
 
+-- =============================================================================
+-- Team Workspaces & Role-Based Access Control (v4.1)
+-- =============================================================================
+
+-- User roles enum type
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('admin', 'contributor', 'viewer');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- Users table (basic auth - can integrate with OAuth later)
+CREATE TABLE IF NOT EXISTS users (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255),  -- NULL if using OAuth
+    avatar_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT true,
+    last_login TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Team workspaces
+CREATE TABLE IF NOT EXISTS teams (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(100) NOT NULL UNIQUE,  -- URL-friendly identifier
+    description TEXT,
+    settings JSONB DEFAULT '{}',  -- Team-level settings
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Team memberships with roles
+CREATE TABLE IF NOT EXISTS team_memberships (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role user_role NOT NULL DEFAULT 'viewer',
+    invited_by UUID REFERENCES users(id),
+    joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(team_id, user_id)
+);
+
+-- Link company profiles to teams (shared workspaces)
+ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
+
+-- Link capabilities to teams
+ALTER TABLE capabilities ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
+
+-- Link past performances to teams
+ALTER TABLE past_performances ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
+
+-- Link key personnel to teams
+ALTER TABLE key_personnel ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
+
+-- Link differentiators to teams
+ALTER TABLE differentiators ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
+
+-- API keys for programmatic access
+CREATE TABLE IF NOT EXISTS api_keys (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    key_hash VARCHAR(255) NOT NULL,  -- SHA256 hash of the key
+    key_prefix VARCHAR(10) NOT NULL,  -- First 8 chars for identification
+    permissions JSONB DEFAULT '["read"]',  -- ["read", "write", "admin"]
+    last_used TIMESTAMP WITH TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Activity log for audit trail
+CREATE TABLE IF NOT EXISTS activity_log (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(100) NOT NULL,  -- create, update, delete, search, export
+    resource_type VARCHAR(100) NOT NULL,  -- capability, past_performance, etc.
+    resource_id UUID,
+    details JSONB,
+    ip_address INET,
+    user_agent TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for team-based queries
+CREATE INDEX IF NOT EXISTS idx_team_memberships_team ON team_memberships(team_id);
+CREATE INDEX IF NOT EXISTS idx_team_memberships_user ON team_memberships(user_id);
+CREATE INDEX IF NOT EXISTS idx_capabilities_team ON capabilities(team_id);
+CREATE INDEX IF NOT EXISTS idx_past_performances_team ON past_performances(team_id);
+CREATE INDEX IF NOT EXISTS idx_key_personnel_team ON key_personnel(team_id);
+CREATE INDEX IF NOT EXISTS idx_differentiators_team ON differentiators(team_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_team ON activity_log(team_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
+
+-- Triggers for updated_at
+CREATE TRIGGER update_users_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_teams_updated_at
+    BEFORE UPDATE ON teams
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- Grant permissions (adjust as needed for your setup)
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO propelai;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO propelai;

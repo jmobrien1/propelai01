@@ -442,6 +442,10 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card h3 { font-size: 20px; margin-bottom: 8px; }
         .processing-card p { color: var(--text-secondary); margin-bottom: 24px; }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(10, 10, 15, 0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(8px); }
+        .modal { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; max-width: 480px; width: 100%; margin: 16px; animation: modalIn 0.2s ease; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         
         .actions-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
         .search-box { display: flex; align-items: center; gap: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 16px; width: 300px; }
@@ -783,6 +787,15 @@
                                 <span>Library</span>
                             </div>
                             
+                            <div className="nav-label" style={{ marginTop: 24 }}>Workspace</div>
+                            <div
+                                className={`nav-item ${currentView === 'teams' ? 'active' : ''}`}
+                                onClick={() => setCurrentView('teams')}
+                            >
+                                <Icon name="Users" />
+                                <span>Teams</span>
+                            </div>
+
                             <div className="nav-label" style={{ marginTop: 24 }}>Coming Soon</div>
                             <div className="nav-item disabled">
                                 <Icon name="Target" />
@@ -791,7 +804,7 @@
                         </nav>
                         
                         <div className="sidebar-footer">
-                            <p>PropelAI v2.11</p>
+                            <p>PropelAI v4.1</p>
                             {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
                         </div>
                     </aside>
@@ -848,6 +861,10 @@
                         
                         {currentView === 'library' && (
                             <LibraryView />
+                        )}
+
+                        {currentView === 'teams' && (
+                            <TeamsView />
                         )}
                     </main>
                     
@@ -1989,14 +2006,14 @@
                     
                     {/* Tabs */}
                     <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 8 }}>
-                        {['overview', 'documents', 'search'].map(tab => (
+                        {['overview', 'documents', 'search', 'vector-search'].map(tab => (
                             <button
                                 key={tab}
                                 className={`btn ${activeTab === tab ? 'btn-primary' : ''}`}
                                 onClick={() => setActiveTab(tab)}
                                 style={{ textTransform: 'capitalize' }}
                             >
-                                {tab}
+                                {tab === 'vector-search' ? 'AI Search' : tab}
                             </button>
                         ))}
                     </div>
@@ -2091,16 +2108,16 @@
                                         Search
                                     </button>
                                 </div>
-                                
+
                                 {searchResults.length > 0 && (
                                     <div>
                                         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
                                             Found {searchResults.length} results
                                         </div>
                                         {searchResults.map((result, idx) => (
-                                            <div key={idx} style={{ 
-                                                padding: 12, 
-                                                background: 'var(--bg-tertiary)', 
+                                            <div key={idx} style={{
+                                                padding: 12,
+                                                background: 'var(--bg-tertiary)',
                                                 borderRadius: 8,
                                                 marginBottom: 8
                                             }}>
@@ -2123,10 +2140,537 @@
                             </div>
                         </div>
                     )}
+
+                    {activeTab === 'vector-search' && (
+                        <VectorSearchPanel />
+                    )}
+                </div>
+            );
+        }
+
+        // Vector Search Panel Component
+        function VectorSearchPanel() {
+            const [query, setQuery] = useState('');
+            const [results, setResults] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [filters, setFilters] = useState({
+                types: ['capability', 'past_performance', 'key_personnel', 'differentiator'],
+                topK: 10
+            });
+
+            const handleVectorSearch = async () => {
+                if (!query.trim()) return;
+
+                setLoading(true);
+                try {
+                    const typesParam = filters.types.join(',');
+                    const response = await fetch(
+                        `/api/library/vector-search?query=${encodeURIComponent(query)}&top_k=${filters.topK}&types=${typesParam}`
+                    );
+                    const data = await response.json();
+                    setResults(data.results || []);
+                } catch (error) {
+                    console.error('Vector search error:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const toggleType = (type) => {
+                setFilters(prev => ({
+                    ...prev,
+                    types: prev.types.includes(type)
+                        ? prev.types.filter(t => t !== type)
+                        : [...prev.types, type]
+                }));
+            };
+
+            const typeLabels = {
+                capability: { label: 'Capabilities', color: 'blue', icon: 'Zap' },
+                past_performance: { label: 'Past Performance', color: 'green', icon: 'Award' },
+                key_personnel: { label: 'Key Personnel', color: 'amber', icon: 'User' },
+                differentiator: { label: 'Differentiators', color: 'purple', icon: 'Star' }
+            };
+
+            return (
+                <div className="card">
+                    <div className="card-header">
+                        <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Icon name="Sparkles" style={{ color: 'var(--accent-purple)' }} />
+                            AI-Powered Semantic Search
+                        </h3>
+                    </div>
+                    <div style={{ padding: 16 }}>
+                        <p style={{ color: 'var(--text-muted)', marginBottom: 16, fontSize: 14 }}>
+                            Search using natural language. Our AI understands context and finds semantically similar content.
+                        </p>
+
+                        {/* Search Input */}
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="e.g., 'cloud migration experience with federal agencies' or 'cybersecurity certifications'"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleVectorSearch()}
+                                style={{ flex: 1 }}
+                            />
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleVectorSearch}
+                                disabled={loading}
+                            >
+                                {loading ? 'Searching...' : 'Search'}
+                            </button>
+                        </div>
+
+                        {/* Filter Chips */}
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                            {Object.entries(typeLabels).map(([type, info]) => (
+                                <button
+                                    key={type}
+                                    className={`btn ${filters.types.includes(type) ? 'btn-primary' : ''}`}
+                                    onClick={() => toggleType(type)}
+                                    style={{
+                                        fontSize: 12,
+                                        padding: '6px 12px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 4
+                                    }}
+                                >
+                                    <Icon name={info.icon} style={{ width: 14, height: 14 }} />
+                                    {info.label}
+                                </button>
+                            ))}
+                            <select
+                                value={filters.topK}
+                                onChange={(e) => setFilters(prev => ({ ...prev, topK: parseInt(e.target.value) }))}
+                                className="form-input"
+                                style={{ width: 'auto', fontSize: 12, padding: '6px 12px' }}
+                            >
+                                <option value={5}>Top 5</option>
+                                <option value={10}>Top 10</option>
+                                <option value={20}>Top 20</option>
+                            </select>
+                        </div>
+
+                        {/* Results */}
+                        {results.length > 0 && (
+                            <div>
+                                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                    Found {results.length} semantic matches
+                                </div>
+                                {results.map((result, idx) => (
+                                    <div key={idx} style={{
+                                        padding: 16,
+                                        background: 'var(--bg-tertiary)',
+                                        borderRadius: 8,
+                                        marginBottom: 12,
+                                        border: '1px solid var(--border-color)'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                                <span className={`badge badge-${typeLabels[result.type]?.color || 'gray'}`}>
+                                                    {typeLabels[result.type]?.label || result.type}
+                                                </span>
+                                                <span style={{ fontWeight: 600, fontSize: 15 }}>
+                                                    {result.name || result.title || result.project_name}
+                                                </span>
+                                            </div>
+                                            <span style={{
+                                                fontSize: 12,
+                                                color: 'var(--accent-green)',
+                                                background: 'rgba(52, 211, 153, 0.1)',
+                                                padding: '2px 8px',
+                                                borderRadius: 4
+                                            }}>
+                                                {(result.similarity * 100).toFixed(0)}% match
+                                            </span>
+                                        </div>
+                                        <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                            {result.description?.slice(0, 300) || result.bio?.slice(0, 300) || ''}
+                                            {(result.description?.length > 300 || result.bio?.length > 300) ? '...' : ''}
+                                        </div>
+                                        {result.keywords && result.keywords.length > 0 && (
+                                            <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                {result.keywords.slice(0, 5).map((kw, i) => (
+                                                    <span key={i} style={{
+                                                        fontSize: 11,
+                                                        padding: '2px 6px',
+                                                        background: 'var(--bg-card)',
+                                                        borderRadius: 4,
+                                                        color: 'var(--text-muted)'
+                                                    }}>
+                                                        {kw}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {results.length === 0 && query && !loading && (
+                            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                                <Icon name="Search" style={{ width: 48, height: 48, marginBottom: 16, opacity: 0.5 }} />
+                                <p>No results found. Try a different query or add more content to your library.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             );
         }
         
+        // Teams View Component
+        function TeamsView() {
+            const [teams, setTeams] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showCreateModal, setShowCreateModal] = useState(false);
+            const [selectedTeam, setSelectedTeam] = useState(null);
+            const [newTeam, setNewTeam] = useState({ name: '', description: '' });
+            const [showAddMember, setShowAddMember] = useState(false);
+            const [newMember, setNewMember] = useState({ email: '', role: 'viewer' });
+
+            useEffect(() => {
+                loadTeams();
+            }, []);
+
+            const loadTeams = async () => {
+                try {
+                    const response = await fetch('/api/teams');
+                    const data = await response.json();
+                    setTeams(data.teams || []);
+                } catch (error) {
+                    console.error('Error loading teams:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const createTeam = async () => {
+                if (!newTeam.name.trim()) return;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('name', newTeam.name);
+                    formData.append('description', newTeam.description);
+
+                    const response = await fetch('/api/teams', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        loadTeams();
+                        setShowCreateModal(false);
+                        setNewTeam({ name: '', description: '' });
+                    }
+                } catch (error) {
+                    console.error('Error creating team:', error);
+                }
+            };
+
+            const loadTeamDetails = async (teamId) => {
+                try {
+                    const response = await fetch(`/api/teams/${teamId}`);
+                    const data = await response.json();
+                    setSelectedTeam(data);
+                } catch (error) {
+                    console.error('Error loading team:', error);
+                }
+            };
+
+            const addMember = async () => {
+                if (!newMember.email.trim() || !selectedTeam) return;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('email', newMember.email);
+                    formData.append('role', newMember.role);
+
+                    const response = await fetch(`/api/teams/${selectedTeam.id}/members`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        loadTeamDetails(selectedTeam.id);
+                        setShowAddMember(false);
+                        setNewMember({ email: '', role: 'viewer' });
+                    }
+                } catch (error) {
+                    console.error('Error adding member:', error);
+                }
+            };
+
+            const removeMember = async (userId) => {
+                if (!confirm('Remove this member from the team?')) return;
+
+                try {
+                    await fetch(`/api/teams/${selectedTeam.id}/members/${userId}`, {
+                        method: 'DELETE'
+                    });
+                    loadTeamDetails(selectedTeam.id);
+                } catch (error) {
+                    console.error('Error removing member:', error);
+                }
+            };
+
+            const deleteTeam = async (teamId) => {
+                if (!confirm('Delete this team? This action cannot be undone.')) return;
+
+                try {
+                    await fetch(`/api/teams/${teamId}`, { method: 'DELETE' });
+                    loadTeams();
+                    setSelectedTeam(null);
+                } catch (error) {
+                    console.error('Error deleting team:', error);
+                }
+            };
+
+            const roleColors = {
+                admin: 'red',
+                contributor: 'blue',
+                viewer: 'gray'
+            };
+
+            if (loading) {
+                return (
+                    <div style={{ padding: 40, textAlign: 'center' }}>
+                        <div className="spinner"></div>
+                        <p style={{ marginTop: 16 }}>Loading teams...</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div>
+                    <div className="view-header">
+                        <div>
+                            <h1>Team Workspaces</h1>
+                            <p className="text-muted">Collaborate with your team on proposals and share Company Library content</p>
+                        </div>
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => setShowCreateModal(true)}
+                        >
+                            + Create Team
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: selectedTeam ? '300px 1fr' : '1fr', gap: 24 }}>
+                        {/* Teams List */}
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Your Teams</h3>
+                            </div>
+                            {teams.length === 0 ? (
+                                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    <Icon name="Users" style={{ width: 48, height: 48, marginBottom: 16, opacity: 0.5 }} />
+                                    <p>No teams yet</p>
+                                    <p style={{ fontSize: 13, marginTop: 8 }}>Create a team to start collaborating</p>
+                                </div>
+                            ) : (
+                                teams.map(team => (
+                                    <div
+                                        key={team.id}
+                                        onClick={() => loadTeamDetails(team.id)}
+                                        style={{
+                                            padding: 16,
+                                            borderBottom: '1px solid var(--border-color)',
+                                            cursor: 'pointer',
+                                            background: selectedTeam?.id === team.id ? 'var(--bg-tertiary)' : 'transparent'
+                                        }}
+                                    >
+                                        <div style={{ fontWeight: 500 }}>{team.name}</div>
+                                        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                                            {team.member_count || 0} members
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Team Details */}
+                        {selectedTeam && (
+                            <div className="card">
+                                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <h3 className="card-title">{selectedTeam.name}</h3>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button className="btn btn-primary" onClick={() => setShowAddMember(true)}>
+                                            + Add Member
+                                        </button>
+                                        <button
+                                            className="btn"
+                                            style={{ color: 'var(--accent-red)' }}
+                                            onClick={() => deleteTeam(selectedTeam.id)}
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {selectedTeam.description && (
+                                    <div style={{ padding: '0 16px 16px', color: 'var(--text-secondary)', fontSize: 14 }}>
+                                        {selectedTeam.description}
+                                    </div>
+                                )}
+
+                                <div style={{ padding: 16, borderTop: '1px solid var(--border-color)' }}>
+                                    <h4 style={{ marginBottom: 12, fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                        Members
+                                    </h4>
+                                    {selectedTeam.members?.map(member => (
+                                        <div
+                                            key={member.id}
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                padding: 12,
+                                                background: 'var(--bg-tertiary)',
+                                                borderRadius: 8,
+                                                marginBottom: 8
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                <div style={{
+                                                    width: 36,
+                                                    height: 36,
+                                                    borderRadius: '50%',
+                                                    background: 'var(--accent-blue)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    color: 'white',
+                                                    fontWeight: 600
+                                                }}>
+                                                    {member.user?.name?.charAt(0) || '?'}
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontWeight: 500 }}>{member.user?.name}</div>
+                                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{member.user?.email}</div>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <span className={`badge badge-${roleColors[member.role]}`}>
+                                                    {member.role}
+                                                </span>
+                                                <button
+                                                    className="btn"
+                                                    style={{ padding: 4, color: 'var(--text-muted)' }}
+                                                    onClick={() => removeMember(member.user_id)}
+                                                >
+                                                    <Icon name="X" style={{ width: 16, height: 16 }} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {(!selectedTeam.members || selectedTeam.members.length === 0) && (
+                                        <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                                            No members yet. Add team members to start collaborating.
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div style={{ padding: 16, borderTop: '1px solid var(--border-color)' }}>
+                                    <h4 style={{ marginBottom: 12, fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                        Role Permissions
+                                    </h4>
+                                    <div style={{ fontSize: 13 }}>
+                                        <div style={{ marginBottom: 8, display: 'flex', gap: 8 }}>
+                                            <span className="badge badge-red">Admin</span>
+                                            <span>Full access - manage team, members, and content</span>
+                                        </div>
+                                        <div style={{ marginBottom: 8, display: 'flex', gap: 8 }}>
+                                            <span className="badge badge-blue">Contributor</span>
+                                            <span>Can add and edit library content</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <span className="badge badge-gray">Viewer</span>
+                                            <span>Read-only access to library content</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Create Team Modal */}
+                    {showCreateModal && (
+                        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+                            <div className="modal" onClick={e => e.stopPropagation()}>
+                                <h3 style={{ marginBottom: 16 }}>Create New Team</h3>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Team Name</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="e.g., Proposal Team Alpha"
+                                        value={newTeam.name}
+                                        onChange={(e) => setNewTeam(prev => ({ ...prev, name: e.target.value }))}
+                                    />
+                                </div>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Description (optional)</label>
+                                    <textarea
+                                        className="form-input"
+                                        placeholder="Describe the team's purpose..."
+                                        value={newTeam.description}
+                                        onChange={(e) => setNewTeam(prev => ({ ...prev, description: e.target.value }))}
+                                        rows={3}
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                    <button className="btn" onClick={() => setShowCreateModal(false)}>Cancel</button>
+                                    <button className="btn btn-primary" onClick={createTeam}>Create Team</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Member Modal */}
+                    {showAddMember && (
+                        <div className="modal-overlay" onClick={() => setShowAddMember(false)}>
+                            <div className="modal" onClick={e => e.stopPropagation()}>
+                                <h3 style={{ marginBottom: 16 }}>Add Team Member</h3>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Email Address</label>
+                                    <input
+                                        type="email"
+                                        className="form-input"
+                                        placeholder="colleague@company.com"
+                                        value={newMember.email}
+                                        onChange={(e) => setNewMember(prev => ({ ...prev, email: e.target.value }))}
+                                    />
+                                </div>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Role</label>
+                                    <select
+                                        className="form-input"
+                                        value={newMember.role}
+                                        onChange={(e) => setNewMember(prev => ({ ...prev, role: e.target.value }))}
+                                    >
+                                        <option value="viewer">Viewer - Read only access</option>
+                                        <option value="contributor">Contributor - Can add content</option>
+                                        <option value="admin">Admin - Full access</option>
+                                    </select>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                    <button className="btn" onClick={() => setShowAddMember(false)}>Cancel</button>
+                                    <button className="btn btn-primary" onClick={addMember}>Add Member</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         // Helpers
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';

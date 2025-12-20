@@ -208,6 +208,141 @@ class AmendmentModel(Base):
         }
 
 
+# ============== Team Workspace Models (v4.1) ==============
+
+from sqlalchemy import Enum as SQLEnum
+import enum
+
+
+class UserRole(str, enum.Enum):
+    """Role levels for team members"""
+    ADMIN = "admin"
+    CONTRIBUTOR = "contributor"
+    VIEWER = "viewer"
+
+
+class UserModel(Base):
+    """User accounts"""
+    __tablename__ = "users"
+
+    id = Column(String(50), primary_key=True)
+    email = Column(String(255), nullable=False, unique=True)
+    name = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)  # NULL if OAuth
+    avatar_url = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True)
+    last_login = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    team_memberships = relationship("TeamMembershipModel", back_populates="user", cascade="all, delete-orphan")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "email": self.email,
+            "name": self.name,
+            "avatar_url": self.avatar_url,
+            "is_active": self.is_active,
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class TeamModel(Base):
+    """Team workspaces"""
+    __tablename__ = "teams"
+
+    id = Column(String(50), primary_key=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    settings = Column(JSONB, default=dict)
+    created_by = Column(String(50), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    memberships = relationship("TeamMembershipModel", back_populates="team", cascade="all, delete-orphan")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "slug": self.slug,
+            "description": self.description,
+            "settings": self.settings or {},
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "member_count": len(self.memberships) if self.memberships else 0,
+        }
+
+
+class TeamMembershipModel(Base):
+    """Team membership with roles"""
+    __tablename__ = "team_memberships"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(20), nullable=False, default="viewer")
+    invited_by = Column(String(50), ForeignKey("users.id"), nullable=True)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    team = relationship("TeamModel", back_populates="memberships")
+    user = relationship("UserModel", back_populates="team_memberships", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index('idx_team_memberships_team_id', 'team_id'),
+        Index('idx_team_memberships_user_id', 'user_id'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "team_id": self.team_id,
+            "user_id": self.user_id,
+            "role": self.role,
+            "invited_by": self.invited_by,
+            "joined_at": self.joined_at.isoformat() if self.joined_at else None,
+            "user": self.user.to_dict() if self.user else None,
+        }
+
+
+class ActivityLogModel(Base):
+    """Activity audit trail"""
+    __tablename__ = "activity_log"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String(100), nullable=False)
+    resource_type = Column(String(100), nullable=False)
+    resource_id = Column(String(50), nullable=True)
+    details = Column(JSONB, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_activity_log_team_id', 'team_id'),
+        Index('idx_activity_log_user_id', 'user_id'),
+        Index('idx_activity_log_created_at', 'created_at'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "team_id": self.team_id,
+            "user_id": self.user_id,
+            "action": self.action,
+            "resource_type": self.resource_type,
+            "resource_id": self.resource_id,
+            "details": self.details or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 # ============== Database Connection ==============
 
 # Engine and session factory (initialized lazily)

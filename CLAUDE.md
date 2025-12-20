@@ -120,7 +120,48 @@ A winning proposal ensures:
 2. Every M factor is addressed with evidence (scoring)
 3. Every C requirement is mapped to proposal content (traceability)
 
-## 8. Reference Documents
+## 8. v4.1 Features: Team Workspaces & Vector Search UI
+
+### Team Workspaces (Role-Based Access Control)
+**Goal:** Enable team collaboration with shared Company Library content.
+
+**Database Models** (`api/database.py`, `init.sql`):
+- `UserModel`: User accounts with email/password authentication
+- `TeamModel`: Team workspaces with slug identifiers
+- `TeamMembershipModel`: Links users to teams with roles
+- `ActivityLogModel`: Audit trail for team actions
+
+**Roles:**
+- `admin`: Full access - manage team, members, and all content
+- `contributor`: Can add and edit library content
+- `viewer`: Read-only access to library content
+
+**API Endpoints**:
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login user
+- `POST /api/teams` - Create team
+- `GET /api/teams` - List teams
+- `GET /api/teams/{team_id}` - Get team details with members
+- `POST /api/teams/{team_id}/members` - Add team member
+- `PUT /api/teams/{team_id}/members/{user_id}` - Update member role
+- `DELETE /api/teams/{team_id}/members/{user_id}` - Remove member
+- `GET /api/teams/{team_id}/activity` - Get team activity log
+
+### Vector Search UI
+**Goal:** AI-powered semantic search interface for Company Library.
+
+**Features** (`web/index.html`):
+- Natural language search with similarity scores
+- Type filters (Capabilities, Past Performance, Key Personnel, Differentiators)
+- Configurable result count (Top 5/10/20)
+- Real-time search with visual feedback
+
+**Frontend Components**:
+- `VectorSearchPanel`: AI search tab in Library view
+- `TeamsView`: Team workspace management UI
+- Modal dialogs for creating teams and adding members
+
+## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation
 - `HANDOFF_DOCUMENT.md`: Legacy v2.9 documentation (Shipley methodology)
