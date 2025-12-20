@@ -2,6 +2,8 @@
 PropelAI Drafting Agent - "The Writer"
 Play 3: Collaborative Drafting ("The Pen")
 
+v4.0: Enhanced with F-B-P (Feature-Benefit-Proof) framework and LLM integration
+
 Goal: Generate compliant, citation-backed narrative text
 
 CRITICAL CONSTRAINT: Zero Hallucination Policy
@@ -11,17 +13,49 @@ CRITICAL CONSTRAINT: Zero Hallucination Policy
 
 This agent works closely with the Research Agent (The Librarian)
 to retrieve evidence before writing.
+
+F-B-P Framework:
+- Feature: What we offer (our capability/approach)
+- Benefit: Why it matters to the customer (mission impact)
+- Proof: Evidence from past performance, case studies, metrics
 """
 
 import re
 import json
+import os
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 
+try:
+    import httpx
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
+
 from core.state import ProposalState, ProposalPhase
+
+
+# LLM Provider configuration (shared with strategy_agent)
+LLM_PROVIDERS = {
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "model": "gemini-1.5-pro",
+        "env_key": "GOOGLE_API_KEY",
+    },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com/v1",
+        "model": "claude-3-5-sonnet-20241022",
+        "env_key": "ANTHROPIC_API_KEY",
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4-turbo-preview",
+        "env_key": "OPENAI_API_KEY",
+    },
+}
 
 
 class VoiceStyle(str, Enum):
@@ -63,6 +97,76 @@ class DraftParagraph:
     voice_style: VoiceStyle
 
 
+class ProofType(str, Enum):
+    """Types of proof for F-B-P framework"""
+    PAST_PERFORMANCE = "past_performance"
+    CASE_STUDY = "case_study"
+    METRIC = "metric"
+    TESTIMONIAL = "testimonial"
+    CERTIFICATION = "certification"
+    METHODOLOGY = "methodology"
+
+
+@dataclass
+class Feature:
+    """
+    v4.0 F-B-P: What we offer
+
+    A specific capability or approach that addresses a requirement.
+    """
+    id: str
+    description: str              # What we offer
+    technical_detail: str         # How it works
+    linked_requirement: str       # Requirement ID this addresses
+
+
+@dataclass
+class Benefit:
+    """
+    v4.0 F-B-P: Why it matters
+
+    The mission impact and value to the customer.
+    """
+    id: str
+    statement: str                # Why it matters to customer
+    quantified_impact: Optional[str]  # "Reduces cost by 30%"
+    eval_criteria_link: Optional[str]  # Section M factor
+
+
+@dataclass
+class Proof:
+    """
+    v4.0 F-B-P: Evidence
+
+    Verifiable evidence supporting the feature and benefit.
+    """
+    id: str
+    proof_type: ProofType
+    source_document: str          # Citation source
+    summary: str                  # Brief description
+    source_text: Optional[str]    # Actual quoted text
+    page_reference: Optional[str]
+    confidence: float = 0.8
+
+
+@dataclass
+class FBPBlock:
+    """
+    v4.0 F-B-P: A complete Feature-Benefit-Proof content block
+
+    This is the atomic unit of compliant proposal content.
+    Every paragraph should be structured as one or more FBP blocks.
+    """
+    id: str
+    feature: Feature
+    benefit: Benefit
+    proofs: List[Proof] = field(default_factory=list)
+    generated_narrative: str = ""  # LLM-generated prose
+    word_count: int = 0
+    compliance_score: float = 0.0  # How well it addresses requirement
+    llm_generated: bool = False
+
+
 class DraftingAgent:
     """
     The Drafting Agent - "The Writer"
@@ -74,22 +178,119 @@ class DraftingAgent:
     """
     
     def __init__(
-        self, 
+        self,
         llm_client: Optional[Any] = None,
         research_agent: Optional[Any] = None,
-        voice_style: VoiceStyle = VoiceStyle.FORMAL
+        voice_style: VoiceStyle = VoiceStyle.FORMAL,
+        llm_provider: str = "gemini",
+        use_llm: bool = True
     ):
         """
         Initialize the Drafting Agent
-        
+
+        v4.0: Now supports LLM-powered F-B-P content generation.
+
         Args:
-            llm_client: LLM for generating text (Gemini Pro recommended)
+            llm_client: Legacy LLM client (optional)
             research_agent: The Librarian for evidence retrieval
             voice_style: Default writing style
+            llm_provider: LLM provider ("gemini", "anthropic", "openai")
+            use_llm: Enable LLM-based content generation
         """
         self.llm_client = llm_client
         self.research_agent = research_agent
         self.voice_style = voice_style
+        self.llm_provider = llm_provider
+        self.use_llm = use_llm and HTTPX_AVAILABLE
+        self._http_client = None
+
+    def _get_http_client(self) -> Optional["httpx.Client"]:
+        """Get or create HTTP client for LLM API calls"""
+        if not HTTPX_AVAILABLE:
+            return None
+        if self._http_client is None:
+            self._http_client = httpx.Client(timeout=90.0)  # Longer timeout for content generation
+        return self._http_client
+
+    def _call_llm(self, prompt: str, system_prompt: Optional[str] = None) -> Optional[str]:
+        """
+        Call the LLM API for content generation.
+
+        v4.0: Real LLM integration for F-B-P narrative generation.
+        """
+        if not self.use_llm:
+            return None
+
+        client = self._get_http_client()
+        if not client:
+            return None
+
+        provider_config = LLM_PROVIDERS.get(self.llm_provider, LLM_PROVIDERS["gemini"])
+        api_key = os.environ.get(provider_config["env_key"])
+
+        if not api_key:
+            for fallback in ["gemini", "anthropic", "openai"]:
+                if fallback == self.llm_provider:
+                    continue
+                fallback_config = LLM_PROVIDERS[fallback]
+                api_key = os.environ.get(fallback_config["env_key"])
+                if api_key:
+                    provider_config = fallback_config
+                    break
+
+        if not api_key:
+            return None
+
+        try:
+            if "gemini" in provider_config["model"]:
+                return self._call_gemini(client, api_key, prompt, system_prompt, provider_config)
+            elif "claude" in provider_config["model"]:
+                return self._call_anthropic(client, api_key, prompt, system_prompt, provider_config)
+            else:
+                return self._call_openai(client, api_key, prompt, system_prompt, provider_config)
+        except Exception as e:
+            print(f"LLM call failed: {e}")
+            return None
+
+    def _call_gemini(self, client, api_key, prompt, system_prompt, config) -> Optional[str]:
+        """Call Gemini API"""
+        url = f"{config['base_url']}/models/{config['model']}:generateContent?key={api_key}"
+        contents = []
+        if system_prompt:
+            contents.append({"role": "user", "parts": [{"text": system_prompt}]})
+            contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions."}]})
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        response = client.post(url, json={"contents": contents, "generationConfig": {"temperature": 0.7, "maxOutputTokens": 4096}})
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("candidates"):
+                return data["candidates"][0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        return None
+
+    def _call_anthropic(self, client, api_key, prompt, system_prompt, config) -> Optional[str]:
+        """Call Anthropic API"""
+        url = f"{config['base_url']}/messages"
+        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+        body = {"model": config["model"], "max_tokens": 4096, "messages": [{"role": "user", "content": prompt}]}
+        if system_prompt:
+            body["system"] = system_prompt
+        response = client.post(url, headers=headers, json=body)
+        if response.status_code == 200:
+            return response.json().get("content", [{}])[0].get("text", "")
+        return None
+
+    def _call_openai(self, client, api_key, prompt, system_prompt, config) -> Optional[str]:
+        """Call OpenAI API"""
+        url = f"{config['base_url']}/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        response = client.post(url, headers=headers, json={"model": config["model"], "messages": messages, "max_tokens": 4096, "temperature": 0.7})
+        if response.status_code == 200:
+            return response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        return None
         
     def __call__(self, state: ProposalState) -> Dict[str, Any]:
         """
@@ -304,19 +505,163 @@ class DraftingAgent:
         evidence: List[Dict]
     ) -> Dict[str, Any]:
         """
-        Generate the draft content for a section
-        
+        Generate the draft content for a section.
+
+        v4.0: Uses LLM with F-B-P framework when available,
+        falls back to template-based generation otherwise.
+
         CRITICAL: Every claim must be cited or flagged
         """
         section_title = section.get("title", "Section")
         page_allocation = section.get("page_allocation", 5)
         word_target = page_allocation * 300  # ~300 words per page
-        
+
+        # Try LLM-based F-B-P generation first
+        if self.use_llm:
+            llm_result = self._generate_fbp_section_with_llm(
+                section, requirements, theme, evidence, word_target
+            )
+            if llm_result:
+                return {
+                    **llm_result,
+                    "page_allocation": page_allocation,
+                    "version": 1,
+                    "last_modified": datetime.now().isoformat(),
+                    "modified_by": "drafting_agent",
+                    "llm_generated": True,
+                }
+
+        # Fallback to template-based generation
+        return self._generate_section_draft_from_templates(
+            section, requirements, theme, evidence, page_allocation
+        )
+
+    def _generate_fbp_section_with_llm(
+        self,
+        section: Dict,
+        requirements: List[Dict],
+        theme: Optional[Dict],
+        evidence: List[Dict],
+        word_target: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate section content using LLM with F-B-P framework.
+
+        v4.0: Real LLM-powered content generation.
+        """
+        system_prompt = """You are an expert proposal writer for federal government contracts. Your writing style is formal, persuasive, and compliant with government RFP requirements.
+
+You MUST follow the Feature-Benefit-Proof (F-B-P) framework:
+- FEATURE: What specific capability or approach we offer
+- BENEFIT: Why this matters to the government mission (quantify when possible)
+- PROOF: Evidence from past performance, metrics, or case studies
+
+CRITICAL RULES:
+1. Every factual claim MUST have a citation in [brackets]
+2. Use formal, third-person language ("The Offeror" not "We")
+3. Address each requirement explicitly
+4. Stay within the word target
+5. If you cannot cite a claim, prefix it with [NEEDS EVIDENCE:]
+
+Output format:
+Return a JSON object with:
+{
+  "content": "The full narrative text with [citations] inline",
+  "citations": [{"id": "C1", "source": "document name", "text": "quoted text"}],
+  "uncited_claims": ["any claims that need evidence"],
+  "fbp_blocks": [
+    {"feature": "...", "benefit": "...", "proof": "..."}
+  ]
+}"""
+
+        # Build the prompt
+        theme_text = ""
+        if theme:
+            theme_text = f"""
+WIN THEME: {theme.get('theme_text', theme.get('theme_headline', ''))}
+DISCRIMINATOR: {theme.get('discriminator', '')}
+PROOF POINTS: {', '.join(theme.get('proof_points', [])[:3])}
+"""
+
+        evidence_text = ""
+        if evidence:
+            evidence_text = "AVAILABLE EVIDENCE:\n" + "\n".join([
+                f"- [{e['id']}] {e['source_document']}: \"{e['source_text']}\""
+                for e in evidence[:5]
+            ])
+
+        requirements_text = ""
+        if requirements:
+            requirements_text = "REQUIREMENTS TO ADDRESS:\n" + "\n".join([
+                f"- {r.get('id', 'REQ')}: {r.get('text', '')[:150]}..."
+                for r in requirements[:5]
+            ])
+
+        prompt = f"""Write a proposal section following the F-B-P framework.
+
+SECTION: {section.get('title', 'Technical Section')}
+WORD TARGET: {word_target} words
+
+{theme_text}
+
+{requirements_text}
+
+{evidence_text}
+
+Write compelling, compliant proposal content. Every claim must be cited using evidence provided or flagged as needing evidence.
+
+Return ONLY valid JSON matching the schema above."""
+
+        response = self._call_llm(prompt, system_prompt)
+        if not response:
+            return None
+
+        try:
+            # Extract JSON from response
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if not json_match:
+                return None
+
+            data = json.loads(json_match.group())
+
+            content = data.get("content", "")
+            citations = data.get("citations", [])
+            uncited_claims = data.get("uncited_claims", [])
+
+            return {
+                "section_id": f"{section.get('section_number', '0.0')}",
+                "section_title": section.get("title", "Section"),
+                "content": content,
+                "citations": citations,
+                "uncited_claims": uncited_claims,
+                "word_count": len(content.split()),
+                "compliance_score": self._calculate_compliance_score(requirements, content),
+                "quality_score": self._calculate_quality_score(citations, uncited_claims),
+                "fbp_blocks": data.get("fbp_blocks", []),
+            }
+
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"Failed to parse LLM draft response: {e}")
+            return None
+
+    def _generate_section_draft_from_templates(
+        self,
+        section: Dict,
+        requirements: List[Dict],
+        theme: Optional[Dict],
+        evidence: List[Dict],
+        page_allocation: int
+    ) -> Dict[str, Any]:
+        """
+        Template-based draft generation (fallback when LLM unavailable).
+        """
+        section_title = section.get("title", "Section")
+
         # Build the draft structure
         paragraphs = []
         citations = []
         uncited_claims = []
-        
+
         # Opening paragraph with theme
         if theme:
             opening = self._generate_opening_paragraph(theme, evidence)
@@ -325,24 +670,24 @@ class DraftingAgent:
             uncited_claims.extend(opening.get("uncited", []))
         else:
             paragraphs.append(f"This section addresses the requirements for {section_title}.")
-        
+
         # Body paragraphs addressing requirements
         for i, req in enumerate(requirements[:5]):
             body = self._generate_requirement_response(req, evidence)
             paragraphs.append(body["content"])
             citations.extend(body.get("citations", []))
             uncited_claims.extend(body.get("uncited", []))
-        
+
         # Closing paragraph with proof points
         if theme and theme.get("proof_points"):
             closing = self._generate_closing_paragraph(theme, evidence)
             paragraphs.append(closing["content"])
             citations.extend(closing.get("citations", []))
-        
+
         # Assemble the draft
         content = "\n\n".join(paragraphs)
         word_count = len(content.split())
-        
+
         return {
             "section_id": f"{section.get('section_number', '0.0')}",
             "section_title": section_title,
@@ -355,7 +700,8 @@ class DraftingAgent:
             "quality_score": self._calculate_quality_score(citations, uncited_claims),
             "version": 1,
             "last_modified": datetime.now().isoformat(),
-            "modified_by": "drafting_agent"
+            "modified_by": "drafting_agent",
+            "llm_generated": False,
         }
     
     def _generate_opening_paragraph(
@@ -642,13 +988,31 @@ class ResearchAgent:
 def create_drafting_agent(
     llm_client: Optional[Any] = None,
     research_agent: Optional[Any] = None,
-    voice_style: VoiceStyle = VoiceStyle.FORMAL
+    voice_style: VoiceStyle = VoiceStyle.FORMAL,
+    llm_provider: str = "gemini",
+    use_llm: bool = True
 ) -> DraftingAgent:
-    """Factory function to create a Drafting Agent"""
+    """
+    Factory function to create a Drafting Agent.
+
+    v4.0: Now supports LLM provider configuration for F-B-P generation.
+
+    Args:
+        llm_client: Legacy LLM client (optional)
+        research_agent: Research Agent for evidence retrieval
+        voice_style: Writing voice style
+        llm_provider: LLM provider ("gemini", "anthropic", "openai")
+        use_llm: Enable LLM-based F-B-P content generation
+
+    Returns:
+        Configured DraftingAgent instance
+    """
     return DraftingAgent(
         llm_client=llm_client,
         research_agent=research_agent,
-        voice_style=voice_style
+        voice_style=voice_style,
+        llm_provider=llm_provider,
+        use_llm=use_llm,
     )
 
 
