@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <!-- Basic Settings -->
+  <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
+  <Version>4.0.0.0</Version>
+  <ProviderName>PropelAI</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="PropelAI"/>
+  <Description DefaultValue="RFP compliance checker and proposal drafting assistant powered by AI"/>
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://propelai.com/support"/>
+
+  <!-- Domains that can be accessed -->
+  <AppDomains>
+    <AppDomain>https://localhost:3000</AppDomain>
+    <AppDomain>https://api.propelai.com</AppDomain>
+  </AppDomains>
+
+  <!-- Supported Office Hosts -->
+  <Hosts>
+    <Host Name="Document"/>
+  </Hosts>
+
+  <!-- Requirements -->
+  <Requirements>
+    <Sets>
+      <Set Name="WordApi" MinVersion="1.3"/>
+    </Sets>
+  </Requirements>
+
+  <!-- Default Settings -->
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
+  </DefaultSettings>
+
+  <!-- Permissions -->
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <!-- Version Overrides for Modern Experience -->
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+
+          <!-- Function File for Commands -->
+          <FunctionFile resid="Commands.Url"/>
+
+          <!-- Extension Point: Primary Command Surface (Ribbon) -->
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <CustomTab id="PropelAI.Tab">
+              <Group id="PropelAI.Group">
+                <Label resid="GroupLabel"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16"/>
+                  <bt:Image size="32" resid="Icon.32x32"/>
+                  <bt:Image size="80" resid="Icon.80x80"/>
+                </Icon>
+
+                <!-- Show Task Pane Button -->
+                <Control xsi:type="Button" id="PropelAI.ShowTaskpane">
+                  <Label resid="ShowTaskpane.Label"/>
+                  <Supertip>
+                    <Title resid="ShowTaskpane.Title"/>
+                    <Description resid="ShowTaskpane.Description"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16"/>
+                    <bt:Image size="32" resid="Icon.32x32"/>
+                    <bt:Image size="80" resid="Icon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>PropelAI.Taskpane</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+
+                <!-- Check Compliance Button -->
+                <Control xsi:type="Button" id="PropelAI.CheckCompliance">
+                  <Label resid="CheckCompliance.Label"/>
+                  <Supertip>
+                    <Title resid="CheckCompliance.Title"/>
+                    <Description resid="CheckCompliance.Description"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="CheckIcon.16x16"/>
+                    <bt:Image size="32" resid="CheckIcon.32x32"/>
+                    <bt:Image size="80" resid="CheckIcon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>checkCompliance</FunctionName>
+                  </Action>
+                </Control>
+
+                <!-- Insert Draft Button -->
+                <Control xsi:type="Button" id="PropelAI.InsertDraft">
+                  <Label resid="InsertDraft.Label"/>
+                  <Supertip>
+                    <Title resid="InsertDraft.Title"/>
+                    <Description resid="InsertDraft.Description"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="DraftIcon.16x16"/>
+                    <bt:Image size="32" resid="DraftIcon.32x32"/>
+                    <bt:Image size="80" resid="DraftIcon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>insertDraft</FunctionName>
+                  </Action>
+                </Control>
+
+                <!-- Sync with RFP Button -->
+                <Control xsi:type="Button" id="PropelAI.SyncRFP">
+                  <Label resid="SyncRFP.Label"/>
+                  <Supertip>
+                    <Title resid="SyncRFP.Title"/>
+                    <Description resid="SyncRFP.Description"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="SyncIcon.16x16"/>
+                    <bt:Image size="32" resid="SyncIcon.32x32"/>
+                    <bt:Image size="80" resid="SyncIcon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>syncWithRFP</FunctionName>
+                  </Action>
+                </Control>
+
+              </Group>
+              <Label resid="TabLabel"/>
+            </CustomTab>
+          </ExtensionPoint>
+
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+
+    <!-- Resources -->
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+        <bt:Image id="CheckIcon.16x16" DefaultValue="https://localhost:3000/assets/check-16.png"/>
+        <bt:Image id="CheckIcon.32x32" DefaultValue="https://localhost:3000/assets/check-32.png"/>
+        <bt:Image id="CheckIcon.80x80" DefaultValue="https://localhost:3000/assets/check-80.png"/>
+        <bt:Image id="DraftIcon.16x16" DefaultValue="https://localhost:3000/assets/draft-16.png"/>
+        <bt:Image id="DraftIcon.32x32" DefaultValue="https://localhost:3000/assets/draft-32.png"/>
+        <bt:Image id="DraftIcon.80x80" DefaultValue="https://localhost:3000/assets/draft-80.png"/>
+        <bt:Image id="SyncIcon.16x16" DefaultValue="https://localhost:3000/assets/sync-16.png"/>
+        <bt:Image id="SyncIcon.32x32" DefaultValue="https://localhost:3000/assets/sync-32.png"/>
+        <bt:Image id="SyncIcon.80x80" DefaultValue="https://localhost:3000/assets/sync-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://localhost:3000/commands.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="TabLabel" DefaultValue="PropelAI"/>
+        <bt:String id="GroupLabel" DefaultValue="Proposal Tools"/>
+        <bt:String id="ShowTaskpane.Label" DefaultValue="Show Panel"/>
+        <bt:String id="ShowTaskpane.Title" DefaultValue="PropelAI Panel"/>
+        <bt:String id="CheckCompliance.Label" DefaultValue="Check Compliance"/>
+        <bt:String id="CheckCompliance.Title" DefaultValue="Check Compliance"/>
+        <bt:String id="InsertDraft.Label" DefaultValue="Insert Draft"/>
+        <bt:String id="InsertDraft.Title" DefaultValue="Insert Draft Content"/>
+        <bt:String id="SyncRFP.Label" DefaultValue="Sync RFP"/>
+        <bt:String id="SyncRFP.Title" DefaultValue="Sync with RFP"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="ShowTaskpane.Description" DefaultValue="Open the PropelAI panel to view requirements and drafting tools"/>
+        <bt:String id="CheckCompliance.Description" DefaultValue="Check current document against RFP requirements"/>
+        <bt:String id="InsertDraft.Description" DefaultValue="Insert AI-generated draft content at cursor position"/>
+        <bt:String id="SyncRFP.Description" DefaultValue="Synchronize document with PropelAI RFP analysis"/>
+      </bt:LongStrings>
+    </Resources>
+
+  </VersionOverrides>
+</OfficeApp>

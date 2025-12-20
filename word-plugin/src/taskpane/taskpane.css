@@ -1,0 +1,173 @@
+/**
+ * PropelAI Word Plugin - Taskpane Styles
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  background-color: #ffffff;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c8c8c8;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Custom focus styles */
+*:focus {
+  outline: 2px solid #0078d4;
+  outline-offset: 2px;
+}
+
+/* List item hover */
+.ms-DetailsRow:hover {
+  background-color: #f3f2f1;
+}
+
+/* Selected requirement highlight */
+.requirement-selected {
+  background-color: #deecf9 !important;
+  border-left: 3px solid #0078d4;
+}
+
+/* Quality score badges */
+.quality-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quality-badge.good {
+  background-color: #dff6dd;
+  color: #107c10;
+}
+
+.quality-badge.warning {
+  background-color: #fff4ce;
+  color: #797673;
+}
+
+.quality-badge.error {
+  background-color: #fde7e9;
+  color: #d13438;
+}
+
+/* Draft content styling */
+.draft-content {
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.8;
+  padding: 16px;
+  background-color: #faf9f8;
+  border: 1px solid #edebe9;
+  border-radius: 4px;
+}
+
+/* Status indicators */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-dot.compliant {
+  background-color: #107c10;
+}
+
+.status-dot.partial {
+  background-color: #ff8c00;
+}
+
+.status-dot.missing {
+  background-color: #d13438;
+}
+
+/* Loading shimmer effect */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    #f0f0f0 25%,
+    #e0e0e0 50%,
+    #f0f0f0 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Toast notifications */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  background-color: #323130;
+  color: white;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+/* Panel transitions */
+.panel-enter {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.panel-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 200ms, transform 200ms;
+}
+
+.panel-exit {
+  opacity: 1;
+}
+
+.panel-exit-active {
+  opacity: 0;
+  transition: opacity 200ms;
+}
