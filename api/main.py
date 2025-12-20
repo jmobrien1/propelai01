@@ -279,10 +279,17 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
+    # Check pdfplumber availability for coordinate extraction
+    try:
+        import pdfplumber
+        coordinate_extractor_status = "ready"
+    except ImportError:
+        coordinate_extractor_status = "not available (install pdfplumber)"
+
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.9.0",
+        "version": "4.0.0-phase1",
         "components": {
             "enhanced_compliance_agent": "ready",
             "amendment_processor": "ready",
@@ -291,6 +298,7 @@ async def health_check():
             "semantic_ctm_export": "ready" if semantic_ctm_exporter else "not available",
             "best_practices_extractor": "ready" if best_practices_extractor else "not available",
             "best_practices_ctm_export": "ready" if best_practices_exporter else "not available",
+            "coordinate_extractor": coordinate_extractor_status,  # v4.0 Phase 1: Trust Gate
         }
     }
 
@@ -1031,12 +1039,112 @@ async def get_requirement(rfp_id: str, req_id: str):
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     for req in rfp["requirements"]:
         if req["id"] == req_id:
             return req
-    
+
     raise HTTPException(status_code=404, detail="Requirement not found")
+
+
+@app.get("/api/rfp/{rfp_id}/requirements/{req_id}/source")
+async def get_requirement_source(rfp_id: str, req_id: str):
+    """
+    Get source coordinates for a requirement (Trust Gate API).
+
+    Returns bounding boxes for visual overlay highlighting in the frontend.
+    This is the "proof of extraction" - shows exactly where in the PDF
+    the requirement text was extracted from.
+
+    Response format (compatible with react-pdf-highlighter):
+    {
+        "source_document_id": "filename.pdf",
+        "page_index": 5,
+        "boundingRect": {"x": 0.1, "y": 0.2, "width": 0.8, "height": 0.05},
+        "rects": [
+            {"x": 0.1, "y": 0.2, "width": 0.8, "height": 0.02},
+            {"x": 0.1, "y": 0.22, "width": 0.6, "height": 0.02}
+        ],
+        "extraction_confidence": 1.0
+    }
+    """
+    from agents.enhanced_compliance.parser import get_coordinate_extractor
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Find the requirement
+    requirement = None
+    for req in rfp["requirements"]:
+        if req["id"] == req_id:
+            requirement = req
+            break
+
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # Get requirement text and source info
+    req_text = requirement.get("text", "")
+    source_doc = requirement.get("source_doc", "")
+    source_page = requirement.get("page") or requirement.get("source_page")
+
+    if not req_text:
+        raise HTTPException(status_code=400, detail="Requirement has no text")
+
+    # Find the source file path
+    file_paths = rfp.get("file_paths", [])
+    source_filepath = None
+
+    if source_doc:
+        # Try to match by filename
+        for fp in file_paths:
+            if os.path.basename(fp) == source_doc or source_doc in fp:
+                source_filepath = fp
+                break
+
+    # If no match, search all PDF files
+    if not source_filepath:
+        for fp in file_paths:
+            if fp.lower().endswith('.pdf'):
+                source_filepath = fp
+                break
+
+    if not source_filepath:
+        return {
+            "source_document_id": source_doc or "unknown",
+            "page_index": source_page,
+            "boundingRect": None,
+            "rects": [],
+            "extraction_confidence": 0.0,
+            "error": "Source PDF not found"
+        }
+
+    # Use coordinate extractor to find the text
+    extractor = get_coordinate_extractor()
+
+    # Use first 200 chars of requirement for matching (avoid very long texts)
+    search_text = req_text[:200] if len(req_text) > 200 else req_text
+
+    source_coord = extractor.find_text_coordinates(
+        filepath=source_filepath,
+        search_text=search_text,
+        page_num=source_page,
+        fuzzy_match=True
+    )
+
+    if source_coord:
+        return source_coord.to_dict()
+    else:
+        # Return partial info even if coordinates not found
+        return {
+            "source_document_id": os.path.basename(source_filepath),
+            "page_index": source_page,
+            "boundingRect": None,
+            "rects": [],
+            "extraction_confidence": 0.0,
+            "error": "Text coordinates not found in PDF"
+        }
 
 
 # ============== Export ==============

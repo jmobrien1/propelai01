@@ -75,6 +75,169 @@ class AttachmentInfo:
 
 
 @dataclass
+class BoundingBox:
+    """
+    Normalized bounding box for visual highlighting.
+
+    All coordinates are normalized to 0.0-1.0 range for screen-size independence.
+    Origin is TOP-LEFT (web standard), not bottom-left (PDF standard).
+
+    Used by react-pdf-highlighter and similar frontend libraries.
+    """
+    x: float           # Left coordinate (0.0 = left edge, 1.0 = right edge)
+    y: float           # Top coordinate (0.0 = top edge, 1.0 = bottom edge)
+    width: float       # Normalized width
+    height: float      # Normalized height
+
+    def to_dict(self) -> Dict[str, float]:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height
+        }
+
+    @classmethod
+    def from_pdf_coords(
+        cls,
+        x0: float,
+        top: float,
+        x1: float,
+        bottom: float,
+        page_width: float,
+        page_height: float
+    ) -> 'BoundingBox':
+        """
+        Create BoundingBox from pdfplumber coordinates.
+
+        pdfplumber uses top-left origin with points, so we just normalize.
+
+        Args:
+            x0: Left edge in points
+            top: Top edge in points (distance from top of page)
+            x1: Right edge in points
+            bottom: Bottom edge in points
+            page_width: Page width in points
+            page_height: Page height in points
+        """
+        return cls(
+            x=x0 / page_width,
+            y=top / page_height,
+            width=(x1 - x0) / page_width,
+            height=(bottom - top) / page_height
+        )
+
+    def merge_with(self, other: 'BoundingBox') -> 'BoundingBox':
+        """Merge two bounding boxes into one that encompasses both"""
+        new_x = min(self.x, other.x)
+        new_y = min(self.y, other.y)
+        new_right = max(self.x + self.width, other.x + other.width)
+        new_bottom = max(self.y + self.height, other.y + other.height)
+
+        return BoundingBox(
+            x=new_x,
+            y=new_y,
+            width=new_right - new_x,
+            height=new_bottom - new_y
+        )
+
+
+@dataclass
+class SourceCoordinate:
+    """
+    Links extracted requirements to their visual source location in the PDF.
+
+    This is the "Trust Gate" - provides mathematical proof of extraction accuracy
+    by enabling visual overlay of the exact source text.
+
+    Supports multi-line and multi-column requirements via visual_rects list.
+    """
+    source_document_id: str              # UUID or filename of the source PDF
+    page_index: int                      # 1-based page number
+    visual_rects: List[BoundingBox] = field(default_factory=list)  # Multiple rects for multi-line text
+
+    # Optional metadata
+    char_start: Optional[int] = None     # Character offset in page text
+    char_end: Optional[int] = None       # End character offset
+    extraction_confidence: float = 1.0   # How confident we are in the coordinate mapping
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization (API response format)"""
+        # Compute bounding rect (union of all visual_rects) for scrolling
+        bounding_rect = None
+        if self.visual_rects:
+            bounding_rect = self.visual_rects[0]
+            for rect in self.visual_rects[1:]:
+                bounding_rect = bounding_rect.merge_with(rect)
+
+        return {
+            "source_document_id": self.source_document_id,
+            "page_index": self.page_index,
+            "boundingRect": bounding_rect.to_dict() if bounding_rect else None,
+            "rects": [r.to_dict() for r in self.visual_rects],
+            "char_start": self.char_start,
+            "char_end": self.char_end,
+            "extraction_confidence": self.extraction_confidence
+        }
+
+    @classmethod
+    def from_text_match(
+        cls,
+        document_id: str,
+        page_index: int,
+        char_positions: List[Dict[str, float]],
+        page_width: float,
+        page_height: float
+    ) -> 'SourceCoordinate':
+        """
+        Create SourceCoordinate from a list of character position dicts.
+
+        Groups consecutive characters into line-level bounding boxes.
+
+        Args:
+            document_id: Source document identifier
+            page_index: 1-based page number
+            char_positions: List of dicts with x0, top, x1, bottom keys
+            page_width: Page width in points
+            page_height: Page height in points
+        """
+        if not char_positions:
+            return cls(source_document_id=document_id, page_index=page_index)
+
+        # Group characters into lines based on y-position
+        lines: List[List[Dict]] = []
+        current_line: List[Dict] = [char_positions[0]]
+        line_tolerance = 3  # Points tolerance for same-line detection
+
+        for char in char_positions[1:]:
+            if abs(char['top'] - current_line[0]['top']) < line_tolerance:
+                current_line.append(char)
+            else:
+                lines.append(current_line)
+                current_line = [char]
+        lines.append(current_line)
+
+        # Create bounding box for each line
+        visual_rects = []
+        for line in lines:
+            x0 = min(c['x0'] for c in line)
+            x1 = max(c['x1'] for c in line)
+            top = min(c['top'] for c in line)
+            bottom = max(c['bottom'] for c in line)
+
+            visual_rects.append(BoundingBox.from_pdf_coords(
+                x0, top, x1, bottom, page_width, page_height
+            ))
+
+        return cls(
+            source_document_id=document_id,
+            page_index=page_index,
+            visual_rects=visual_rects
+        )
+
+
+@dataclass
 class DocumentStructure:
     """Complete structural analysis of an RFP"""
     solicitation_number: str

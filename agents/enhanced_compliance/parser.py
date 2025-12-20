@@ -3,6 +3,8 @@ PropelAI Cycle 5: Multi-Format Document Parser
 Parses PDF, DOCX, XLSX with section boundary detection
 
 Preserves page numbers and section references for traceability
+
+v4.0 Phase 1: Added CoordinateExtractor for source traceability (Trust Gate)
 """
 
 import os
@@ -11,6 +13,256 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
 from .models import ParsedDocument, DocumentType, RFPBundle
+from .document_structure import BoundingBox, SourceCoordinate
+
+
+class CoordinateExtractor:
+    """
+    Extracts character-level bounding boxes from PDFs using pdfplumber.
+
+    This is the "Trust Gate" implementation - enables visual proof of
+    extraction accuracy by providing exact coordinates for any extracted text.
+
+    Design:
+    - Lazy loading: Only invokes pdfplumber when coordinates are requested
+    - Caches page data to avoid re-parsing
+    - Normalizes PDF coordinates to web-friendly format (0.0-1.0)
+    """
+
+    def __init__(self):
+        self._page_cache: Dict[str, Dict[int, Dict]] = {}  # {filepath: {page_num: page_data}}
+        self._pdfplumber_available = None
+
+    def _check_pdfplumber(self) -> bool:
+        """Check if pdfplumber is available"""
+        if self._pdfplumber_available is None:
+            try:
+                import pdfplumber
+                self._pdfplumber_available = True
+            except ImportError:
+                self._pdfplumber_available = False
+                print("Warning: pdfplumber not installed. Coordinate extraction unavailable.")
+                print("Install with: pip install pdfplumber")
+        return self._pdfplumber_available
+
+    def _get_page_data(self, filepath: str, page_num: int) -> Optional[Dict]:
+        """
+        Get cached page data or extract from PDF.
+
+        Returns dict with:
+        - 'chars': List of character dicts with positions
+        - 'width': Page width in points
+        - 'height': Page height in points
+        - 'text': Full page text
+        """
+        if not self._check_pdfplumber():
+            return None
+
+        # Check cache
+        if filepath in self._page_cache and page_num in self._page_cache[filepath]:
+            return self._page_cache[filepath][page_num]
+
+        # Extract page data
+        import pdfplumber
+
+        try:
+            with pdfplumber.open(filepath) as pdf:
+                if page_num < 1 or page_num > len(pdf.pages):
+                    return None
+
+                page = pdf.pages[page_num - 1]  # pdfplumber is 0-indexed
+
+                page_data = {
+                    'chars': page.chars,
+                    'width': float(page.width),
+                    'height': float(page.height),
+                    'text': page.extract_text() or ""
+                }
+
+                # Cache the result
+                if filepath not in self._page_cache:
+                    self._page_cache[filepath] = {}
+                self._page_cache[filepath][page_num] = page_data
+
+                return page_data
+
+        except Exception as e:
+            print(f"Warning: Could not extract page data from {filepath}: {e}")
+            return None
+
+    def find_text_coordinates(
+        self,
+        filepath: str,
+        search_text: str,
+        page_num: Optional[int] = None,
+        fuzzy_match: bool = True
+    ) -> Optional[SourceCoordinate]:
+        """
+        Find the coordinates of a text string in a PDF.
+
+        Args:
+            filepath: Path to the PDF file
+            search_text: The text to find
+            page_num: Specific page to search (None = search all pages)
+            fuzzy_match: If True, normalizes whitespace for matching
+
+        Returns:
+            SourceCoordinate with bounding boxes, or None if not found
+        """
+        if not self._check_pdfplumber():
+            return None
+
+        import pdfplumber
+
+        # Normalize search text if fuzzy matching
+        if fuzzy_match:
+            search_normalized = ' '.join(search_text.split())
+        else:
+            search_normalized = search_text
+
+        try:
+            with pdfplumber.open(filepath) as pdf:
+                pages_to_search = [page_num] if page_num else range(1, len(pdf.pages) + 1)
+
+                for pn in pages_to_search:
+                    if pn < 1 or pn > len(pdf.pages):
+                        continue
+
+                    page = pdf.pages[pn - 1]
+                    page_text = page.extract_text() or ""
+
+                    # Normalize page text if fuzzy matching
+                    if fuzzy_match:
+                        page_normalized = ' '.join(page_text.split())
+                    else:
+                        page_normalized = page_text
+
+                    # Find the text in the page
+                    idx = page_normalized.find(search_normalized)
+                    if idx == -1:
+                        continue
+
+                    # Map back to original character positions
+                    chars = page.chars
+                    if not chars:
+                        continue
+
+                    # Build a mapping from normalized text position to char indices
+                    char_positions = self._find_char_positions(
+                        chars, search_normalized, page_text, fuzzy_match
+                    )
+
+                    if char_positions:
+                        return SourceCoordinate.from_text_match(
+                            document_id=os.path.basename(filepath),
+                            page_index=pn,
+                            char_positions=char_positions,
+                            page_width=float(page.width),
+                            page_height=float(page.height)
+                        )
+
+                return None
+
+        except Exception as e:
+            print(f"Warning: Error finding text coordinates: {e}")
+            return None
+
+    def _find_char_positions(
+        self,
+        chars: List[Dict],
+        search_text: str,
+        full_text: str,
+        fuzzy_match: bool
+    ) -> List[Dict[str, float]]:
+        """
+        Find character position dicts for matching text.
+
+        Returns list of dicts with x0, top, x1, bottom keys.
+        """
+        if not chars:
+            return []
+
+        # Build text from chars
+        char_text = ''.join(c.get('text', '') for c in chars)
+
+        if fuzzy_match:
+            # Map char indices to normalized positions
+            normalized_to_char_idx = []
+            norm_text = []
+            in_whitespace = False
+
+            for i, c in enumerate(chars):
+                char = c.get('text', '')
+                if char.isspace():
+                    if not in_whitespace:
+                        norm_text.append(' ')
+                        normalized_to_char_idx.append(i)
+                        in_whitespace = True
+                else:
+                    norm_text.append(char)
+                    normalized_to_char_idx.append(i)
+                    in_whitespace = False
+
+            normalized_text = ''.join(norm_text)
+            search_normalized = ' '.join(search_text.split())
+
+            # Find in normalized text
+            idx = normalized_text.find(search_normalized)
+            if idx == -1:
+                return []
+
+            # Get the char indices for the match
+            start_char_idx = normalized_to_char_idx[idx] if idx < len(normalized_to_char_idx) else 0
+            end_idx = idx + len(search_normalized)
+            end_char_idx = normalized_to_char_idx[min(end_idx - 1, len(normalized_to_char_idx) - 1)] + 1
+
+            # Extract the matching chars
+            matching_chars = chars[start_char_idx:end_char_idx]
+        else:
+            # Direct match
+            idx = char_text.find(search_text)
+            if idx == -1:
+                return []
+            matching_chars = chars[idx:idx + len(search_text)]
+
+        # Convert to position dicts
+        positions = []
+        for c in matching_chars:
+            if c.get('text', '').strip():  # Skip pure whitespace chars
+                positions.append({
+                    'x0': c.get('x0', 0),
+                    'top': c.get('top', 0),
+                    'x1': c.get('x1', c.get('x0', 0) + 5),
+                    'bottom': c.get('bottom', c.get('top', 0) + 10)
+                })
+
+        return positions
+
+    def get_page_dimensions(self, filepath: str, page_num: int) -> Optional[Tuple[float, float]]:
+        """Get page dimensions (width, height) in points."""
+        page_data = self._get_page_data(filepath, page_num)
+        if page_data:
+            return (page_data['width'], page_data['height'])
+        return None
+
+    def clear_cache(self, filepath: Optional[str] = None):
+        """Clear cached page data."""
+        if filepath:
+            self._page_cache.pop(filepath, None)
+        else:
+            self._page_cache.clear()
+
+
+# Global coordinator extractor instance
+_coordinate_extractor: Optional[CoordinateExtractor] = None
+
+
+def get_coordinate_extractor() -> CoordinateExtractor:
+    """Get or create the global CoordinateExtractor instance."""
+    global _coordinate_extractor
+    if _coordinate_extractor is None:
+        _coordinate_extractor = CoordinateExtractor()
+    return _coordinate_extractor
 
 
 class MultiFormatParser:
