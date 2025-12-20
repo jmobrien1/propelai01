@@ -590,7 +590,12 @@
             const [currentView, setCurrentView] = useState('upload');
             const [apiConnected, setApiConnected] = useState(false);
             const [error, setError] = useState(null);
-            
+
+            // Auth State
+            const [currentUser, setCurrentUser] = useState(null);
+            const [showAuthModal, setShowAuthModal] = useState(false);
+            const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+
             // RFP State
             const [currentRfpId, setCurrentRfpId] = useState(null);
             const [files, setFiles] = useState([]);
@@ -598,14 +603,26 @@
             const [processing, setProcessing] = useState(false);
             const [processingStatus, setProcessingStatus] = useState({ status: '', progress: 0, message: '' });
             const [extractionMode, setExtractionMode] = useState('standard'); // v2.9: Default to best practices
-            
+
             // Requirements State
             const [requirements, setRequirements] = useState([]);
             const [stats, setStats] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
             const [filterType, setFilterType] = useState('all');
             const [filterPriority, setFilterPriority] = useState('all');
-            
+
+            // Load user from localStorage on mount
+            useEffect(() => {
+                const savedUser = localStorage.getItem('propelai_user');
+                if (savedUser) {
+                    try {
+                        setCurrentUser(JSON.parse(savedUser));
+                    } catch (e) {
+                        localStorage.removeItem('propelai_user');
+                    }
+                }
+            }, []);
+
             // Check API health on mount
             useEffect(() => {
                 const checkHealth = async () => {
@@ -663,7 +680,68 @@
                     setError('Failed to load requirements: ' + e.message);
                 }
             };
-            
+
+            // Auth functions
+            const handleLogin = async (email, password) => {
+                try {
+                    const formData = new FormData();
+                    formData.append('email', email);
+                    formData.append('password', password);
+
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Login failed');
+                    }
+
+                    const data = await response.json();
+                    setCurrentUser(data.user);
+                    localStorage.setItem('propelai_user', JSON.stringify(data.user));
+                    setShowAuthModal(false);
+                    return true;
+                } catch (e) {
+                    setError(e.message);
+                    return false;
+                }
+            };
+
+            const handleRegister = async (name, email, password) => {
+                try {
+                    const formData = new FormData();
+                    formData.append('name', name);
+                    formData.append('email', email);
+                    formData.append('password', password);
+
+                    const response = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Registration failed');
+                    }
+
+                    const data = await response.json();
+                    setCurrentUser(data);
+                    localStorage.setItem('propelai_user', JSON.stringify(data));
+                    setShowAuthModal(false);
+                    return true;
+                } catch (e) {
+                    setError(e.message);
+                    return false;
+                }
+            };
+
+            const handleLogout = () => {
+                setCurrentUser(null);
+                localStorage.removeItem('propelai_user');
+            };
+
             // Process files - accepts optional docTypes and files from guided upload
             const processFiles = async (docTypes = '', filesToProcess = null) => {
                 // Use provided files or fall back to rawFiles state
@@ -802,7 +880,56 @@
                                 <span>Win Themes</span>
                             </div>
                         </nav>
-                        
+
+                        {/* User Profile Section */}
+                        <div style={{ padding: 16, borderTop: '1px solid var(--border-color)', marginTop: 'auto' }}>
+                            {currentUser ? (
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                                        <div style={{
+                                            width: 36,
+                                            height: 36,
+                                            borderRadius: '50%',
+                                            background: 'var(--accent-blue)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: 'white',
+                                            fontWeight: 600,
+                                            fontSize: 14
+                                        }}>
+                                            {currentUser.name?.charAt(0)?.toUpperCase() || '?'}
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {currentUser.name}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {currentUser.email}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        className="btn"
+                                        style={{ width: '100%', fontSize: 12 }}
+                                        onClick={handleLogout}
+                                    >
+                                        <Icon name="LogOut" style={{ width: 14, height: 14, marginRight: 6 }} />
+                                        Sign Out
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    className="btn btn-primary"
+                                    style={{ width: '100%', fontSize: 13 }}
+                                    onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                                >
+                                    <Icon name="User" style={{ width: 14, height: 14, marginRight: 6 }} />
+                                    Sign In
+                                </button>
+                            )}
+                        </div>
+
                         <div className="sidebar-footer">
                             <p>PropelAI v4.1</p>
                             {currentRfpId && <p style={{ marginTop: 4 }}>{currentRfpId}</p>}
@@ -884,6 +1011,176 @@
                             </div>
                         </div>
                     )}
+
+                    {/* Auth Modal */}
+                    {showAuthModal && (
+                        <AuthModal
+                            mode={authMode}
+                            setMode={setAuthMode}
+                            onClose={() => setShowAuthModal(false)}
+                            onLogin={handleLogin}
+                            onRegister={handleRegister}
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        // Auth Modal Component
+        function AuthModal({ mode, setMode, onClose, onLogin, onRegister }) {
+            const [name, setName] = useState('');
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [confirmPassword, setConfirmPassword] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                setLoading(true);
+
+                if (mode === 'register') {
+                    if (password !== confirmPassword) {
+                        setError('Passwords do not match');
+                        setLoading(false);
+                        return;
+                    }
+                    if (password.length < 6) {
+                        setError('Password must be at least 6 characters');
+                        setLoading(false);
+                        return;
+                    }
+                    const success = await onRegister(name, email, password);
+                    if (!success) {
+                        setError('Registration failed. Email may already be in use.');
+                    }
+                } else {
+                    const success = await onLogin(email, password);
+                    if (!success) {
+                        setError('Invalid email or password');
+                    }
+                }
+                setLoading(false);
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+                        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                            <h2 style={{ marginBottom: 8 }}>
+                                {mode === 'login' ? 'Welcome Back' : 'Create Account'}
+                            </h2>
+                            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+                                {mode === 'login'
+                                    ? 'Sign in to access your team workspaces'
+                                    : 'Get started with PropelAI'}
+                            </p>
+                        </div>
+
+                        {error && (
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid var(--accent-red)',
+                                borderRadius: 8,
+                                padding: 12,
+                                marginBottom: 16,
+                                fontSize: 13,
+                                color: 'var(--accent-red)'
+                            }}>
+                                {error}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit}>
+                            {mode === 'register' && (
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Full Name</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="John Doe"
+                                        value={name}
+                                        onChange={e => setName(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            )}
+
+                            <div style={{ marginBottom: 16 }}>
+                                <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Email</label>
+                                <input
+                                    type="email"
+                                    className="form-input"
+                                    placeholder="you@company.com"
+                                    value={email}
+                                    onChange={e => setEmail(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: 16 }}>
+                                <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Password</label>
+                                <input
+                                    type="password"
+                                    className="form-input"
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            {mode === 'register' && (
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Confirm Password</label>
+                                    <input
+                                        type="password"
+                                        className="form-input"
+                                        placeholder="••••••••"
+                                        value={confirmPassword}
+                                        onChange={e => setConfirmPassword(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            )}
+
+                            <button
+                                type="submit"
+                                className="btn btn-primary"
+                                style={{ width: '100%', marginBottom: 16 }}
+                                disabled={loading}
+                            >
+                                {loading ? 'Please wait...' : (mode === 'login' ? 'Sign In' : 'Create Account')}
+                            </button>
+                        </form>
+
+                        <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
+                            {mode === 'login' ? (
+                                <>
+                                    Don't have an account?{' '}
+                                    <button
+                                        type="button"
+                                        onClick={() => { setMode('register'); setError(''); }}
+                                        style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', cursor: 'pointer' }}
+                                    >
+                                        Sign up
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    Already have an account?{' '}
+                                    <button
+                                        type="button"
+                                        onClick={() => { setMode('login'); setError(''); }}
+                                        style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', cursor: 'pointer' }}
+                                    >
+                                        Sign in
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
                 </div>
             );
         }
