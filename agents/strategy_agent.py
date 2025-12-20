@@ -1,56 +1,56 @@
 """
 PropelAI Strategy Agent - "The Capture Manager"
-v4.0 Phase 2: Iron Triangle Logic Engine
+Play 2: The Strategy Engine (Win Themes)
 
-Goal: Model dependencies between Section L, M, and C
+v4.0: Enhanced with real LLM integration for strategic analysis
+
+Goal: Define *why* we win before writing a single word
 
 This agent:
-1. Analyzes Section M (Evaluation Factors) - extract scoring weights
-2. Cross-walks Section M factors → Section C (SOW) paragraphs
-3. Validates Section L allows corresponding proposal volumes
-4. Detects conflicts (page limits, structure mismatches)
-5. Generates win themes and discriminators
-6. Creates annotated outline with page allocations
+1. Analyzes Section M (Evaluation Factors) using LLM reasoning
+2. Queries past bid strategies from the Agent-Trace database
+3. Performs competitor ghosting analysis
+4. Generates win themes and discriminators via LLM
+5. Creates annotated outline with page allocations
 
-Uses high-reasoning model for strategic synthesis
+Uses high-reasoning model (Gemini 1.5 Pro or Claude) for strategic synthesis
 """
 
 import json
 import re
+import os
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
-# Try to import from core, fallback to standalone
 try:
-    from core.state import ProposalState, ProposalPhase
+    import httpx
+    HTTPX_AVAILABLE = True
 except ImportError:
-    # Standalone mode - define minimal types
-    ProposalState = Dict[str, Any]
-    class ProposalPhase(str, Enum):
-        STRATEGY = "strategy"
-        DRAFTING = "drafting"
-        REVIEW = "review"
+    HTTPX_AVAILABLE = False
 
-# Import Phase 2 data models
-try:
-    from agents.enhanced_compliance.document_structure import (
-        UCFSection,
-        DocumentStructure,
-        SectionBoundary,
-        WinTheme as WinThemeModel,
-        CompetitorProfile as CompetitorProfileModel,
-        EvaluationFactor,
-        StructureConflict,
-        LMCCrossWalk,
-        StrategyAnalysis,
-        ConflictType,
-        ConflictSeverity,
-    )
-    PHASE2_MODELS_AVAILABLE = True
-except ImportError:
-    PHASE2_MODELS_AVAILABLE = False
+from core.state import ProposalState, ProposalPhase
+
+
+# LLM Provider configuration
+LLM_PROVIDERS = {
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "model": "gemini-1.5-pro",
+        "env_key": "GOOGLE_API_KEY",
+    },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com/v1",
+        "model": "claude-3-5-sonnet-20241022",
+        "env_key": "ANTHROPIC_API_KEY",
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4-turbo-preview",
+        "env_key": "OPENAI_API_KEY",
+    },
+}
 
 
 class StrategyFramework(str, Enum):
@@ -64,26 +64,98 @@ class StrategyFramework(str, Enum):
     TRANSITION = "transition"
 
 
+class DiscriminatorType(str, Enum):
+    """Categories of discriminators"""
+    TECHNICAL = "technical"
+    MANAGEMENT = "management"
+    PAST_PERFORMANCE = "past_performance"
+    PRICE = "price"
+    INNOVATION = "innovation"
+    RISK = "risk"
+    PERSONNEL = "personnel"
+
+
+@dataclass
+class Discriminator:
+    """
+    v4.0 Iron Triangle: A unique differentiator that sets us apart.
+
+    Each discriminator should be:
+    - Provable with evidence
+    - Relevant to evaluation criteria
+    - Difficult for competitors to match
+    """
+    id: str
+    category: DiscriminatorType
+    claim: str                         # "Our patented AI reduces review time by 40%"
+    evidence_type: str                 # "case_study" | "metric" | "testimonial" | "certification"
+    evidence_source: Optional[str]     # Document reference
+    quantified_impact: Optional[str]   # "40% faster" | "$2M saved"
+    ghosting_angle: Optional[str]      # How this positions against competitors
+
+
 @dataclass
 class WinTheme:
-    """A strategic win theme"""
+    """
+    v4.0 Iron Triangle: A strategic win theme with full evidence chain.
+
+    Each theme addresses a primary evaluation factor with:
+    - Clear headline message
+    - Multiple discriminators
+    - Provable evidence points
+    - Competitive positioning
+    """
     id: str
-    theme_text: str                    # The headline message
-    discriminator: str                  # What makes us unique
-    proof_points: List[str]            # Evidence to support
-    linked_criteria: List[str]         # Section M eval criteria IDs
-    ghosting_language: Optional[str]   # De-position competitors
-    confidence: float
+    theme_headline: str                # The headline message (1 sentence)
+    theme_narrative: str               # 2-3 sentence expansion
+    discriminators: List[Discriminator] = field(default_factory=list)
+    proof_points: List[str] = field(default_factory=list)
+    linked_eval_criteria: List[str] = field(default_factory=list)
+    ghosting_language: Optional[str] = None
+    page_allocation_percent: float = 0.0  # Suggested % of volume
+    priority: int = 1                  # 1-5 ranking (1 = highest)
+    confidence: float = 0.5
+    llm_generated: bool = False        # True if generated by LLM vs template
+
+    # Legacy compatibility
+    @property
+    def theme_text(self) -> str:
+        return self.theme_headline
+
+    @property
+    def discriminator(self) -> str:
+        if self.discriminators:
+            return self.discriminators[0].claim
+        return ""
+
+    @property
+    def linked_criteria(self) -> List[str]:
+        return self.linked_eval_criteria
 
 
-@dataclass 
+@dataclass
 class CompetitorProfile:
     """Intelligence on a competitor"""
     name: str
-    strengths: List[str]
-    weaknesses: List[str]
-    likely_themes: List[str]
-    ghosting_opportunities: List[str]
+    strengths: List[str] = field(default_factory=list)
+    weaknesses: List[str] = field(default_factory=list)
+    likely_themes: List[str] = field(default_factory=list)
+    ghosting_opportunities: List[str] = field(default_factory=list)
+
+
+@dataclass
+class GhostingStrategy:
+    """
+    v4.0: Subtle competitive positioning language.
+
+    Ghosting is about positioning ourselves favorably without
+    directly naming competitors.
+    """
+    competitor_weakness: str           # What competitor lacks
+    our_strength: str                  # Our counter-positioning
+    language_template: str             # "Unlike solutions that..., our approach..."
+    eval_criteria_link: str            # Which Section M factor this addresses
+    subtlety_level: int = 3            # 1-5 (1=very subtle, 5=direct comparison)
 
 
 class StrategyAgent:
@@ -98,19 +170,194 @@ class StrategyAgent:
     """
     
     def __init__(
-        self, 
+        self,
         llm_client: Optional[Any] = None,
-        past_performance_store: Optional[Any] = None
+        past_performance_store: Optional[Any] = None,
+        llm_provider: str = "gemini",
+        use_llm: bool = True
     ):
         """
         Initialize the Strategy Agent
-        
+
         Args:
             llm_client: LLM client for strategic reasoning (recommend Gemini Pro)
             past_performance_store: Vector store of past proposals for pattern matching
+            llm_provider: Which LLM provider to use ("gemini", "anthropic", "openai")
+            use_llm: If False, falls back to template-based generation
         """
         self.llm_client = llm_client
         self.past_performance_store = past_performance_store
+        self.llm_provider = llm_provider
+        self.use_llm = use_llm and HTTPX_AVAILABLE
+        self._http_client = None
+
+    def _get_http_client(self) -> Optional["httpx.Client"]:
+        """Get or create HTTP client for LLM API calls"""
+        if not HTTPX_AVAILABLE:
+            return None
+        if self._http_client is None:
+            self._http_client = httpx.Client(timeout=60.0)
+        return self._http_client
+
+    def _call_llm(self, prompt: str, system_prompt: Optional[str] = None) -> Optional[str]:
+        """
+        Call the LLM API for strategic reasoning.
+
+        v4.0: Real LLM integration replacing template stubs.
+
+        Args:
+            prompt: The user prompt
+            system_prompt: Optional system instructions
+
+        Returns:
+            LLM response text, or None if call fails
+        """
+        if not self.use_llm:
+            return None
+
+        client = self._get_http_client()
+        if not client:
+            return None
+
+        provider_config = LLM_PROVIDERS.get(self.llm_provider, LLM_PROVIDERS["gemini"])
+        api_key = os.environ.get(provider_config["env_key"])
+
+        if not api_key:
+            # Try fallback providers
+            for fallback in ["gemini", "anthropic", "openai"]:
+                if fallback == self.llm_provider:
+                    continue
+                fallback_config = LLM_PROVIDERS[fallback]
+                api_key = os.environ.get(fallback_config["env_key"])
+                if api_key:
+                    provider_config = fallback_config
+                    break
+
+        if not api_key:
+            return None
+
+        try:
+            if "gemini" in provider_config["model"]:
+                return self._call_gemini(client, api_key, prompt, system_prompt, provider_config)
+            elif "claude" in provider_config["model"]:
+                return self._call_anthropic(client, api_key, prompt, system_prompt, provider_config)
+            else:
+                return self._call_openai(client, api_key, prompt, system_prompt, provider_config)
+        except Exception as e:
+            print(f"LLM call failed: {e}")
+            return None
+
+    def _call_gemini(
+        self,
+        client: "httpx.Client",
+        api_key: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        config: Dict
+    ) -> Optional[str]:
+        """Call Gemini API"""
+        url = f"{config['base_url']}/models/{config['model']}:generateContent?key={api_key}"
+
+        contents = []
+        if system_prompt:
+            contents.append({"role": "user", "parts": [{"text": system_prompt}]})
+            contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions."}]})
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+        response = client.post(
+            url,
+            json={
+                "contents": contents,
+                "generationConfig": {
+                    "temperature": 0.7,
+                    "maxOutputTokens": 4096,
+                }
+            }
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if candidates:
+                content = candidates[0].get("content", {})
+                parts = content.get("parts", [])
+                if parts:
+                    return parts[0].get("text", "")
+        return None
+
+    def _call_anthropic(
+        self,
+        client: "httpx.Client",
+        api_key: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        config: Dict
+    ) -> Optional[str]:
+        """Call Anthropic API"""
+        url = f"{config['base_url']}/messages"
+
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+
+        body = {
+            "model": config["model"],
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+        if system_prompt:
+            body["system"] = system_prompt
+
+        response = client.post(url, headers=headers, json=body)
+
+        if response.status_code == 200:
+            data = response.json()
+            content = data.get("content", [])
+            if content:
+                return content[0].get("text", "")
+        return None
+
+    def _call_openai(
+        self,
+        client: "httpx.Client",
+        api_key: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        config: Dict
+    ) -> Optional[str]:
+        """Call OpenAI API"""
+        url = f"{config['base_url']}/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = client.post(
+            url,
+            headers=headers,
+            json={
+                "model": config["model"],
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": 0.7,
+            }
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            choices = data.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "")
+        return None
         
     def __call__(self, state: ProposalState) -> Dict[str, Any]:
         """
@@ -360,40 +607,222 @@ class StrategyAgent:
         requirements: List[Dict]
     ) -> List[WinTheme]:
         """
-        Develop win themes based on analysis
-        
+        Develop win themes based on analysis.
+
+        v4.0: Uses LLM for intelligent theme generation when available,
+        falls back to template-based generation otherwise.
+
         Each theme should:
         - Address a primary evaluation factor
         - Be unique/differentiated
         - Have provable evidence
         """
+        # Try LLM-based theme generation first
+        if self.use_llm:
+            llm_themes = self._generate_themes_with_llm(factor_analysis, winning_patterns, requirements)
+            if llm_themes:
+                return llm_themes
+
+        # Fallback to template-based generation
+        return self._generate_themes_from_templates(factor_analysis, winning_patterns, requirements)
+
+    def _generate_themes_with_llm(
+        self,
+        factor_analysis: List[Dict],
+        winning_patterns: List[Dict],
+        requirements: List[Dict]
+    ) -> Optional[List[WinTheme]]:
+        """
+        Generate win themes using LLM.
+
+        v4.0: Real strategic reasoning via LLM.
+        """
+        system_prompt = """You are an expert federal proposal strategist with 20+ years of experience winning government contracts.
+
+Your task is to develop win themes that will resonate with government evaluators.
+
+For each evaluation factor, create a win theme that:
+1. Directly addresses what the government cares about most
+2. Differentiates from competitors without naming them
+3. Is provable with evidence (past performance, case studies, metrics)
+4. Uses action-oriented, benefit-focused language
+
+Output your themes in this exact JSON format:
+{
+  "themes": [
+    {
+      "factor_name": "Technical Approach",
+      "headline": "One powerful sentence that captures why we win",
+      "narrative": "2-3 sentences expanding on the headline with specific benefits",
+      "discriminator_claim": "Specific claim that sets us apart (with quantification if possible)",
+      "discriminator_type": "technical|management|past_performance|price|innovation|risk|personnel",
+      "proof_points": ["Evidence point 1", "Evidence point 2", "Evidence point 3"],
+      "ghosting_angle": "Subtle language to position against competitors without naming them",
+      "priority": 1
+    }
+  ]
+}"""
+
+        # Build the prompt with context
+        factors_text = "\n".join([
+            f"- {f['factor_name']} (importance: {f['importance_score']:.0%}): {f['text'][:200]}..."
+            for f in factor_analysis[:5]
+        ])
+
+        patterns_text = "\n".join([
+            f"- {p['pattern_name']}: {p['description']}"
+            for p in winning_patterns[:3]
+        ]) if winning_patterns else "No historical patterns available."
+
+        req_sample = "\n".join([
+            f"- {r.get('text', '')[:100]}..."
+            for r in requirements[:10]
+        ]) if requirements else "No requirements provided."
+
+        prompt = f"""Analyze these evaluation factors and develop win themes:
+
+EVALUATION FACTORS (from Section M):
+{factors_text}
+
+HISTORICAL WINNING PATTERNS:
+{patterns_text}
+
+SAMPLE REQUIREMENTS TO ADDRESS:
+{req_sample}
+
+Generate 3-5 win themes that will score highest with government evaluators. Focus on the most important factors first.
+
+Return ONLY valid JSON matching the schema above."""
+
+        response = self._call_llm(prompt, system_prompt)
+        if not response:
+            return None
+
+        # Parse JSON response
+        try:
+            # Extract JSON from response (handle markdown code blocks)
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if not json_match:
+                return None
+
+            data = json.loads(json_match.group())
+            themes_data = data.get("themes", [])
+
+            themes = []
+            for i, t in enumerate(themes_data):
+                # Determine discriminator type
+                disc_type_str = t.get("discriminator_type", "technical").lower()
+                try:
+                    disc_type = DiscriminatorType(disc_type_str)
+                except ValueError:
+                    disc_type = DiscriminatorType.TECHNICAL
+
+                discriminator = Discriminator(
+                    id=f"DISC-{i+1:02d}",
+                    category=disc_type,
+                    claim=t.get("discriminator_claim", ""),
+                    evidence_type="case_study",
+                    evidence_source=None,
+                    quantified_impact=None,
+                    ghosting_angle=t.get("ghosting_angle"),
+                )
+
+                theme = WinTheme(
+                    id=f"THEME-{i+1:02d}",
+                    theme_headline=t.get("headline", ""),
+                    theme_narrative=t.get("narrative", ""),
+                    discriminators=[discriminator],
+                    proof_points=t.get("proof_points", []),
+                    linked_eval_criteria=[t.get("factor_name", "")],
+                    ghosting_language=t.get("ghosting_angle"),
+                    priority=t.get("priority", i + 1),
+                    confidence=0.8,
+                    llm_generated=True,
+                )
+                themes.append(theme)
+
+            return themes if themes else None
+
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"Failed to parse LLM theme response: {e}")
+            return None
+
+    def _generate_themes_from_templates(
+        self,
+        factor_analysis: List[Dict],
+        winning_patterns: List[Dict],
+        requirements: List[Dict]
+    ) -> List[WinTheme]:
+        """
+        Template-based theme generation (fallback when LLM unavailable).
+        """
         themes = []
-        
-        # Generate themes for top factors
+
         for i, factor in enumerate(factor_analysis[:5]):
             factor_name = factor["factor_name"]
-            
+
             # Find relevant pattern
             relevant_pattern = next(
-                (p for p in winning_patterns 
-                 if any(kw in p["pattern_name"].lower() 
+                (p for p in winning_patterns
+                 if any(kw in p["pattern_name"].lower()
                        for kw in factor_name.lower().split())),
                 None
             )
-            
-            # Generate theme
+
+            # Generate theme headline
+            headline = self._generate_theme_text(factor, relevant_pattern)
+
+            # Generate discriminator
+            disc_claim = self._generate_discriminator_claim(factor)
+            disc_type = self._infer_discriminator_type(factor_name)
+
+            discriminator = Discriminator(
+                id=f"DISC-{i+1:02d}",
+                category=disc_type,
+                claim=disc_claim,
+                evidence_type="case_study",
+                evidence_source=None,
+                quantified_impact=None,
+                ghosting_angle=None,
+            )
+
             theme = WinTheme(
                 id=f"THEME-{i+1:02d}",
-                theme_text=self._generate_theme_text(factor, relevant_pattern),
-                discriminator=self._generate_discriminator(factor),
+                theme_headline=headline,
+                theme_narrative=f"Our approach to {factor_name.lower()} demonstrates proven capabilities that directly address your mission requirements.",
+                discriminators=[discriminator],
                 proof_points=self._generate_proof_points(factor, requirements),
-                linked_criteria=[factor["criterion_id"]] if factor.get("criterion_id") else [],
-                ghosting_language=None,  # Filled in later
-                confidence=factor["importance_score"]
+                linked_eval_criteria=[factor["criterion_id"]] if factor.get("criterion_id") else [],
+                ghosting_language=None,
+                priority=i + 1,
+                confidence=factor["importance_score"],
+                llm_generated=False,
             )
             themes.append(theme)
-        
+
         return themes
+
+    def _infer_discriminator_type(self, factor_name: str) -> DiscriminatorType:
+        """Infer discriminator type from factor name"""
+        factor_lower = factor_name.lower()
+        if "technical" in factor_lower:
+            return DiscriminatorType.TECHNICAL
+        elif "management" in factor_lower:
+            return DiscriminatorType.MANAGEMENT
+        elif "past" in factor_lower or "performance" in factor_lower:
+            return DiscriminatorType.PAST_PERFORMANCE
+        elif "price" in factor_lower or "cost" in factor_lower:
+            return DiscriminatorType.PRICE
+        elif "staff" in factor_lower or "personnel" in factor_lower:
+            return DiscriminatorType.PERSONNEL
+        elif "risk" in factor_lower:
+            return DiscriminatorType.RISK
+        else:
+            return DiscriminatorType.TECHNICAL
+
+    def _generate_discriminator_claim(self, factor: Dict) -> str:
+        """Generate discriminator claim (legacy compatibility)"""
+        return self._generate_discriminator(factor)
     
     def _generate_theme_text(
         self, 
@@ -695,426 +1124,640 @@ class StrategyAgent:
         """Convert WinTheme to dictionary for state storage"""
         return {
             "id": theme.id,
+            # v4.0 fields
+            "theme_headline": theme.theme_headline,
+            "theme_narrative": theme.theme_narrative,
+            "discriminators": [
+                {
+                    "id": d.id,
+                    "category": d.category.value,
+                    "claim": d.claim,
+                    "evidence_type": d.evidence_type,
+                    "evidence_source": d.evidence_source,
+                    "quantified_impact": d.quantified_impact,
+                    "ghosting_angle": d.ghosting_angle,
+                }
+                for d in theme.discriminators
+            ],
+            "proof_points": theme.proof_points,
+            "linked_eval_criteria": theme.linked_eval_criteria,
+            "ghosting_language": theme.ghosting_language,
+            "page_allocation_percent": theme.page_allocation_percent,
+            "priority": theme.priority,
+            "confidence": theme.confidence,
+            "llm_generated": theme.llm_generated,
+            # Legacy compatibility
             "theme_text": theme.theme_text,
             "discriminator": theme.discriminator,
-            "proof_points": theme.proof_points,
             "linked_criteria": theme.linked_criteria,
-            "ghosting_language": theme.ghosting_language,
-            "confidence": theme.confidence
+        }
+
+
+# ============================================================================
+# v4.0: Ghosting Language Generator (Task 2.2.3)
+# ============================================================================
+
+class GhostingLanguageGenerator:
+    """
+    v4.0: Generates subtle competitive positioning language.
+
+    Ghosting is the art of positioning against competitors without
+    naming them directly. Good ghosting:
+    - Highlights our strengths in areas where competitors are weak
+    - Uses positive framing ("We offer X" not "They lack X")
+    - Aligns with evaluation criteria
+    - Is subtle enough to pass legal/ethical review
+    """
+
+    # Ghosting templates by weakness category
+    GHOSTING_TEMPLATES = {
+        "experience": {
+            "weakness_pattern": ["new", "limited experience", "lack", "first time"],
+            "our_strength": "directly relevant experience",
+            "templates": [
+                "Our team brings {years}+ years of directly relevant experience, ensuring mission continuity from day one.",
+                "Unlike approaches based on theoretical knowledge, our methodology is battle-tested across {count} similar contracts.",
+                "We offer proven past performance with the same customer base, not aspirational claims.",
+            ]
+        },
+        "transition_risk": {
+            "weakness_pattern": ["transition", "startup", "ramp", "learning curve"],
+            "our_strength": "seamless transition",
+            "templates": [
+                "Our zero-defect transition track record eliminates startup risk and ensures continuous operations.",
+                "Rather than extended learning curves, we deliver Day 1 readiness through our proven onboarding process.",
+                "Our incumbent-like knowledge eliminates the transition gaps that often plague new contractors.",
+            ]
+        },
+        "scale": {
+            "weakness_pattern": ["small", "limited resources", "capacity", "scale"],
+            "our_strength": "enterprise scale",
+            "templates": [
+                "Our enterprise-scale resources ensure we can flex to meet surge requirements without compromising quality.",
+                "Unlike capacity-constrained alternatives, our nationwide bench provides immediate access to cleared talent.",
+                "Our financial stability ensures uninterrupted service delivery throughout the contract lifecycle.",
+            ]
+        },
+        "innovation": {
+            "weakness_pattern": ["legacy", "outdated", "traditional", "conventional"],
+            "our_strength": "modern innovation",
+            "templates": [
+                "Our modern, cloud-native approach delivers capabilities that legacy systems cannot match.",
+                "We bring innovation without risk—proven technologies already successfully deployed in similar environments.",
+                "Our forward-leaning technical approach positions you for future requirements, not just today's needs.",
+            ]
+        },
+        "personnel": {
+            "weakness_pattern": ["staff", "personnel", "turnover", "retention"],
+            "our_strength": "committed personnel",
+            "templates": [
+                "Our named key personnel have committed to this contract, ensuring continuity and accountability.",
+                "With industry-leading retention rates of {retention}%, we deliver consistent service quality.",
+                "All proposed staff hold current {clearance} clearances—no delays, no substitutions.",
+            ]
+        },
+        "price_realism": {
+            "weakness_pattern": ["low price", "underbid", "unrealistic", "buy-in"],
+            "our_strength": "realistic pricing",
+            "templates": [
+                "Our pricing reflects realistic labor categories and proven efficiency—not optimistic assumptions.",
+                "We invest in contract success upfront, avoiding the performance issues that plague underbid contracts.",
+                "Our cost model is built on actual performance data, ensuring sustainable service delivery.",
+            ]
+        },
+        "technical_depth": {
+            "weakness_pattern": ["generic", "superficial", "boilerplate", "off-the-shelf"],
+            "our_strength": "tailored solution",
+            "templates": [
+                "Our solution is purpose-built for your mission, not adapted from a generic commercial offering.",
+                "Every aspect of our technical approach addresses your specific requirements—no boilerplate.",
+                "We bring deep domain expertise in {domain}, not surface-level familiarity.",
+            ]
+        },
+    }
+
+    def __init__(self, use_llm: bool = True, llm_caller: Optional[callable] = None):
+        """
+        Initialize the ghosting generator.
+
+        Args:
+            use_llm: Whether to use LLM for generation (enhances templates)
+            llm_caller: Optional function to call LLM (signature: prompt -> str)
+        """
+        self.use_llm = use_llm
+        self.llm_caller = llm_caller
+
+    def generate_ghosting_library(
+        self,
+        win_themes: List[WinTheme],
+        competitor_weaknesses: List[str],
+        eval_criteria: List[Dict]
+    ) -> List[GhostingStrategy]:
+        """
+        Generate a library of ghosting language for the proposal.
+
+        Args:
+            win_themes: Our win themes to reinforce
+            competitor_weaknesses: Known/suspected competitor weaknesses
+            eval_criteria: Evaluation criteria to align with
+
+        Returns:
+            List of GhostingStrategy objects ready for integration
+        """
+        strategies = []
+
+        for weakness in competitor_weaknesses:
+            weakness_lower = weakness.lower()
+
+            # Find matching template category
+            for category, config in self.GHOSTING_TEMPLATES.items():
+                if any(pattern in weakness_lower for pattern in config["weakness_pattern"]):
+                    # Find aligned evaluation criterion
+                    aligned_criterion = self._find_aligned_criterion(
+                        category, eval_criteria
+                    )
+
+                    # Select best template
+                    template = self._select_template(
+                        config["templates"],
+                        win_themes,
+                        weakness
+                    )
+
+                    strategy = GhostingStrategy(
+                        competitor_weakness=weakness,
+                        our_strength=config["our_strength"],
+                        language_template=template,
+                        eval_criteria_link=aligned_criterion,
+                        subtlety_level=3
+                    )
+                    strategies.append(strategy)
+                    break
+
+        # Try LLM enhancement if available
+        if self.use_llm and self.llm_caller and strategies:
+            enhanced = self._enhance_with_llm(strategies, win_themes)
+            if enhanced:
+                strategies = enhanced
+
+        return strategies
+
+    def generate_for_section(
+        self,
+        section_type: str,
+        our_discriminators: List[Discriminator],
+        competitor_profile: Optional[CompetitorProfile] = None
+    ) -> List[str]:
+        """
+        Generate ghosting language for a specific proposal section.
+
+        Args:
+            section_type: "technical", "management", "past_performance", etc.
+            our_discriminators: Our discriminators to reinforce
+            competitor_profile: Optional specific competitor to ghost
+
+        Returns:
+            List of ghosting sentences ready to weave into content
+        """
+        sentences = []
+
+        # Section-specific ghosting
+        section_ghosts = {
+            "technical": [
+                "Our approach is specifically designed for {domain} environments, not adapted from commercial solutions.",
+                "We integrate proven technologies that eliminate the risks associated with experimental approaches.",
+            ],
+            "management": [
+                "Our management team has direct experience with {agency}, not just theoretical familiarity.",
+                "We provide named, committed key personnel—not placeholder positions to be filled post-award.",
+            ],
+            "past_performance": [
+                "Our past performance is directly relevant to this requirement, not tangentially related.",
+                "We offer recent, verifiable results with current customer references.",
+            ],
+            "transition": [
+                "Our transition approach is based on proven playbooks, not first-time execution.",
+                "We eliminate transition risk through incumbency-level knowledge and ready personnel.",
+            ],
+        }
+
+        base_ghosts = section_ghosts.get(section_type.lower(), [])
+        sentences.extend(base_ghosts)
+
+        # Add discriminator-based ghosting
+        for disc in our_discriminators:
+            if disc.ghosting_angle:
+                sentences.append(disc.ghosting_angle)
+
+        # Add competitor-specific ghosting if provided
+        if competitor_profile and competitor_profile.weaknesses:
+            for weakness in competitor_profile.weaknesses[:3]:
+                ghost = self._generate_single_ghost(weakness, section_type)
+                if ghost:
+                    sentences.append(ghost)
+
+        return sentences[:5]  # Limit to avoid over-ghosting
+
+    def _find_aligned_criterion(
+        self,
+        category: str,
+        eval_criteria: List[Dict]
+    ) -> str:
+        """Find evaluation criterion that aligns with ghosting category"""
+        category_to_criteria = {
+            "experience": ["past performance", "experience", "relevant"],
+            "transition_risk": ["management", "transition", "risk"],
+            "scale": ["resources", "capacity", "staffing"],
+            "innovation": ["technical", "approach", "solution"],
+            "personnel": ["staffing", "key personnel", "qualifications"],
+            "price_realism": ["price", "cost", "value"],
+            "technical_depth": ["technical", "approach", "methodology"],
+        }
+
+        keywords = category_to_criteria.get(category, [])
+
+        for criterion in eval_criteria:
+            criterion_text = criterion.get("factor_name", "").lower()
+            if any(kw in criterion_text for kw in keywords):
+                return criterion.get("criterion_id", criterion.get("factor_name", ""))
+
+        return ""
+
+    def _select_template(
+        self,
+        templates: List[str],
+        win_themes: List[WinTheme],
+        weakness: str
+    ) -> str:
+        """Select and customize the best template"""
+        # Simple selection - first template that matches context
+        template = templates[0]
+
+        # Basic variable substitution
+        template = template.replace("{years}", "15")
+        template = template.replace("{count}", "12")
+        template = template.replace("{retention}", "95")
+        template = template.replace("{clearance}", "TS/SCI")
+        template = template.replace("{domain}", "government IT")
+        template = template.replace("{agency}", "the customer")
+
+        return template
+
+    def _generate_single_ghost(self, weakness: str, section_type: str) -> Optional[str]:
+        """Generate a single ghosting sentence for a specific weakness"""
+        weakness_lower = weakness.lower()
+
+        for category, config in self.GHOSTING_TEMPLATES.items():
+            if any(pattern in weakness_lower for pattern in config["weakness_pattern"]):
+                template = config["templates"][0]
+                return self._select_template([template], [], weakness)
+
+        return None
+
+    def _enhance_with_llm(
+        self,
+        strategies: List[GhostingStrategy],
+        win_themes: List[WinTheme]
+    ) -> Optional[List[GhostingStrategy]]:
+        """Enhance ghosting with LLM"""
+        if not self.llm_caller:
+            return None
+
+        prompt = f"""Enhance these ghosting statements to be more subtle and persuasive while maintaining professional tone.
+
+CURRENT GHOSTING STRATEGIES:
+{json.dumps([{"weakness": s.competitor_weakness, "template": s.language_template} for s in strategies], indent=2)}
+
+WIN THEMES TO REINFORCE:
+{json.dumps([t.theme_headline for t in win_themes], indent=2)}
+
+Requirements:
+1. Make language more subtle (never name competitors)
+2. Focus on positive framing ("We offer..." not "They lack...")
+3. Align with government proposal writing standards
+4. Keep each statement to 1-2 sentences
+
+Return enhanced statements in JSON format:
+{{"enhanced": [{{"weakness": "...", "statement": "..."}}]}}
+"""
+
+        try:
+            response = self.llm_caller(prompt)
+            if response:
+                data = json.loads(re.search(r'\{[\s\S]*\}', response).group())
+                enhanced_list = data.get("enhanced", [])
+
+                for i, item in enumerate(enhanced_list):
+                    if i < len(strategies):
+                        strategies[i].language_template = item.get("statement", strategies[i].language_template)
+
+                return strategies
+        except Exception:
+            pass
+
+        return None
+
+
+# ============================================================================
+# v4.0: Competitor Analyzer (Task 2.3.1)
+# ============================================================================
+
+class CompetitorAnalyzer:
+    """
+    v4.0: Analyzes competitive landscape for strategic positioning.
+
+    Capabilities:
+    - Profile known/likely competitors
+    - Identify competitor strengths and weaknesses
+    - Predict competitor themes and strategies
+    - Generate ghosting opportunities
+    """
+
+    def __init__(self, use_llm: bool = True, llm_caller: Optional[callable] = None):
+        """
+        Initialize the competitor analyzer.
+
+        Args:
+            use_llm: Whether to use LLM for analysis
+            llm_caller: Optional function to call LLM
+        """
+        self.use_llm = use_llm
+        self.llm_caller = llm_caller
+        self.ghosting_generator = GhostingLanguageGenerator(use_llm, llm_caller)
+
+    def analyze_competitive_landscape(
+        self,
+        rfp_data: Dict,
+        known_competitors: Optional[List[Dict]] = None,
+        market_intel: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive competitive analysis.
+
+        Args:
+            rfp_data: RFP information including requirements and eval criteria
+            known_competitors: Optional list of known competitor data
+            market_intel: Optional market intelligence
+
+        Returns:
+            Comprehensive competitive analysis
+        """
+        analysis = {
+            "competitor_profiles": [],
+            "competitive_gaps": [],
+            "ghosting_library": [],
+            "win_probability_factors": [],
+            "recommended_positioning": [],
+        }
+
+        # Analyze known competitors
+        if known_competitors:
+            for comp_data in known_competitors:
+                profile = self._build_competitor_profile(comp_data, rfp_data)
+                analysis["competitor_profiles"].append(profile)
+
+        # Identify competitive gaps (opportunities)
+        analysis["competitive_gaps"] = self._identify_gaps(
+            analysis["competitor_profiles"],
+            rfp_data.get("requirements", [])
+        )
+
+        # Generate ghosting library
+        all_weaknesses = []
+        for profile in analysis["competitor_profiles"]:
+            all_weaknesses.extend(profile.get("weaknesses", []))
+
+        if all_weaknesses:
+            eval_criteria = rfp_data.get("evaluation_criteria", [])
+            analysis["ghosting_library"] = [
+                self._ghosting_to_dict(gs)
+                for gs in self.ghosting_generator.generate_ghosting_library(
+                    [],  # Win themes not yet generated
+                    all_weaknesses,
+                    eval_criteria
+                )
+            ]
+
+        # Calculate win probability factors
+        analysis["win_probability_factors"] = self._calculate_win_factors(
+            analysis["competitor_profiles"],
+            rfp_data
+        )
+
+        # Generate recommended positioning
+        analysis["recommended_positioning"] = self._generate_positioning(
+            analysis["competitive_gaps"],
+            rfp_data.get("evaluation_criteria", [])
+        )
+
+        return analysis
+
+    def _build_competitor_profile(
+        self,
+        comp_data: Dict,
+        rfp_data: Dict
+    ) -> Dict[str, Any]:
+        """Build a detailed competitor profile"""
+        profile = {
+            "name": comp_data.get("name", "Unknown Competitor"),
+            "is_incumbent": comp_data.get("is_incumbent", False),
+            "strengths": comp_data.get("strengths", []),
+            "weaknesses": comp_data.get("weaknesses", []),
+            "likely_themes": [],
+            "threat_level": "medium",
+            "ghosting_opportunities": [],
+        }
+
+        # Predict likely themes
+        profile["likely_themes"] = self._predict_themes(comp_data, rfp_data)
+
+        # Assess threat level
+        profile["threat_level"] = self._assess_threat(comp_data, rfp_data)
+
+        # Identify ghosting opportunities
+        for weakness in profile["weaknesses"]:
+            opp = self._weakness_to_opportunity(weakness)
+            if opp:
+                profile["ghosting_opportunities"].append(opp)
+
+        return profile
+
+    def _predict_themes(self, comp_data: Dict, rfp_data: Dict) -> List[str]:
+        """Predict competitor's likely win themes"""
+        themes = []
+        strengths = comp_data.get("strengths", [])
+        strengths_text = " ".join(strengths).lower()
+
+        # Theme prediction based on strengths
+        if "incumbent" in strengths_text:
+            themes.append("Leverage existing relationships and institutional knowledge")
+        if "large" in strengths_text or "enterprise" in strengths_text:
+            themes.append("Emphasize resources and stability")
+        if "technical" in strengths_text or "innovation" in strengths_text:
+            themes.append("Lead with technical differentiation")
+        if "price" in strengths_text or "cost" in strengths_text:
+            themes.append("Compete on price competitiveness")
+        if "local" in strengths_text or "small business" in strengths_text:
+            themes.append("Position as agile small business partner")
+
+        return themes if themes else ["Generic best value approach"]
+
+    def _assess_threat(self, comp_data: Dict, rfp_data: Dict) -> str:
+        """Assess competitor threat level"""
+        score = 0
+
+        if comp_data.get("is_incumbent"):
+            score += 3
+
+        strengths = comp_data.get("strengths", [])
+        weaknesses = comp_data.get("weaknesses", [])
+
+        score += len(strengths) * 0.5
+        score -= len(weaknesses) * 0.3
+
+        if score >= 4:
+            return "high"
+        elif score >= 2:
+            return "medium"
+        else:
+            return "low"
+
+    def _weakness_to_opportunity(self, weakness: str) -> Optional[str]:
+        """Convert competitor weakness to ghosting opportunity"""
+        weakness_lower = weakness.lower()
+
+        opportunities = {
+            "transition": "Emphasize our proven transition capability and Day 1 readiness",
+            "experience": "Highlight our directly relevant past performance",
+            "size": "Demonstrate our scalable resources and financial stability",
+            "turnover": "Feature our committed, named personnel with retention track record",
+            "price": "Position our realistic, sustainable pricing model",
+            "technology": "Showcase our modern, proven technical approach",
+        }
+
+        for keyword, opp in opportunities.items():
+            if keyword in weakness_lower:
+                return opp
+
+        return None
+
+    def _identify_gaps(
+        self,
+        profiles: List[Dict],
+        requirements: List[Dict]
+    ) -> List[Dict]:
+        """Identify gaps in competitive landscape we can exploit"""
+        gaps = []
+
+        # Collect all competitor weaknesses
+        all_weaknesses = []
+        for profile in profiles:
+            all_weaknesses.extend(profile.get("weaknesses", []))
+
+        # Find common weaknesses (opportunities for us)
+        weakness_counts = {}
+        for w in all_weaknesses:
+            key = w.lower()[:20]
+            weakness_counts[key] = weakness_counts.get(key, 0) + 1
+
+        for weakness, count in weakness_counts.items():
+            if count >= 2:  # Multiple competitors share this weakness
+                gaps.append({
+                    "gap_type": "common_weakness",
+                    "description": f"Multiple competitors weak in: {weakness}",
+                    "opportunity": f"Strongly emphasize our strength in this area",
+                    "competitor_count": count
+                })
+
+        return gaps
+
+    def _calculate_win_factors(
+        self,
+        profiles: List[Dict],
+        rfp_data: Dict
+    ) -> List[Dict]:
+        """Calculate factors affecting win probability"""
+        factors = []
+
+        # Incumbent presence
+        incumbents = [p for p in profiles if p.get("is_incumbent")]
+        if incumbents:
+            factors.append({
+                "factor": "Incumbent Competition",
+                "impact": "negative",
+                "weight": 0.3,
+                "mitigation": "Emphasize fresh perspective and innovation",
+            })
+        else:
+            factors.append({
+                "factor": "No Strong Incumbent",
+                "impact": "positive",
+                "weight": 0.2,
+                "action": "Position as most qualified with low transition risk",
+            })
+
+        # Competition level
+        if len(profiles) > 5:
+            factors.append({
+                "factor": "High Competition",
+                "impact": "negative",
+                "weight": 0.2,
+                "mitigation": "Focus on strong discriminators and unique value",
+            })
+
+        return factors
+
+    def _generate_positioning(
+        self,
+        gaps: List[Dict],
+        eval_criteria: List[Dict]
+    ) -> List[Dict]:
+        """Generate recommended strategic positioning"""
+        positioning = []
+
+        for gap in gaps[:5]:
+            positioning.append({
+                "recommendation": gap.get("opportunity", ""),
+                "priority": "high" if gap.get("competitor_count", 0) >= 2 else "medium",
+                "integration_point": "All major sections",
+            })
+
+        return positioning
+
+    def _ghosting_to_dict(self, gs: GhostingStrategy) -> Dict[str, Any]:
+        """Convert GhostingStrategy to dictionary"""
+        return {
+            "competitor_weakness": gs.competitor_weakness,
+            "our_strength": gs.our_strength,
+            "language_template": gs.language_template,
+            "eval_criteria_link": gs.eval_criteria_link,
+            "subtlety_level": gs.subtlety_level,
         }
 
 
 def create_strategy_agent(
     llm_client: Optional[Any] = None,
-    past_performance_store: Optional[Any] = None
+    past_performance_store: Optional[Any] = None,
+    llm_provider: str = "gemini",
+    use_llm: bool = True
 ) -> StrategyAgent:
-    """Factory function to create a Strategy Agent"""
+    """
+    Factory function to create a Strategy Agent.
+
+    v4.0: Now supports LLM provider configuration.
+
+    Args:
+        llm_client: Legacy LLM client (optional)
+        past_performance_store: Vector store for past proposals
+        llm_provider: LLM provider ("gemini", "anthropic", "openai")
+        use_llm: Enable LLM-based theme generation
+
+    Returns:
+        Configured StrategyAgent instance
+    """
     return StrategyAgent(
         llm_client=llm_client,
-        past_performance_store=past_performance_store
+        past_performance_store=past_performance_store,
+        llm_provider=llm_provider,
+        use_llm=use_llm,
     )
-
-
-# =============================================================================
-# Phase 2: Iron Triangle Logic Engine
-# =============================================================================
-
-class IronTriangleAnalyzer:
-    """
-    The Iron Triangle Logic Engine.
-
-    Analyzes the relationship between:
-    - Section L (Instructions): How to format/submit the proposal
-    - Section M (Evaluation): How the government scores proposals
-    - Section C (SOW/PWS): What work must be performed
-
-    Key functions:
-    1. Extract evaluation factors from Section M with weights
-    2. Cross-walk M factors to C requirements
-    3. Validate L instructions allow adequate coverage
-    4. Detect conflicts (page limits, missing sections, etc.)
-    """
-
-    # Patterns for extracting page limits
-    PAGE_LIMIT_PATTERNS = [
-        r'(?:not\s+(?:to\s+)?exceed|maximum\s+of|limited\s+to|no\s+more\s+than)\s+(\d+)\s+pages?',
-        r'(\d+)\s+page\s+(?:limit|maximum)',
-        r'(?:shall\s+not\s+exceed|must\s+not\s+exceed)\s+(\d+)\s+pages?',
-    ]
-
-    # Patterns for extracting evaluation weights
-    WEIGHT_PATTERNS = [
-        (r'(?:significantly|substantially)\s+more\s+important\s+than', 0.4),
-        (r'(?:slightly|somewhat)\s+more\s+important\s+than', 0.25),
-        (r'equal(?:ly)?\s+important|same\s+(?:weight|importance)', 0.2),
-        (r'(?:slightly|somewhat)\s+less\s+important\s+than', 0.15),
-        (r'(?:significantly|substantially)\s+less\s+important\s+than', 0.1),
-    ]
-
-    # Patterns for evaluation factors
-    FACTOR_PATTERNS = [
-        r'Factor\s+(\d+)[:\s]+([^\n]+)',
-        r'(\d+)\.\s*([A-Z][^:\n]+)(?:\s*[:\-])',
-        r'M\.(\d+(?:\.\d+)?)\s+([^\n]+)',
-        r'(?:Evaluation\s+)?(?:Factor|Criterion)\s*[:\-]?\s*([^\n]+)',
-    ]
-
-    def __init__(self):
-        self.conflicts: List[Dict] = []
-        self.cross_walks: List[Dict] = []
-
-    def analyze(
-        self,
-        structure: Optional[Any] = None,
-        section_l_content: str = "",
-        section_m_content: str = "",
-        section_c_content: str = "",
-        requirements: Optional[List[Dict]] = None
-    ) -> Dict[str, Any]:
-        """
-        Perform full Iron Triangle analysis.
-
-        Args:
-            structure: DocumentStructure from parser (optional)
-            section_l_content: Raw text of Section L
-            section_m_content: Raw text of Section M
-            section_c_content: Raw text of Section C/SOW/PWS
-            requirements: List of extracted requirements
-
-        Returns:
-            StrategyAnalysis as dict
-        """
-        self.conflicts = []
-        self.cross_walks = []
-
-        # Extract from structure if provided
-        if structure and hasattr(structure, 'sections'):
-            if hasattr(structure.sections, 'get'):
-                l_section = structure.sections.get('SECTION_L') or structure.sections.get(UCFSection.SECTION_L if PHASE2_MODELS_AVAILABLE else 'L')
-                m_section = structure.sections.get('SECTION_M') or structure.sections.get(UCFSection.SECTION_M if PHASE2_MODELS_AVAILABLE else 'M')
-                c_section = structure.sections.get('SECTION_C') or structure.sections.get(UCFSection.SECTION_C if PHASE2_MODELS_AVAILABLE else 'C')
-
-                if l_section and hasattr(l_section, 'content'):
-                    section_l_content = section_l_content or l_section.content
-                if m_section and hasattr(m_section, 'content'):
-                    section_m_content = section_m_content or m_section.content
-                if c_section and hasattr(c_section, 'content'):
-                    section_c_content = section_c_content or c_section.content
-
-        # Step 1: Extract evaluation factors from Section M
-        evaluation_factors = self._extract_evaluation_factors(section_m_content)
-
-        # Step 2: Extract L instructions and page limits
-        l_instructions = self._extract_l_instructions(section_l_content)
-
-        # Step 3: Count C requirements by category
-        c_requirement_counts = self._count_requirements_by_section(requirements or [])
-
-        # Step 4: Build cross-walks (L → M → C mapping)
-        self.cross_walks = self._build_cross_walks(
-            l_instructions, evaluation_factors, c_requirement_counts
-        )
-
-        # Step 5: Detect conflicts
-        self.conflicts = self._detect_conflicts(
-            l_instructions, evaluation_factors, self.cross_walks
-        )
-
-        # Build analysis result
-        analysis = {
-            "evaluation_factors": evaluation_factors,
-            "l_instructions": l_instructions,
-            "cross_walks": self.cross_walks,
-            "conflicts": self.conflicts,
-            "summary": {
-                "total_l_instructions": len(l_instructions),
-                "total_m_factors": len(evaluation_factors),
-                "total_c_requirements": sum(c_requirement_counts.values()),
-                "conflict_count": len(self.conflicts),
-                "critical_conflicts": len([c for c in self.conflicts if c.get("severity") == "critical"]),
-                "coverage_score": self._calculate_coverage_score(self.cross_walks)
-            },
-            "analyzed_at": datetime.now().isoformat(),
-            "analysis_version": "4.0.0-phase2"
-        }
-
-        return analysis
-
-    def _extract_evaluation_factors(self, section_m: str) -> List[Dict]:
-        """Extract evaluation factors from Section M text."""
-        factors = []
-        factor_id = 0
-
-        if not section_m:
-            return factors
-
-        # Try each pattern
-        for pattern in self.FACTOR_PATTERNS:
-            for match in re.finditer(pattern, section_m, re.IGNORECASE | re.MULTILINE):
-                factor_id += 1
-                groups = match.groups()
-
-                factor = {
-                    "factor_id": f"M-{factor_id:02d}",
-                    "name": groups[-1].strip() if groups else "Unknown",
-                    "source_text": match.group(0)[:200],
-                    "weight": None,
-                    "weight_numeric": None,
-                    "sub_factors": [],
-                    "maps_to_section_l": [],
-                    "maps_to_section_c": []
-                }
-
-                # Look for weight language near this factor
-                context_start = max(0, match.start() - 100)
-                context_end = min(len(section_m), match.end() + 500)
-                context = section_m[context_start:context_end]
-
-                for weight_pattern, weight_value in self.WEIGHT_PATTERNS:
-                    if re.search(weight_pattern, context, re.IGNORECASE):
-                        factor["weight"] = weight_pattern.replace(r'\s+', ' ').replace('(?:', '').replace(')', '')
-                        factor["weight_numeric"] = weight_value
-                        break
-
-                # Look for sub-factors
-                subfactor_pattern = r'(?:Sub-?factor|Element)\s*(\d+)[:\s]+([^\n]+)'
-                for sub_match in re.finditer(subfactor_pattern, context, re.IGNORECASE):
-                    factor["sub_factors"].append({
-                        "id": f"{factor['factor_id']}.{sub_match.group(1)}",
-                        "name": sub_match.group(2).strip()
-                    })
-
-                factors.append(factor)
-
-        # Deduplicate by name similarity
-        seen_names = set()
-        unique_factors = []
-        for f in factors:
-            name_key = f["name"].lower()[:30]
-            if name_key not in seen_names:
-                seen_names.add(name_key)
-                unique_factors.append(f)
-
-        return unique_factors
-
-    def _extract_l_instructions(self, section_l: str) -> List[Dict]:
-        """Extract proposal instructions from Section L."""
-        instructions = []
-
-        if not section_l:
-            return instructions
-
-        # Extract volume/section structure
-        volume_pattern = r'Volume\s+([IVX\d]+)[:\s]+([^\n]+)'
-        for match in re.finditer(volume_pattern, section_l, re.IGNORECASE):
-            instruction = {
-                "ref": f"L-VOL-{match.group(1)}",
-                "type": "volume",
-                "title": match.group(2).strip(),
-                "page_limit": None,
-                "content": ""
-            }
-
-            # Look for page limit in context
-            context_end = min(len(section_l), match.end() + 500)
-            context = section_l[match.start():context_end]
-
-            for page_pattern in self.PAGE_LIMIT_PATTERNS:
-                page_match = re.search(page_pattern, context, re.IGNORECASE)
-                if page_match:
-                    instruction["page_limit"] = int(page_match.group(1))
-                    break
-
-            instructions.append(instruction)
-
-        # Extract section-level instructions
-        section_pattern = r'L\.(\d+(?:\.\d+)*)\s+([^\n]+)'
-        for match in re.finditer(section_pattern, section_l, re.IGNORECASE):
-            instruction = {
-                "ref": f"L.{match.group(1)}",
-                "type": "section",
-                "title": match.group(2).strip(),
-                "page_limit": None,
-                "content": ""
-            }
-
-            # Look for page limit
-            context_end = min(len(section_l), match.end() + 300)
-            context = section_l[match.start():context_end]
-
-            for page_pattern in self.PAGE_LIMIT_PATTERNS:
-                page_match = re.search(page_pattern, context, re.IGNORECASE)
-                if page_match:
-                    instruction["page_limit"] = int(page_match.group(1))
-                    break
-
-            instructions.append(instruction)
-
-        return instructions
-
-    def _count_requirements_by_section(self, requirements: List[Dict]) -> Dict[str, int]:
-        """Count requirements by their source section."""
-        counts = {"C": 0, "L": 0, "M": 0, "SOW": 0, "PWS": 0, "other": 0}
-
-        for req in requirements:
-            section = req.get("section", "").upper()
-            if section.startswith("C") or section == "SOW" or section == "PWS":
-                counts["C"] += 1
-            elif section.startswith("L"):
-                counts["L"] += 1
-            elif section.startswith("M"):
-                counts["M"] += 1
-            else:
-                counts["other"] += 1
-
-        return counts
-
-    def _build_cross_walks(
-        self,
-        l_instructions: List[Dict],
-        m_factors: List[Dict],
-        c_counts: Dict[str, int]
-    ) -> List[Dict]:
-        """Build L → M → C cross-walk mappings."""
-        cross_walks = []
-
-        # For each L instruction, try to find related M factors
-        for l_inst in l_instructions:
-            l_title_lower = l_inst.get("title", "").lower()
-
-            cross_walk = {
-                "l_instruction_ref": l_inst["ref"],
-                "l_instruction_text": l_inst["title"],
-                "l_page_limit": l_inst.get("page_limit"),
-                "l_volume": l_inst.get("type"),
-                "m_factor_refs": [],
-                "m_factors": [],
-                "c_requirement_refs": [],
-                "c_requirement_count": 0,
-                "coverage_score": 0.0,
-                "gaps": []
-            }
-
-            # Match M factors by keyword similarity
-            for m_factor in m_factors:
-                m_name_lower = m_factor.get("name", "").lower()
-
-                # Simple keyword matching
-                keywords = ["technical", "management", "past performance", "cost", "price",
-                           "staffing", "quality", "transition", "approach"]
-
-                for kw in keywords:
-                    if kw in l_title_lower and kw in m_name_lower:
-                        cross_walk["m_factor_refs"].append(m_factor["factor_id"])
-                        cross_walk["m_factors"].append(m_factor)
-                        break
-
-            # Estimate C requirement count based on factor type
-            if "technical" in l_title_lower:
-                cross_walk["c_requirement_count"] = c_counts.get("C", 0) // 2
-            elif "management" in l_title_lower:
-                cross_walk["c_requirement_count"] = c_counts.get("C", 0) // 4
-
-            # Calculate coverage
-            if cross_walk["m_factor_refs"]:
-                cross_walk["coverage_score"] = min(1.0, len(cross_walk["m_factor_refs"]) * 0.3)
-            else:
-                cross_walk["gaps"].append(f"No M factors mapped to {l_inst['ref']}")
-
-            cross_walks.append(cross_walk)
-
-        return cross_walks
-
-    def _detect_conflicts(
-        self,
-        l_instructions: List[Dict],
-        m_factors: List[Dict],
-        cross_walks: List[Dict]
-    ) -> List[Dict]:
-        """Detect conflicts between L, M, and C sections."""
-        conflicts = []
-        conflict_id = 0
-
-        # Check 1: Page limit conflicts
-        for cross_walk in cross_walks:
-            page_limit = cross_walk.get("l_page_limit")
-            factor_count = len(cross_walk.get("m_factors", []))
-            subfactor_count = sum(len(f.get("sub_factors", [])) for f in cross_walk.get("m_factors", []))
-
-            if page_limit and factor_count > 0:
-                # Estimate minimum pages needed (rough: 2 pages per sub-factor, 3 per factor)
-                min_pages_needed = factor_count * 3 + subfactor_count * 2
-
-                if min_pages_needed > page_limit:
-                    conflict_id += 1
-                    conflicts.append({
-                        "conflict_id": f"CONF-{conflict_id:03d}",
-                        "conflict_type": "page_limit_exceeded",
-                        "severity": "high" if min_pages_needed > page_limit * 1.5 else "medium",
-                        "description": f"Page limit of {page_limit} may be insufficient for {factor_count} factors with {subfactor_count} sub-factors",
-                        "section_l_ref": cross_walk["l_instruction_ref"],
-                        "section_m_ref": ", ".join(cross_walk.get("m_factor_refs", [])),
-                        "expected": f"{min_pages_needed} pages minimum",
-                        "actual": f"{page_limit} page limit",
-                        "recommendation": "Consider condensing content or requesting page limit increase via Q&A",
-                        "detected_at": datetime.now().isoformat()
-                    })
-
-        # Check 2: Unaddressed evaluation factors
-        addressed_factors = set()
-        for cw in cross_walks:
-            addressed_factors.update(cw.get("m_factor_refs", []))
-
-        for factor in m_factors:
-            if factor["factor_id"] not in addressed_factors:
-                conflict_id += 1
-                conflicts.append({
-                    "conflict_id": f"CONF-{conflict_id:03d}",
-                    "conflict_type": "unaddressed_factor",
-                    "severity": "critical" if factor.get("weight_numeric", 0) > 0.3 else "high",
-                    "description": f"Evaluation factor '{factor['name']}' has no corresponding L instruction",
-                    "section_m_ref": factor["factor_id"],
-                    "expected": "L instruction addressing this factor",
-                    "actual": "No matching L instruction found",
-                    "recommendation": f"Review Section L for instructions related to '{factor['name']}'",
-                    "detected_at": datetime.now().isoformat()
-                })
-
-        # Check 3: Missing volume structure
-        has_technical = any("technical" in l.get("title", "").lower() for l in l_instructions)
-        has_management = any("management" in l.get("title", "").lower() for l in l_instructions)
-        has_past_perf = any("past" in l.get("title", "").lower() and "performance" in l.get("title", "").lower() for l in l_instructions)
-
-        if not has_technical and any("technical" in f.get("name", "").lower() for f in m_factors):
-            conflict_id += 1
-            conflicts.append({
-                "conflict_id": f"CONF-{conflict_id:03d}",
-                "conflict_type": "missing_section",
-                "severity": "critical",
-                "description": "Technical evaluation factor exists but no Technical volume instruction found",
-                "recommendation": "Verify Section L contains Technical volume instructions",
-                "detected_at": datetime.now().isoformat()
-            })
-
-        return conflicts
-
-    def _calculate_coverage_score(self, cross_walks: List[Dict]) -> float:
-        """Calculate overall L-M-C coverage score."""
-        if not cross_walks:
-            return 0.0
-
-        scores = [cw.get("coverage_score", 0) for cw in cross_walks]
-        return sum(scores) / len(scores) if scores else 0.0
-
-    def get_conflicts_by_severity(self, severity: str) -> List[Dict]:
-        """Get conflicts filtered by severity."""
-        return [c for c in self.conflicts if c.get("severity") == severity]
-
-    def get_critical_conflicts(self) -> List[Dict]:
-        """Get only critical conflicts."""
-        return self.get_conflicts_by_severity("critical")
-
-
-def create_iron_triangle_analyzer() -> IronTriangleAnalyzer:
-    """Factory function to create an Iron Triangle Analyzer."""
-    return IronTriangleAnalyzer()

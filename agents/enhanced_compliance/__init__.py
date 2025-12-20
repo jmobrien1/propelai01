@@ -174,3 +174,24 @@ except ImportError as e:
     AnnotatedOutlineExporter = None
     AnnotatedOutlineConfig = None
     generate_annotated_outline = None
+
+# =============================================================================
+# v4.0 Trust Gate: PDF Coordinate Extraction
+# =============================================================================
+try:
+    from .models import BoundingBox, SourceCoordinate
+    from .pdf_coordinate_extractor import (
+        PDFCoordinateExtractor,
+        get_coordinate_extractor,
+        PDFPLUMBER_AVAILABLE,
+    )
+    TRUST_GATE_AVAILABLE = PDFPLUMBER_AVAILABLE
+    if TRUST_GATE_AVAILABLE:
+        print("=== PropelAI Trust Gate v4.0 ready ===")
+except ImportError as e:
+    print(f"Warning: Trust Gate not available: {e}")
+    TRUST_GATE_AVAILABLE = False
+    BoundingBox = None
+    SourceCoordinate = None
+    PDFCoordinateExtractor = None
+    get_coordinate_extractor = None
