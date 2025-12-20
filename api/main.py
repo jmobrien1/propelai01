@@ -2893,11 +2893,12 @@ async def export_annotated_outline(rfp_id: str):
         store.update(rfp_id, {"outline": outline})
     
     requirements = rfp.get("requirements", [])
-    
+
     # v3.2: Use proper proposal title, not source document filename
     # The RFP name might be "Attachment 1. Stament Of Work" which is wrong
-    solicitation_number = rfp.get("solicitation_number", rfp_id)
-    rfp_name = rfp.get("name", "")
+    # v4.0 FIX: Use 'or' to handle None values (not just missing keys)
+    solicitation_number = rfp.get("solicitation_number") or rfp_id
+    rfp_name = rfp.get("name") or ""
 
     # Don't use source document names as title
     if any(x in rfp_name.lower() for x in ["attachment", "sow", "statement of work", "stament"]):
