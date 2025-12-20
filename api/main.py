@@ -172,6 +172,9 @@ except ImportError as e:
     run_drafting_workflow = None
     LANGGRAPH_AVAILABLE = False
 
+# v4.0: Vector Store (imported later, default to False)
+VECTOR_STORE_AVAILABLE = False
+
 
 # ============== Configuration ==============
 
@@ -535,6 +538,7 @@ async def health_check():
             "strategy_agent": "ready" if STRATEGY_AGENT_AVAILABLE else "not available",
             "drafting_workflow": "ready" if DRAFTING_WORKFLOW_AVAILABLE else "not available",
             "langgraph": "available" if LANGGRAPH_AVAILABLE else "not installed",
+            "vector_store": "ready" if VECTOR_STORE_AVAILABLE else "not available",
         }
     }
 
@@ -3298,9 +3302,261 @@ async def get_key_personnel():
     """Get all extracted key personnel"""
     if not COMPANY_LIBRARY_AVAILABLE:
         raise HTTPException(status_code=500, detail="Company library not available")
-    
+
     profile = company_library.get_profile()
     return {"key_personnel": profile.get("key_personnel", [])}
+
+
+# ============== v4.0: Vector Search (pgvector) ==============
+
+# Import vector store and update global flag
+try:
+    from api.vector_store import (
+        VectorStore, get_vector_store, SearchResult,
+        VECTOR_STORE_AVAILABLE as _VS_AVAILABLE,
+    )
+    VECTOR_STORE_AVAILABLE = _VS_AVAILABLE
+except ImportError:
+    # VECTOR_STORE_AVAILABLE already False from line 176
+    get_vector_store = None
+
+
+@app.get("/api/library/vector-search")
+async def vector_search_library(
+    query: str,
+    top_k: int = 10,
+    types: Optional[str] = None,  # Comma-separated: capability,past_performance,key_personnel,differentiator
+):
+    """
+    v4.0: Semantic search across Company Library using pgvector.
+
+    Uses embedding similarity to find the most relevant content for proposal drafting.
+
+    Args:
+        query: Natural language search query (e.g., "cloud migration experience for federal agencies")
+        top_k: Number of results to return (default: 10)
+        types: Optional filter for content types (comma-separated)
+
+    Returns:
+        List of search results with similarity scores
+    """
+    if not VECTOR_STORE_AVAILABLE:
+        # Fall back to keyword search
+        if COMPANY_LIBRARY_AVAILABLE:
+            results = company_library.search(query)
+            return {
+                "query": query,
+                "results": results,
+                "search_type": "keyword",
+                "message": "Vector search not available, using keyword search"
+            }
+        raise HTTPException(
+            status_code=501,
+            detail="Vector search not available. Configure DATABASE_URL and OPENAI_API_KEY."
+        )
+
+    store = await get_vector_store()
+
+    # Parse type filter
+    include_types = None
+    if types:
+        include_types = [t.strip() for t in types.split(",")]
+
+    results = await store.search_all(query, top_k=top_k, include_types=include_types)
+
+    return {
+        "query": query,
+        "results": [
+            {
+                "id": r.id,
+                "type": r.content_type,
+                "name": r.name,
+                "description": r.description,
+                "similarity": round(r.similarity_score, 4),
+            }
+            for r in results
+        ],
+        "search_type": "vector",
+        "top_k": top_k,
+    }
+
+
+@app.post("/api/library/vector/capabilities")
+async def add_capability_vector(
+    name: str = Form(...),
+    description: str = Form(...),
+    category: Optional[str] = Form(None),
+    keywords: Optional[str] = Form(None),  # Comma-separated
+    company_id: Optional[str] = Form(None),
+):
+    """
+    v4.0: Add a capability to the vector store with auto-generated embedding.
+
+    The capability will be searchable via semantic similarity.
+    """
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Vector store not available")
+
+    store = await get_vector_store()
+
+    # Parse keywords
+    keyword_list = None
+    if keywords:
+        keyword_list = [k.strip() for k in keywords.split(",")]
+
+    # Use default company_id if not provided
+    cid = company_id or "default"
+
+    cap_id = await store.add_capability(
+        company_id=cid,
+        name=name,
+        description=description,
+        category=category,
+        keywords=keyword_list,
+    )
+
+    if cap_id:
+        return {
+            "status": "created",
+            "id": cap_id,
+            "name": name,
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add capability")
+
+
+@app.post("/api/library/vector/past-performance")
+async def add_past_performance_vector(
+    project_name: str = Form(...),
+    description: str = Form(...),
+    client_name: Optional[str] = Form(None),
+    client_agency: Optional[str] = Form(None),
+    contract_number: Optional[str] = Form(None),
+    contract_value: Optional[float] = Form(None),
+    period_of_performance: Optional[str] = Form(None),
+    company_id: Optional[str] = Form(None),
+):
+    """
+    v4.0: Add a past performance record to the vector store.
+
+    Enables semantic search for relevant project experience during proposal drafting.
+    """
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Vector store not available")
+
+    store = await get_vector_store()
+    cid = company_id or "default"
+
+    pp_id = await store.add_past_performance(
+        company_id=cid,
+        project_name=project_name,
+        description=description,
+        client_name=client_name,
+        client_agency=client_agency,
+        contract_number=contract_number,
+        contract_value=contract_value,
+        period_of_performance=period_of_performance,
+    )
+
+    if pp_id:
+        return {
+            "status": "created",
+            "id": pp_id,
+            "project_name": project_name,
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add past performance")
+
+
+@app.post("/api/library/vector/key-personnel")
+async def add_key_personnel_vector(
+    name: str = Form(...),
+    bio: str = Form(...),
+    title: Optional[str] = Form(None),
+    role: Optional[str] = Form(None),
+    years_experience: Optional[int] = Form(None),
+    clearance_level: Optional[str] = Form(None),
+    certifications: Optional[str] = Form(None),  # Comma-separated
+    expertise_areas: Optional[str] = Form(None),  # Comma-separated
+    company_id: Optional[str] = Form(None),
+):
+    """
+    v4.0: Add key personnel to the vector store.
+
+    Enables semantic search for relevant team expertise during proposal staffing.
+    """
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Vector store not available")
+
+    store = await get_vector_store()
+    cid = company_id or "default"
+
+    # Parse arrays
+    cert_list = [c.strip() for c in certifications.split(",")] if certifications else None
+    expertise_list = [e.strip() for e in expertise_areas.split(",")] if expertise_areas else None
+
+    kp_id = await store.add_key_personnel(
+        company_id=cid,
+        name=name,
+        bio=bio,
+        title=title,
+        role=role,
+        years_experience=years_experience,
+        clearance_level=clearance_level,
+        certifications=cert_list,
+        expertise_areas=expertise_list,
+    )
+
+    if kp_id:
+        return {
+            "status": "created",
+            "id": kp_id,
+            "name": name,
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add key personnel")
+
+
+@app.post("/api/library/vector/differentiators")
+async def add_differentiator_vector(
+    title: str = Form(...),
+    description: str = Form(...),
+    category: Optional[str] = Form(None),
+    proof_points: Optional[str] = Form(None),  # Comma-separated
+    competitor_comparison: Optional[str] = Form(None),
+    company_id: Optional[str] = Form(None),
+):
+    """
+    v4.0: Add a differentiator/discriminator to the vector store.
+
+    Enables semantic search for competitive advantages during theme development.
+    """
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Vector store not available")
+
+    store = await get_vector_store()
+    cid = company_id or "default"
+
+    # Parse proof points
+    proof_list = [p.strip() for p in proof_points.split(",")] if proof_points else None
+
+    diff_id = await store.add_differentiator(
+        company_id=cid,
+        title=title,
+        description=description,
+        category=category,
+        proof_points=proof_list,
+        competitor_comparison=competitor_comparison,
+    )
+
+    if diff_id:
+        return {
+            "status": "created",
+            "id": diff_id,
+            "title": title,
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add differentiator")
 
 
 # ============== Main Entry ==============

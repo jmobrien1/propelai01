@@ -12,5 +12,13 @@ pdfplumber>=0.10.0  # v4.0 Phase 1: Coordinate extraction for Trust Gate
 python-docx>=0.8.11
 openpyxl>=3.0.10
 
+# Database (v4.0 Phase 4: PostgreSQL + pgvector)
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+pgvector>=0.2.0  # pgvector Python client for vector similarity search
+
+# AI/ML (v4.0 Phase 4: Embeddings for semantic search)
+openai>=1.0.0  # For text-embedding-3-small
+
 # Utils
 httpx>=0.24.0
