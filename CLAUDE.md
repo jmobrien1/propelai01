@@ -1,6 +1,6 @@
 # PropelAI: Autonomous Proposal Operating System
-**Current Status:** Moving from v3.3 (Linear Script) to v4.0 (Stateful Agentic Architecture).
-**Strategic Priority:** Phase 2 - "Iron Triangle Logic Engine" (L-M-C Cross-Walking).
+**Current Status:** v4.1 - Stateful Agentic Architecture with pgvector semantic search.
+**All Core Phases Complete:** Trust Gate ✓ | Iron Triangle ✓ | Drafting Agent ✓ | Persistence ✓
 
 ## 1. Architecture & Tech Stack
 - **Backend:** Python 3.10+ / FastAPI / Uvicorn.
@@ -24,11 +24,15 @@
 3. **Immutability:** Do not modify `AS_BUILT_TDD.md` unless architecture changes. It is the source of truth.
 
 ## 4. Key Files
-- `api/main.py`: Primary API entry point.
-- `agents/enhanced_compliance/parser.py`: PDF ingestion logic with coordinate extraction.
-- `agents/enhanced_compliance/document_structure.py`: Data models (ComplianceMatrix, SourceCoordinate, BoundingBox).
-- `agents/strategy_agent.py`: Iron Triangle logic engine (L-M-C cross-walking).
-- `PRODUCT_ROADMAP_PRD.md`: The plan for the next 3 sprints.
+- `api/main.py`: Primary API entry point (3500+ lines).
+- `api/vector_store.py`: pgvector semantic search for Company Library.
+- `api/database.py`: PostgreSQL ORM with SQLAlchemy 2.0.
+- `agents/strategy_agent.py`: Iron Triangle logic engine (StrategyAgent, CompetitorAnalyzer).
+- `agents/drafting_workflow.py`: LangGraph drafting workflow (F-B-P framework).
+- `agents/enhanced_compliance/pdf_coordinate_extractor.py`: Trust Gate coordinate extraction.
+- `agents/enhanced_compliance/document_types.py`: Guided upload document classification.
+- `web/index.html`: React SPA with guided upload wizard (v4.1 dark theme).
+- `init.sql`: PostgreSQL schema with pgvector extension.
 
 ## 5. v4.0 Architecture Phases
 
@@ -47,7 +51,7 @@
 **API Endpoint**:
 - `GET /api/rfp/{rfp_id}/requirements/{req_id}/source` - Returns bounding boxes for frontend overlay
 
-### Phase 2: Iron Triangle Logic Engine - IN PROGRESS
+### Phase 2: Iron Triangle Logic Engine - COMPLETE ✓
 **Goal:** Model dependencies between Section L, M, and C. Move from "Shredding" to "Reasoning".
 
 **Data Models** (`document_structure.py`):
@@ -57,28 +61,48 @@
 - `StructureConflict`: Detected conflicts between L/M/C sections
 
 **Strategy Agent** (`agents/strategy_agent.py`):
-- Decomposition: Ingest Section M, extract scoring weights
-- Cross-Walking: Map Section M factors → Section C (SOW) paragraphs
-- Validation: Verify Section L allows corresponding proposal volumes
-- Conflict Detection: Page count conflicts, structure mismatches
+- `StrategyAgent`: L-M-C analysis and win theme generation
+- `CompetitorAnalyzer`: Competitive landscape analysis
+- `GhostingLanguageGenerator`: Competitive differentiation language
 
 **API Endpoints**:
 - `GET /api/rfp/{rfp_id}/strategy` - Returns L-M-C analysis
-- `GET /api/rfp/{rfp_id}/conflicts` - Returns detected conflicts
-- `POST /api/rfp/{rfp_id}/win-themes` - Add win themes
+- `POST /api/rfp/{rfp_id}/strategy` - Generate strategy
+- `POST /api/rfp/{rfp_id}/competitive-analysis` - Analyze competitors
 
-### Phase 3: Drafting Agent (PEARL Framework)
+### Phase 3: Drafting Agent (F-B-P Framework) - COMPLETE ✓
 **Goal:** Prevent LLM hallucination via structured planning.
-- LangGraph StateGraph with 4 nodes:
-  1. Action Mining (decompose task)
-  2. Plan Generation (pseudocode)
-  3. Plan Execution (F-B-P framework)
-  4. Red Team Critique (score < 80 → loop)
 
-### Phase 4: Persistence Layer
-**Goal:** Enable long-running, interruptible workflows.
-- PostgreSQL + pgvector (semantic search for Company Library)
-- LangGraph checkpointing for pause/resume
+**LangGraph Workflow** (`agents/drafting_workflow.py`):
+- `research_node`: Query Company Library for evidence
+- `structure_fbp_node`: Build Feature-Benefit-Proof blocks
+- `draft_node`: Generate narrative prose
+- `quality_check_node`: Score draft on compliance, clarity, citations
+- `human_review_node`: Pause for human feedback
+- `revise_node`: Incorporate feedback
+
+**API Endpoints**:
+- `POST /api/rfp/{rfp_id}/draft` - Start drafting workflow
+- `POST /api/rfp/{rfp_id}/draft/{req_id}/feedback` - Submit feedback
+
+### Phase 4: Persistence Layer - COMPLETE ✓
+**Goal:** Enable long-running workflows and semantic search.
+
+**PostgreSQL + pgvector** (`api/vector_store.py`, `init.sql`):
+- Company Library tables with vector(1536) embeddings
+- IVFFlat indexes for fast similarity search
+- OpenAI text-embedding-3-small integration
+
+**Vector Search API**:
+- `GET /api/library/vector-search` - Semantic search across all content
+- `POST /api/library/vector/capabilities` - Add capability with embedding
+- `POST /api/library/vector/past-performance` - Add past performance
+- `POST /api/library/vector/key-personnel` - Add key personnel
+- `POST /api/library/vector/differentiators` - Add differentiator
+
+**LangGraph Checkpointing** (`init.sql`):
+- `checkpoints` table for workflow state persistence
+- Enables pause/resume of long-running drafting workflows
 
 ## 6. Coordinate System Notes
 - **PDF Origin:** Bottom-left, measured in points (72 pts/inch)
