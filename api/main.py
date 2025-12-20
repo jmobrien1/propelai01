@@ -2877,8 +2877,18 @@ async def export_annotated_outline(rfp_id: str):
             section_m = [r for r in rfp.get("requirements", [])
                         if r.get("source_content_type") in ["section_m", "section_lm"]]
 
-        print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}")
-        outline_obj = generator.generate_from_compliance_matrix(section_l, section_m, rfp.get("documents", []))
+        # v4.0 FIX: Get technical requirements (not section L or M)
+        technical = [r for r in rfp.get("requirements", [])
+                    if r.get("category") not in ["L_COMPLIANCE", "EVALUATION"]]
+        stats = {"is_non_ucf_format": len(section_l) == 0}
+
+        print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}, technical count: {len(technical)}")
+        outline_obj = generator.generate_from_compliance_matrix(
+            section_l_requirements=section_l,
+            section_m_requirements=section_m,
+            technical_requirements=technical,
+            stats=stats
+        )
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
     
