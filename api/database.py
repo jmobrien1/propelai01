@@ -343,6 +343,47 @@ class ActivityLogModel(Base):
         }
 
 
+class TeamInvitationModel(Base):
+    """Team invitations for users who may not have accounts yet"""
+    __tablename__ = "team_invitations"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    email = Column(String(255), nullable=False)
+    role = Column(String(20), default="viewer")
+    token = Column(String(100), nullable=False, unique=True)
+    invited_by = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    status = Column(String(20), default="pending")  # pending, accepted, expired, cancelled
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    accepted_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    team = relationship("TeamModel", backref="invitations")
+    inviter = relationship("UserModel", foreign_keys=[invited_by])
+
+    __table_args__ = (
+        Index('idx_team_invitations_team_id', 'team_id'),
+        Index('idx_team_invitations_email', 'email'),
+        Index('idx_team_invitations_token', 'token'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "team_id": self.team_id,
+            "email": self.email,
+            "role": self.role,
+            "status": self.status,
+            "invited_by": self.invited_by,
+            "inviter_name": self.inviter.name if self.inviter else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
+            "is_expired": datetime.utcnow() > self.expires_at if self.expires_at else False,
+        }
+
+
 class APIKeyModel(Base):
     """API keys for programmatic access"""
     __tablename__ = "api_keys"

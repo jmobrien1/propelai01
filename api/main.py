@@ -3564,7 +3564,8 @@ async def add_differentiator_vector(
 # ============== v4.1: Team Workspaces & Role-Based Access ==============
 
 from api.database import (
-    UserModel, TeamModel, TeamMembershipModel, ActivityLogModel, APIKeyModel, UserRole
+    UserModel, TeamModel, TeamMembershipModel, ActivityLogModel, APIKeyModel,
+    TeamInvitationModel, UserRole
 )
 import uuid
 import hashlib
@@ -3895,6 +3896,111 @@ async def get_current_user_info(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     return user
+
+
+@app.put("/api/users/me")
+async def update_user_profile(
+    authorization: str = Header(None),
+    name: str = Form(None),
+):
+    """Update current user's profile"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    token = parts[1]
+
+    try:
+        payload = verify_jwt_token(token)
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Update fields if provided
+        if name is not None and name.strip():
+            user.name = name.strip()
+
+        await session.flush()
+
+        # Generate new token with updated info
+        new_token = create_jwt_token(user.id, user.email, user.name)
+
+        return {
+            "success": True,
+            "user": user.to_dict(),
+            "token": new_token,
+            "message": "Profile updated successfully",
+        }
+
+
+@app.post("/api/users/me/change-password")
+async def change_password(
+    authorization: str = Header(None),
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+):
+    """Change current user's password"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    token = parts[1]
+
+    try:
+        payload = verify_jwt_token(token)
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Verify current password
+        if not verify_password(current_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+        # Update password
+        user.password_hash = hash_password(new_password)
+        await session.flush()
+
+        return {
+            "success": True,
+            "message": "Password changed successfully",
+        }
 
 
 @app.post("/api/auth/verify")
@@ -4532,6 +4638,304 @@ async def revoke_api_key(
         )
 
         return {"success": True, "message": f"API key '{key_name}' revoked"}
+
+
+# ============== TEAM INVITATIONS ==============
+
+INVITATION_EXPIRY_DAYS = 7
+
+
+@app.post("/api/teams/{team_id}/invitations")
+async def create_invitation(
+    team_id: str,
+    email: str = Form(...),
+    role: str = Form("viewer"),
+    authorization: str = Header(None),
+):
+    """Create a team invitation for a user (who may not have an account yet)"""
+    # Get current user from token
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        inviter_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    if role not in ["admin", "contributor", "viewer"]:
+        raise HTTPException(400, "Invalid role. Must be admin, contributor, or viewer")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        # Check if team exists
+        result = await session.execute(
+            select(TeamModel).where(TeamModel.id == team_id)
+        )
+        team = result.scalar_one_or_none()
+        if not team:
+            raise HTTPException(404, "Team not found")
+
+        # Check if user is already a member
+        result = await session.execute(
+            select(UserModel).where(UserModel.email == email)
+        )
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user:
+            result = await session.execute(
+                select(TeamMembershipModel)
+                .where(TeamMembershipModel.team_id == team_id)
+                .where(TeamMembershipModel.user_id == existing_user.id)
+            )
+            if result.scalar_one_or_none():
+                raise HTTPException(400, "User is already a team member")
+
+        # Check for existing pending invitation
+        result = await session.execute(
+            select(TeamInvitationModel)
+            .where(TeamInvitationModel.team_id == team_id)
+            .where(TeamInvitationModel.email == email)
+            .where(TeamInvitationModel.status == "pending")
+        )
+        existing_invite = result.scalar_one_or_none()
+        if existing_invite:
+            raise HTTPException(400, "An invitation is already pending for this email")
+
+        # Create invitation
+        invitation_id = generate_id()
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + timedelta(days=INVITATION_EXPIRY_DAYS)
+
+        invitation = TeamInvitationModel(
+            id=invitation_id,
+            team_id=team_id,
+            email=email,
+            role=role,
+            token=token,
+            invited_by=inviter_id,
+            status="pending",
+            expires_at=expires_at,
+        )
+        session.add(invitation)
+        await session.flush()
+
+        # Log activity
+        await log_activity(
+            team_id=team_id,
+            user_id=inviter_id,
+            action="create",
+            resource_type="invitation",
+            resource_id=invitation_id,
+            details={"email": email, "role": role}
+        )
+
+        # In production, send email with invitation link
+        # For now, return the token for testing
+        return {
+            "success": True,
+            "invitation": invitation.to_dict(),
+            "invitation_token": token,  # In production, this would be sent via email
+            "invitation_url": f"/accept-invite?token={token}",
+            "message": f"Invitation sent to {email}",
+        }
+
+
+@app.get("/api/teams/{team_id}/invitations")
+async def list_invitations(
+    team_id: str,
+    status: str = None,
+):
+    """List all invitations for a team"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        query = (
+            select(TeamInvitationModel)
+            .options(selectinload(TeamInvitationModel.inviter))
+            .where(TeamInvitationModel.team_id == team_id)
+            .order_by(TeamInvitationModel.created_at.desc())
+        )
+
+        if status:
+            query = query.where(TeamInvitationModel.status == status)
+
+        result = await session.execute(query)
+        invitations = result.scalars().all()
+
+        return {
+            "invitations": [inv.to_dict() for inv in invitations],
+        }
+
+
+@app.get("/api/invitations/{token}")
+async def get_invitation_by_token(token: str):
+    """Get invitation details by token (for accept page)"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        result = await session.execute(
+            select(TeamInvitationModel)
+            .options(
+                selectinload(TeamInvitationModel.team),
+                selectinload(TeamInvitationModel.inviter)
+            )
+            .where(TeamInvitationModel.token == token)
+        )
+        invitation = result.scalar_one_or_none()
+
+        if not invitation:
+            raise HTTPException(404, "Invitation not found")
+
+        if invitation.status != "pending":
+            raise HTTPException(400, f"Invitation has been {invitation.status}")
+
+        if datetime.utcnow() > invitation.expires_at:
+            raise HTTPException(400, "Invitation has expired")
+
+        return {
+            "invitation": invitation.to_dict(),
+            "team_name": invitation.team.name if invitation.team else None,
+            "inviter_name": invitation.inviter.name if invitation.inviter else None,
+        }
+
+
+@app.post("/api/invitations/{token}/accept")
+async def accept_invitation(
+    token: str,
+    authorization: str = Header(None),
+):
+    """Accept a team invitation (user must be logged in)"""
+    if not authorization:
+        raise HTTPException(401, "You must be logged in to accept an invitation")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+        user_email = payload.get("email")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        # Find the invitation
+        result = await session.execute(
+            select(TeamInvitationModel)
+            .where(TeamInvitationModel.token == token)
+        )
+        invitation = result.scalar_one_or_none()
+
+        if not invitation:
+            raise HTTPException(404, "Invitation not found")
+
+        if invitation.status != "pending":
+            raise HTTPException(400, f"Invitation has been {invitation.status}")
+
+        if datetime.utcnow() > invitation.expires_at:
+            invitation.status = "expired"
+            await session.flush()
+            raise HTTPException(400, "Invitation has expired")
+
+        # Verify email matches (optional - can be removed to allow any logged-in user)
+        if invitation.email.lower() != user_email.lower():
+            raise HTTPException(403, "This invitation was sent to a different email address")
+
+        # Check if already a member
+        result = await session.execute(
+            select(TeamMembershipModel)
+            .where(TeamMembershipModel.team_id == invitation.team_id)
+            .where(TeamMembershipModel.user_id == user_id)
+        )
+        if result.scalar_one_or_none():
+            invitation.status = "accepted"
+            await session.flush()
+            return {"success": True, "message": "You are already a member of this team"}
+
+        # Create membership
+        membership = TeamMembershipModel(
+            id=generate_id(),
+            team_id=invitation.team_id,
+            user_id=user_id,
+            role=invitation.role,
+        )
+        session.add(membership)
+
+        # Update invitation status
+        invitation.status = "accepted"
+        invitation.accepted_at = datetime.utcnow()
+        await session.flush()
+
+        # Log activity
+        await log_activity(
+            team_id=invitation.team_id,
+            user_id=user_id,
+            action="accept",
+            resource_type="invitation",
+            resource_id=invitation.id,
+            details={"role": invitation.role}
+        )
+
+        return {
+            "success": True,
+            "team_id": invitation.team_id,
+            "role": invitation.role,
+            "message": "Successfully joined the team",
+        }
+
+
+@app.delete("/api/teams/{team_id}/invitations/{invitation_id}")
+async def cancel_invitation(
+    team_id: str,
+    invitation_id: str,
+):
+    """Cancel a pending invitation"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(TeamInvitationModel)
+            .where(TeamInvitationModel.id == invitation_id)
+            .where(TeamInvitationModel.team_id == team_id)
+        )
+        invitation = result.scalar_one_or_none()
+
+        if not invitation:
+            raise HTTPException(404, "Invitation not found")
+
+        if invitation.status != "pending":
+            raise HTTPException(400, "Can only cancel pending invitations")
+
+        invitation.status = "cancelled"
+        await session.flush()
+
+        return {"success": True, "message": "Invitation cancelled"}
 
 
 @app.post("/api/auth/verify-key")

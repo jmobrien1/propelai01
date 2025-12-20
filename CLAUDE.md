@@ -144,6 +144,8 @@ A winning proposal ensures:
 - `POST /api/auth/forgot-password` - Request password reset token
 - `POST /api/auth/reset-password` - Reset password with token
 - `POST /api/auth/verify-key` - Verify API key
+- `PUT /api/users/me` - Update user profile (name)
+- `POST /api/users/me/change-password` - Change password
 - `POST /api/teams` - Create team
 - `GET /api/teams` - List teams
 - `GET /api/teams/{team_id}` - Get team details with members
@@ -154,6 +156,11 @@ A winning proposal ensures:
 - `POST /api/teams/{team_id}/api-keys` - Create API key
 - `GET /api/teams/{team_id}/api-keys` - List API keys
 - `DELETE /api/teams/{team_id}/api-keys/{key_id}` - Revoke API key
+- `POST /api/teams/{team_id}/invitations` - Create team invitation
+- `GET /api/teams/{team_id}/invitations` - List pending invitations
+- `DELETE /api/teams/{team_id}/invitations/{id}` - Cancel invitation
+- `GET /api/invitations/{token}` - Get invitation details
+- `POST /api/invitations/{token}/accept` - Accept invitation
 
 ### Vector Search UI
 **Goal:** AI-powered semantic search interface for Company Library.
@@ -166,10 +173,11 @@ A winning proposal ensures:
 
 **Frontend Components**:
 - `VectorSearchPanel`: AI search tab in Library view
-- `TeamsView`: Team workspace management UI with API key management
+- `TeamsView`: Team workspace management UI with API key management, activity log, invitations
 - `AuthModal`: Login/register/forgot-password/reset-password UI
+- `ProfileModal`: User profile editing and password change
 - User profile section with JWT-based session management
-- Modal dialogs for creating teams and adding members
+- Modal dialogs for creating teams, adding members, and sending invitations
 
 ### Rate Limiting
 **Goal:** Prevent API abuse on authentication endpoints.

@@ -595,6 +595,7 @@
             const [currentUser, setCurrentUser] = useState(null);
             const [showAuthModal, setShowAuthModal] = useState(false);
             const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+            const [showProfileModal, setShowProfileModal] = useState(false);
 
             // RFP State
             const [currentRfpId, setCurrentRfpId] = useState(null);
@@ -918,7 +919,24 @@
                         <div style={{ padding: 16, borderTop: '1px solid var(--border-color)', marginTop: 'auto' }}>
                             {currentUser ? (
                                 <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 12,
+                                            marginBottom: 12,
+                                            padding: 8,
+                                            margin: -8,
+                                            marginBottom: 8,
+                                            borderRadius: 8,
+                                            cursor: 'pointer',
+                                            transition: 'background 0.2s'
+                                        }}
+                                        onClick={() => setShowProfileModal(true)}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        title="Edit Profile"
+                                    >
                                         <div style={{
                                             width: 36,
                                             height: 36,
@@ -941,6 +959,7 @@
                                                 {currentUser.email}
                                             </div>
                                         </div>
+                                        <Icon name="Settings" style={{ width: 14, height: 14, color: 'var(--text-muted)' }} />
                                     </div>
                                     <button
                                         className="btn"
@@ -1055,6 +1074,267 @@
                             onRegister={handleRegister}
                         />
                     )}
+
+                    {/* Profile Modal */}
+                    {showProfileModal && currentUser && (
+                        <ProfileModal
+                            user={currentUser}
+                            onClose={() => setShowProfileModal(false)}
+                            onUpdate={(updatedUser, newToken) => {
+                                setCurrentUser(updatedUser);
+                                localStorage.setItem('propelai_user', JSON.stringify(updatedUser));
+                                if (newToken) {
+                                    localStorage.setItem('propelai_token', newToken);
+                                }
+                            }}
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        // Profile Modal Component
+        function ProfileModal({ user, onClose, onUpdate }) {
+            const [activeTab, setActiveTab] = useState('profile'); // 'profile' or 'security'
+            const [name, setName] = useState(user.name || '');
+            const [currentPassword, setCurrentPassword] = useState('');
+            const [newPassword, setNewPassword] = useState('');
+            const [confirmPassword, setConfirmPassword] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [success, setSuccess] = useState('');
+
+            const getAuthToken = () => localStorage.getItem('propelai_token');
+
+            const handleUpdateProfile = async (e) => {
+                e.preventDefault();
+                setError('');
+                setSuccess('');
+                setLoading(true);
+
+                try {
+                    const formData = new FormData();
+                    formData.append('name', name);
+
+                    const response = await fetch('/api/users/me', {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${getAuthToken()}`
+                        },
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail?.message || data.detail || 'Failed to update profile');
+                    }
+
+                    onUpdate(data.user, data.token);
+                    setSuccess('Profile updated successfully');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleChangePassword = async (e) => {
+                e.preventDefault();
+                setError('');
+                setSuccess('');
+
+                if (newPassword !== confirmPassword) {
+                    setError('New passwords do not match');
+                    return;
+                }
+
+                if (newPassword.length < 6) {
+                    setError('Password must be at least 6 characters');
+                    return;
+                }
+
+                setLoading(true);
+
+                try {
+                    const formData = new FormData();
+                    formData.append('current_password', currentPassword);
+                    formData.append('new_password', newPassword);
+
+                    const response = await fetch('/api/users/me/change-password', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${getAuthToken()}`
+                        },
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail?.message || data.detail || 'Failed to change password');
+                    }
+
+                    setSuccess('Password changed successfully');
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 450 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h2 style={{ margin: 0 }}>Account Settings</h2>
+                            <button
+                                onClick={onClose}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+                            >
+                                <Icon name="X" style={{ width: 20, height: 20, color: 'var(--text-muted)' }} />
+                            </button>
+                        </div>
+
+                        {/* Tabs */}
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+                            <button
+                                className={`btn ${activeTab === 'profile' ? 'btn-primary' : ''}`}
+                                style={{ fontSize: 13 }}
+                                onClick={() => { setActiveTab('profile'); setError(''); setSuccess(''); }}
+                            >
+                                <Icon name="User" style={{ width: 14, height: 14, marginRight: 6 }} />
+                                Profile
+                            </button>
+                            <button
+                                className={`btn ${activeTab === 'security' ? 'btn-primary' : ''}`}
+                                style={{ fontSize: 13 }}
+                                onClick={() => { setActiveTab('security'); setError(''); setSuccess(''); }}
+                            >
+                                <Icon name="Shield" style={{ width: 14, height: 14, marginRight: 6 }} />
+                                Security
+                            </button>
+                        </div>
+
+                        {error && (
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid var(--accent-red)',
+                                borderRadius: 8,
+                                padding: 12,
+                                marginBottom: 16,
+                                fontSize: 13,
+                                color: 'var(--accent-red)'
+                            }}>
+                                {error}
+                            </div>
+                        )}
+
+                        {success && (
+                            <div style={{
+                                background: 'rgba(34, 197, 94, 0.1)',
+                                border: '1px solid var(--accent-green)',
+                                borderRadius: 8,
+                                padding: 12,
+                                marginBottom: 16,
+                                fontSize: 13,
+                                color: 'var(--accent-green)'
+                            }}>
+                                {success}
+                            </div>
+                        )}
+
+                        {activeTab === 'profile' && (
+                            <form onSubmit={handleUpdateProfile}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Email</label>
+                                    <input
+                                        type="email"
+                                        className="form-input"
+                                        value={user.email}
+                                        disabled
+                                        style={{ background: 'var(--bg-tertiary)', cursor: 'not-allowed' }}
+                                    />
+                                    <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                        Email cannot be changed
+                                    </p>
+                                </div>
+
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Full Name</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value={name}
+                                        onChange={e => setName(e.target.value)}
+                                        placeholder="Your name"
+                                        required
+                                    />
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    style={{ width: '100%' }}
+                                    disabled={loading || name === user.name}
+                                >
+                                    {loading ? 'Saving...' : 'Save Changes'}
+                                </button>
+                            </form>
+                        )}
+
+                        {activeTab === 'security' && (
+                            <form onSubmit={handleChangePassword}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Current Password</label>
+                                    <input
+                                        type="password"
+                                        className="form-input"
+                                        value={currentPassword}
+                                        onChange={e => setCurrentPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        required
+                                    />
+                                </div>
+
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>New Password</label>
+                                    <input
+                                        type="password"
+                                        className="form-input"
+                                        value={newPassword}
+                                        onChange={e => setNewPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        required
+                                    />
+                                </div>
+
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Confirm New Password</label>
+                                    <input
+                                        type="password"
+                                        className="form-input"
+                                        value={confirmPassword}
+                                        onChange={e => setConfirmPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        required
+                                    />
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    style={{ width: '100%' }}
+                                    disabled={loading}
+                                >
+                                    {loading ? 'Changing Password...' : 'Change Password'}
+                                </button>
+                            </form>
+                        )}
+                    </div>
                 </div>
             );
         }
@@ -2793,6 +3073,15 @@
             const [showCreateApiKey, setShowCreateApiKey] = useState(false);
             const [newApiKey, setNewApiKey] = useState({ name: '', permissions: 'read', expires_days: '' });
             const [createdKey, setCreatedKey] = useState(null);
+            // Activity Log state
+            const [activityLogs, setActivityLogs] = useState([]);
+            const [loadingActivity, setLoadingActivity] = useState(false);
+            // Invitation state
+            const [invitations, setInvitations] = useState([]);
+            const [showInviteModal, setShowInviteModal] = useState(false);
+            const [newInvite, setNewInvite] = useState({ email: '', role: 'viewer' });
+            const [inviteLoading, setInviteLoading] = useState(false);
+            const [inviteError, setInviteError] = useState('');
 
             useEffect(() => {
                 loadTeams();
@@ -2839,6 +3128,8 @@
                     const data = await response.json();
                     setSelectedTeam(data);
                     loadApiKeys(teamId);
+                    loadActivityLogs(teamId);
+                    loadInvitations(teamId);
                 } catch (error) {
                     console.error('Error loading team:', error);
                 }
@@ -2900,6 +3191,128 @@
                     setApiKeys(data.api_keys || []);
                 } catch (error) {
                     console.error('Error loading API keys:', error);
+                }
+            };
+
+            // Activity Log functions
+            const loadActivityLogs = async (teamId) => {
+                setLoadingActivity(true);
+                try {
+                    const response = await fetch(`/api/teams/${teamId}/activity?limit=20`);
+                    const data = await response.json();
+                    setActivityLogs(data.activities || []);
+                } catch (error) {
+                    console.error('Error loading activity logs:', error);
+                } finally {
+                    setLoadingActivity(false);
+                }
+            };
+
+            const getActivityIcon = (action) => {
+                switch (action) {
+                    case 'team.create': return 'Users';
+                    case 'team.member_add': return 'UserPlus';
+                    case 'team.member_remove': return 'UserMinus';
+                    case 'team.member_role_change': return 'Shield';
+                    case 'api_key.create': return 'Key';
+                    case 'api_key.revoke': return 'Key';
+                    case 'library.add': return 'Plus';
+                    case 'library.update': return 'Edit';
+                    case 'library.delete': return 'Trash2';
+                    default: return 'Activity';
+                }
+            };
+
+            const formatActivityMessage = (activity) => {
+                const actor = activity.actor_name || 'Unknown user';
+                switch (activity.action) {
+                    case 'team.create': return `${actor} created this team`;
+                    case 'team.member_add': return `${actor} added ${activity.details?.member_email || 'a member'}`;
+                    case 'team.member_remove': return `${actor} removed ${activity.details?.member_email || 'a member'}`;
+                    case 'team.member_role_change': return `${actor} changed ${activity.details?.member_email}'s role to ${activity.details?.new_role}`;
+                    case 'api_key.create': return `${actor} created API key "${activity.details?.key_name || 'unnamed'}"`;
+                    case 'api_key.revoke': return `${actor} revoked an API key`;
+                    case 'library.add': return `${actor} added ${activity.details?.item_type || 'content'} to library`;
+                    case 'library.update': return `${actor} updated ${activity.details?.item_type || 'content'}`;
+                    case 'library.delete': return `${actor} deleted ${activity.details?.item_type || 'content'}`;
+                    default: return `${actor} performed ${activity.action}`;
+                }
+            };
+
+            const formatTimeAgo = (dateString) => {
+                const date = new Date(dateString);
+                const now = new Date();
+                const seconds = Math.floor((now - date) / 1000);
+
+                if (seconds < 60) return 'Just now';
+                if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+                if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+                if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+                return date.toLocaleDateString();
+            };
+
+            // Invitation functions
+            const loadInvitations = async (teamId) => {
+                try {
+                    const response = await fetch(`/api/teams/${teamId}/invitations?status=pending`);
+                    const data = await response.json();
+                    setInvitations(data.invitations || []);
+                } catch (error) {
+                    console.error('Error loading invitations:', error);
+                }
+            };
+
+            const sendInvitation = async () => {
+                if (!newInvite.email.trim() || !selectedTeam) return;
+
+                setInviteLoading(true);
+                setInviteError('');
+
+                try {
+                    const token = localStorage.getItem('propelai_token');
+                    const formData = new FormData();
+                    formData.append('email', newInvite.email);
+                    formData.append('role', newInvite.role);
+
+                    const response = await fetch(`/api/teams/${selectedTeam.id}/invitations`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Failed to send invitation');
+                    }
+
+                    loadInvitations(selectedTeam.id);
+                    setShowInviteModal(false);
+                    setNewInvite({ email: '', role: 'viewer' });
+
+                    // Show the invitation link in dev mode
+                    if (data.invitation_token) {
+                        alert(`Invitation sent! In production, an email would be sent.\n\nDev mode token: ${data.invitation_token}`);
+                    }
+                } catch (error) {
+                    setInviteError(error.message);
+                } finally {
+                    setInviteLoading(false);
+                }
+            };
+
+            const cancelInvitation = async (invitationId) => {
+                if (!confirm('Cancel this invitation?')) return;
+
+                try {
+                    await fetch(`/api/teams/${selectedTeam.id}/invitations/${invitationId}`, {
+                        method: 'DELETE'
+                    });
+                    loadInvitations(selectedTeam.id);
+                } catch (error) {
+                    console.error('Error cancelling invitation:', error);
                 }
             };
 
@@ -3097,6 +3510,80 @@
                                     )}
                                 </div>
 
+                                {/* Pending Invitations Section */}
+                                <div style={{ padding: 16, borderTop: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                        <h4 style={{ fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                                            Pending Invitations
+                                        </h4>
+                                        <button
+                                            className="btn"
+                                            style={{ fontSize: 12, padding: '4px 8px' }}
+                                            onClick={() => { setShowInviteModal(true); setInviteError(''); }}
+                                        >
+                                            + Invite
+                                        </button>
+                                    </div>
+
+                                    {invitations.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)', fontSize: 13 }}>
+                                            <Icon name="Mail" style={{ width: 24, height: 24, marginBottom: 8, opacity: 0.5 }} />
+                                            <p>No pending invitations</p>
+                                            <p style={{ fontSize: 12 }}>Invite team members via email</p>
+                                        </div>
+                                    ) : (
+                                        invitations.map(invite => (
+                                            <div
+                                                key={invite.id}
+                                                style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    padding: 12,
+                                                    background: 'var(--bg-tertiary)',
+                                                    borderRadius: 8,
+                                                    marginBottom: 8
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                    <div style={{
+                                                        width: 36,
+                                                        height: 36,
+                                                        borderRadius: '50%',
+                                                        background: 'var(--accent-orange)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        color: 'white',
+                                                        fontWeight: 600
+                                                    }}>
+                                                        <Icon name="Mail" style={{ width: 16, height: 16 }} />
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontWeight: 500 }}>{invite.email}</div>
+                                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                                            Expires {formatTimeAgo(invite.expires_at)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <span className={`badge badge-${roleColors[invite.role]}`}>
+                                                        {invite.role}
+                                                    </span>
+                                                    <button
+                                                        className="btn"
+                                                        style={{ padding: 4, color: 'var(--text-muted)' }}
+                                                        onClick={() => cancelInvitation(invite.id)}
+                                                        title="Cancel invitation"
+                                                    >
+                                                        <Icon name="X" style={{ width: 16, height: 16 }} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
                                 <div style={{ padding: 16, borderTop: '1px solid var(--border-color)' }}>
                                     <h4 style={{ marginBottom: 12, fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
                                         Role Permissions
@@ -3174,6 +3661,70 @@
                                         ))
                                     )}
                                 </div>
+
+                                {/* Activity Log Section */}
+                                <div style={{ padding: 16, borderTop: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                        <h4 style={{ fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                                            Activity Log
+                                        </h4>
+                                        <button
+                                            className="btn"
+                                            style={{ fontSize: 12, padding: '4px 8px' }}
+                                            onClick={() => loadActivityLogs(selectedTeam.id)}
+                                            disabled={loadingActivity}
+                                        >
+                                            {loadingActivity ? 'Loading...' : 'Refresh'}
+                                        </button>
+                                    </div>
+
+                                    {loadingActivity ? (
+                                        <div style={{ textAlign: 'center', padding: 16 }}>
+                                            <div className="spinner" style={{ width: 24, height: 24 }}></div>
+                                        </div>
+                                    ) : activityLogs.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)', fontSize: 13 }}>
+                                            <Icon name="Activity" style={{ width: 24, height: 24, marginBottom: 8, opacity: 0.5 }} />
+                                            <p>No activity yet</p>
+                                            <p style={{ fontSize: 12 }}>Team actions will appear here</p>
+                                        </div>
+                                    ) : (
+                                        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                                            {activityLogs.map((activity, index) => (
+                                                <div
+                                                    key={activity.id || index}
+                                                    style={{
+                                                        display: 'flex',
+                                                        gap: 12,
+                                                        padding: '10px 0',
+                                                        borderBottom: index < activityLogs.length - 1 ? '1px solid var(--border-color)' : 'none'
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        width: 28,
+                                                        height: 28,
+                                                        borderRadius: '50%',
+                                                        background: 'var(--bg-tertiary)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        flexShrink: 0
+                                                    }}>
+                                                        <Icon name={getActivityIcon(activity.action)} style={{ width: 14, height: 14, color: 'var(--text-muted)' }} />
+                                                    </div>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ fontSize: 13 }}>
+                                                            {formatActivityMessage(activity)}
+                                                        </div>
+                                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                            {formatTimeAgo(activity.created_at)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -3241,6 +3792,65 @@
                                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                                     <button className="btn" onClick={() => setShowAddMember(false)}>Cancel</button>
                                     <button className="btn btn-primary" onClick={addMember}>Add Member</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Invite Modal */}
+                    {showInviteModal && (
+                        <div className="modal-overlay" onClick={() => setShowInviteModal(false)}>
+                            <div className="modal" onClick={e => e.stopPropagation()}>
+                                <h3 style={{ marginBottom: 8 }}>Invite Team Member</h3>
+                                <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+                                    Send an invitation to join this team. They'll receive an email with a link to accept.
+                                </p>
+
+                                {inviteError && (
+                                    <div style={{
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        border: '1px solid var(--accent-red)',
+                                        borderRadius: 8,
+                                        padding: 12,
+                                        marginBottom: 16,
+                                        fontSize: 13,
+                                        color: 'var(--accent-red)'
+                                    }}>
+                                        {inviteError}
+                                    </div>
+                                )}
+
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Email Address</label>
+                                    <input
+                                        type="email"
+                                        className="form-input"
+                                        placeholder="colleague@company.com"
+                                        value={newInvite.email}
+                                        onChange={(e) => setNewInvite(prev => ({ ...prev, email: e.target.value }))}
+                                    />
+                                </div>
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Role</label>
+                                    <select
+                                        className="form-input"
+                                        value={newInvite.role}
+                                        onChange={(e) => setNewInvite(prev => ({ ...prev, role: e.target.value }))}
+                                    >
+                                        <option value="viewer">Viewer - Read only access</option>
+                                        <option value="contributor">Contributor - Can add content</option>
+                                        <option value="admin">Admin - Full access</option>
+                                    </select>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                    <button className="btn" onClick={() => setShowInviteModal(false)}>Cancel</button>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={sendInvitation}
+                                        disabled={inviteLoading}
+                                    >
+                                        {inviteLoading ? 'Sending...' : 'Send Invitation'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
