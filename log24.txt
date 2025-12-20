@@ -1,0 +1,50 @@
+2025-12-20T14:58:20Z clientIP="71.62.189.24" requestID="319ff72c-aae3-4985" responseTimeMS=6 responseBytes=18046 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:20.728913881Z INFO:     71.62.189.24:0 - "GET / HTTP/1.1" 200 OK
+2025-12-20T14:58:21Z clientIP="71.62.189.24" requestID="31144c9d-b352-4041" responseTimeMS=2 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:21Z clientIP="71.62.189.24" requestID="06f81909-cca1-4e4a" responseTimeMS=3 responseBytes=3073 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:21.528834563Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:58:21.557071445Z INFO:     71.62.189.24:0 - "GET /api/upload-config HTTP/1.1" 200 OK
+2025-12-20T14:58:42Z clientIP="71.62.189.24" requestID="b671cbad-5221-41ee" responseTimeMS=2 responseBytes=433 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:42.551108966Z INFO:     71.62.189.24:0 - "POST /api/rfp HTTP/1.1" 200 OK
+2025-12-20T14:58:43Z clientIP="71.62.189.24" requestID="c9e8d400-2feb-4dc6" responseTimeMS=2 responseBytes=255 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:43.679004695Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/status HTTP/1.1" 200 OK
+2025-12-20T14:58:44Z clientIP="71.62.189.24" requestID="993f46b3-b7dc-4df1" responseTimeMS=116 responseBytes=689 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:44Z clientIP="71.62.189.24" requestID="6b0ec37e-e666-4162" responseTimeMS=3 responseBytes=334 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:44Z clientIP="71.62.189.24" requestID="b1f40c26-bdca-4adc" responseTimeMS=11 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:44.266819046Z INFO:     71.62.189.24:0 - "POST /api/rfp/RFP-F469FAA9/upload-guided HTTP/1.1" 200 OK
+2025-12-20T14:58:44.323228408Z INFO:     71.62.189.24:0 - "POST /api/rfp/RFP-F469FAA9/process HTTP/1.1" 200 OK
+2025-12-20T14:58:44.663663992Z Processing RFP-F469FAA9 with Resilient Extraction v4.0.0 (extractor v3.2.0)
+2025-12-20T14:58:44.663708544Z [DEBUG] Guided upload document_metadata: {'Attachment 1. Stament Of Work.pdf': {'doc_type': 'sow', 'file_path': '/tmp/propelai_uploads/RFP-F469FAA9/Attachment 1. Stament Of Work.pdf', 'size': 1241569, 'uploaded_at': '2025-12-20T14:58:44.260003'}, 'Attachment 2. Placement Procedures.pdf': {'doc_type': 'instructions_evaluation', 'file_path': '/tmp/propelai_uploads/RFP-F469FAA9/Attachment 2. Placement Procedures.pdf', 'size': 879715, 'uploaded_at': '2025-12-20T14:58:44.260838'}, 'Solicitation - FA880625RB003.pdf': {'doc_type': 'combined_rfp', 'file_path': '/tmp/propelai_uploads/RFP-F469FAA9/Solicitation - FA880625RB003.pdf', 'size': 1881676, 'uploaded_at': '2025-12-20T14:58:44.263981'}, 'Solicitation - Clauses and Provisions.pdf': {'doc_type': 'solicitation', 'file_path': '/tmp/propelai_uploads/RFP-F469FAA9/Solicitation - Clauses and Provisions.pdf', 'size': 1059037, 'uploaded_at': '2025-12-20T14:58:44.266139'}}
+2025-12-20T14:58:44.663717174Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/status HTTP/1.1" 200 OK
+2025-12-20T14:58:45Z clientIP="71.62.189.24" requestID="e8be73dd-8038-4b02" responseTimeMS=49 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:45.722214189Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/status HTTP/1.1" 200 OK
+2025-12-20T14:58:46Z clientIP="71.62.189.24" requestID="1ec8acd7-7dd6-408e" responseTimeMS=57 responseBytes=272 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:46.722349263Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/status HTTP/1.1" 200 OK
+2025-12-20T14:58:47Z clientIP="71.62.189.24" requestID="272f21ae-2650-4ca3" responseTimeMS=63 responseBytes=284 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:47.727316162Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/status HTTP/1.1" 200 OK
+2025-12-20T14:58:48Z clientIP="71.62.189.24" requestID="a17ab9d5-e3dd-4552" responseTimeMS=13 responseBytes=874 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:48Z clientIP="71.62.189.24" requestID="04adb93f-367b-44f0" responseTimeMS=2 responseBytes=273 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:48Z clientIP="71.62.189.24" requestID="eac92df8-169b-41b0" responseTimeMS=16 responseBytes=30454 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:48.651022859Z [DEBUG] Requirements by category: {'TECHNICAL': 110, 'L_COMPLIANCE': 12, 'EVALUATION': 14, 'TECHNICAL_REQUIREMENT': 60, 'PRICING': 4, 'PROPOSAL_INSTRUCTION': 13, 'DELIVERY': 2, 'ADMINISTRATION': 1, 'EVALUATION_FACTOR': 2, 'INSPECTION': 4, 'PACKAGING': 2, 'GENERAL': 9, 'REPRESENTATION': 6, 'ATTACHMENT': 1, 'CONTRACT_FORM': 3}
+2025-12-20T14:58:48.65104796Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/status HTTP/1.1" 200 OK
+2025-12-20T14:58:48.74314355Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/requirements HTTP/1.1" 200 OK
+2025-12-20T14:58:48.744015846Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9 HTTP/1.1" 200 OK
+2025-12-20T14:58:49.802598847Z INFO:     Shutting down
+2025-12-20T14:58:49.903093652Z INFO:     Waiting for application shutdown.
+2025-12-20T14:58:49.903196014Z INFO:     Application shutdown complete.
+2025-12-20T14:58:49.903291866Z INFO:     Finished server process [54]
+2025-12-20T14:58:51Z clientIP="71.62.189.24" requestID="132807c3-1333-4794" responseTimeMS=458 responseBytes=98229 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:51.059983871Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/export?format=xlsx HTTP/1.1" 200 OK
+2025-12-20T14:58:52Z clientIP="71.62.189.24" requestID="4115abf4-3be1-4a15" responseTimeMS=3 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:58:52.074624723Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:59:01Z clientIP="71.62.189.24" requestID="fb099ccf-3efb-4fb3" responseTimeMS=23 responseBytes=5626 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:59:01.714225374Z [DEBUG] _extract_volumes v3.3: section_l=35, section_m=16
+2025-12-20T14:59:01.714249975Z [DEBUG] _extract_volumes v3.3: section_l_text=14589 chars, section_m_text=8371 chars
+2025-12-20T14:59:01.714254605Z [DEBUG] _extract_volumes v3.3: rfp_type=unknown, allow_ucf_defaults=True
+2025-12-20T14:59:01.714258465Z [DEBUG] StructureParser: No explicit volume structure found in Section L
+2025-12-20T14:59:01.714262055Z [DEBUG] StructureParser: Found 1 volumes from FACTORS
+2025-12-20T14:59:01.714265695Z [DEBUG] _extract_volumes v3.3: Found 1 volumes from Section M factors
+2025-12-20T14:59:01.714269335Z [DEBUG] Volume 'Infrastructure Approach': source=factor, confidence=medium
+2025-12-20T14:59:01.714272875Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/outline HTTP/1.1" 200 OK
+2025-12-20T14:59:03Z clientIP="71.62.189.24" requestID="6d642215-ae59-4796" responseTimeMS=430 responseBytes=270 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:59:03.336300708Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-F469FAA9/outline/export HTTP/1.1" 500 Internal Server Error
