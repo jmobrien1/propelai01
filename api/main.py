@@ -2918,6 +2918,13 @@ async def export_annotated_outline(rfp_id: str):
         exporter = AnnotatedOutlineExporter()
         # v4.0 FIX: Explicitly handle None format_requirements
         format_reqs = outline.get("format_requirements") or {}
+
+        # Debug: Log what we're passing to the exporter
+        print(f"[DEBUG] export_annotated_outline: outline keys = {list(outline.keys()) if outline else 'None'}")
+        print(f"[DEBUG] export_annotated_outline: requirements count = {len(requirements) if requirements else 'None'}")
+        print(f"[DEBUG] export_annotated_outline: format_reqs = {format_reqs}")
+        print(f"[DEBUG] export_annotated_outline: volumes = {outline.get('volumes', 'MISSING')}")
+
         doc_bytes = exporter.export(outline, requirements, format_reqs, config)
         
         # v3.2: Use solicitation number for filename, not source document name

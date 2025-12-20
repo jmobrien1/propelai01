@@ -87,23 +87,35 @@ class AnnotatedOutlineExporter:
     ) -> bytes:
         """
         Generate annotated outline document.
-        
+
         Args:
             outline_data: Proposal outline from SmartOutlineGenerator.to_json()
             requirements: List of requirements from CTM extraction
             format_requirements: Document format requirements (font, margins, etc.)
             config: Additional configuration options
-            
+
         Returns:
             bytes: The generated Word document as bytes
         """
+        print(f"[DEBUG] AnnotatedOutlineExporter.export() called")
+        print(f"[DEBUG] outline_data type: {type(outline_data)}")
+        print(f"[DEBUG] requirements type: {type(requirements)}, len: {len(requirements) if requirements else 'None'}")
+        print(f"[DEBUG] format_requirements type: {type(format_requirements)}")
+
         # Build the input data for the Node.js script
-        input_data = self._build_input_data(
-            outline_data,
-            requirements or [],
-            format_requirements or {},
-            config or AnnotatedOutlineConfig()
-        )
+        try:
+            input_data = self._build_input_data(
+                outline_data,
+                requirements or [],
+                format_requirements or {},
+                config or AnnotatedOutlineConfig()
+            )
+            print(f"[DEBUG] _build_input_data succeeded, keys: {list(input_data.keys())}")
+        except Exception as e:
+            print(f"[DEBUG] _build_input_data FAILED: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         # Create temporary files
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
