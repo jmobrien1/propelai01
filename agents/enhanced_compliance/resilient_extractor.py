@@ -4,6 +4,10 @@ PropelAI v3.2: Resilient Extraction Pipeline
 This module orchestrates the entire extraction process using the
 "Extract First, Classify Later" architecture.
 
+v4.0 Changes (2025-12-20):
+- Added Trust Gate: PDF coordinate extraction for source tracing
+- Requirements now include source_coordinates for UI highlighting
+
 v3.2 Changes (2025-12-15):
 - Improved Section L detection (proposal instructions)
 - Added filters for distribution statements and boilerplate
@@ -22,7 +26,7 @@ Key principles:
 4. Validate and warn, don't silently drop
 """
 
-PIPELINE_VERSION = "3.2.0"
+PIPELINE_VERSION = "4.0.0"
 
 import logging
 import hashlib
@@ -41,6 +45,16 @@ from .universal_extractor import UniversalExtractor
 from .section_classifier import SectionClassifier
 from .parser import MultiFormatParser
 
+# v4.0 Trust Gate imports
+try:
+    from .pdf_coordinate_extractor import PDFCoordinateExtractor, get_coordinate_extractor
+    from .models import SourceCoordinate, BoundingBox
+    COORDINATE_EXTRACTION_AVAILABLE = True
+except ImportError:
+    COORDINATE_EXTRACTION_AVAILABLE = False
+    PDFCoordinateExtractor = None
+    get_coordinate_extractor = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,10 +71,26 @@ class ResilientExtractor:
     6. Return results with confidence scores and review queue
     """
 
-    def __init__(self):
+    def __init__(self, enable_coordinates: bool = True):
+        """
+        Initialize the resilient extractor.
+
+        Args:
+            enable_coordinates: If True, extract PDF coordinates for source tracing (v4.0 Trust Gate)
+        """
         self.parser = MultiFormatParser()
         self.universal_extractor = UniversalExtractor()
         self.section_classifier = SectionClassifier()
+
+        # v4.0 Trust Gate: Coordinate extraction
+        self.enable_coordinates = enable_coordinates and COORDINATE_EXTRACTION_AVAILABLE
+        self.coordinate_extractor = None
+        if self.enable_coordinates:
+            try:
+                self.coordinate_extractor = PDFCoordinateExtractor()
+            except Exception as e:
+                logger.warning(f"Coordinate extractor unavailable: {e}")
+                self.enable_coordinates = False
 
     def extract(
         self,
@@ -104,14 +134,19 @@ class ResilientExtractor:
         logger.info("Classifying requirements into sections...")
         classified = self.section_classifier.classify_requirements(candidates, documents)
 
-        # Step 5: Add to result and build review queue
+        # Step 5: v4.0 Trust Gate - Enrich with PDF coordinates
+        if self.enable_coordinates:
+            logger.info("Enriching requirements with PDF coordinates...")
+            classified = self._enrich_with_coordinates(classified, file_paths)
+
+        # Step 6: Add to result and build review queue
         for req in classified:
             result.add_requirement(req)
 
-        # Step 6: Validate and compute quality metrics
+        # Step 7: Validate and compute quality metrics
         result.finalize()
 
-        # Step 7: Run additional quality checks
+        # Step 8: Run additional quality checks
         self._run_quality_checks(result, documents)
 
         # Log summary
@@ -307,6 +342,79 @@ class ResilientExtractor:
 
         return intersection / union if union > 0 else 0.0
 
+    def _enrich_with_coordinates(
+        self,
+        requirements: List[RequirementCandidate],
+        file_paths: List[str]
+    ) -> List[RequirementCandidate]:
+        """
+        v4.0 Trust Gate: Enrich requirements with PDF source coordinates.
+
+        For each requirement, finds its location in the source PDF and
+        attaches bounding box coordinates for UI highlighting.
+
+        Args:
+            requirements: List of extracted requirements
+            file_paths: Original file paths for coordinate lookup
+
+        Returns:
+            Requirements with source_coordinates populated
+        """
+        if not self.coordinate_extractor:
+            return requirements
+
+        # Build a map of source document -> file path
+        pdf_paths = {}
+        for path in file_paths:
+            if path.lower().endswith('.pdf'):
+                # Extract filename for matching
+                import os
+                filename = os.path.basename(path)
+                pdf_paths[filename] = path
+
+        # Track stats
+        enriched_count = 0
+        failed_count = 0
+
+        for req in requirements:
+            # Find the source PDF
+            source_doc = req.source_document
+            pdf_path = None
+
+            # Try exact match first
+            if source_doc in pdf_paths:
+                pdf_path = pdf_paths[source_doc]
+            else:
+                # Try partial match
+                for filename, path in pdf_paths.items():
+                    if source_doc in filename or filename in source_doc:
+                        pdf_path = path
+                        break
+
+            if not pdf_path:
+                continue
+
+            try:
+                # Find coordinates for requirement text
+                coord = self.coordinate_extractor.find_requirement_location(
+                    pdf_path,
+                    req.text,
+                    context_words=8  # Use first 8 words for matching
+                )
+
+                if coord:
+                    req.source_coordinates = [coord]
+                    enriched_count += 1
+                else:
+                    failed_count += 1
+
+            except Exception as e:
+                logger.debug(f"Coordinate extraction failed for {req.id}: {e}")
+                failed_count += 1
+
+        logger.info(f"Coordinate enrichment: {enriched_count} enriched, {failed_count} failed")
+        return requirements
+
     def _log_extraction_summary(self, result: ExtractionResult):
         """Log comprehensive extraction summary"""
         metrics = result.quality_metrics
@@ -347,6 +455,14 @@ class ResilientExtractor:
 import re
 
 
-def create_resilient_extractor() -> ResilientExtractor:
-    """Factory function to create configured extractor"""
-    return ResilientExtractor()
+def create_resilient_extractor(enable_coordinates: bool = True) -> ResilientExtractor:
+    """
+    Factory function to create configured extractor.
+
+    Args:
+        enable_coordinates: Enable v4.0 Trust Gate PDF coordinate extraction
+
+    Returns:
+        Configured ResilientExtractor instance
+    """
+    return ResilientExtractor(enable_coordinates=enable_coordinates)
