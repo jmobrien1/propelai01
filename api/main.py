@@ -3562,7 +3562,7 @@ async def add_differentiator_vector(
 # ============== v4.1: Team Workspaces & Role-Based Access ==============
 
 from api.database import (
-    UserModel, TeamModel, TeamMembershipModel, ActivityLogModel, UserRole
+    UserModel, TeamModel, TeamMembershipModel, ActivityLogModel, APIKeyModel, UserRole
 )
 import uuid
 import hashlib
@@ -3981,6 +3981,219 @@ async def log_activity(
             await session.flush()
     except Exception as e:
         print(f"[Activity Log] Error: {e}")
+
+
+# ============== API Key Management ==============
+
+def generate_api_key() -> tuple[str, str, str]:
+    """Generate a new API key. Returns (full_key, key_hash, key_prefix)"""
+    # Generate a secure random key with prefix
+    key_bytes = secrets.token_bytes(32)
+    full_key = f"pk_{secrets.token_urlsafe(32)}"
+    key_prefix = full_key[:10]
+    key_hash = hashlib.sha256(full_key.encode()).hexdigest()
+    return full_key, key_hash, key_prefix
+
+
+def verify_api_key(key: str, key_hash: str) -> bool:
+    """Verify an API key against its hash"""
+    return hashlib.sha256(key.encode()).hexdigest() == key_hash
+
+
+@app.post("/api/teams/{team_id}/api-keys")
+async def create_api_key(
+    team_id: str,
+    name: str = Form(...),
+    permissions: str = Form("read"),  # Comma-separated: "read,write"
+    expires_days: int = Form(None),  # Optional expiry in days
+    user_id: str = Form(None),  # Creator's user ID
+):
+    """Create a new API key for a team"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+        from datetime import timedelta
+
+        # Verify team exists
+        result = await session.execute(
+            select(TeamModel).where(TeamModel.id == team_id)
+        )
+        team = result.scalar_one_or_none()
+        if not team:
+            raise HTTPException(404, "Team not found")
+
+        # Generate the API key
+        full_key, key_hash, key_prefix = generate_api_key()
+
+        # Parse permissions
+        perm_list = [p.strip() for p in permissions.split(",") if p.strip()]
+        valid_perms = ["read", "write", "admin"]
+        perm_list = [p for p in perm_list if p in valid_perms]
+        if not perm_list:
+            perm_list = ["read"]
+
+        # Calculate expiry
+        expires_at = None
+        if expires_days and expires_days > 0:
+            expires_at = datetime.utcnow() + timedelta(days=expires_days)
+
+        # Create the API key record
+        api_key = APIKeyModel(
+            id=generate_id(),
+            team_id=team_id,
+            user_id=user_id or "system",
+            name=name,
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            permissions=perm_list,
+            expires_at=expires_at,
+        )
+        session.add(api_key)
+        await session.flush()
+
+        # Log activity
+        await log_activity(
+            team_id=team_id,
+            user_id=user_id or "system",
+            action="create",
+            resource_type="api_key",
+            resource_id=api_key.id,
+            details={"name": name, "permissions": perm_list}
+        )
+
+        # Return the full key ONLY on creation (never stored/returned again)
+        return {
+            "id": api_key.id,
+            "name": api_key.name,
+            "key": full_key,  # Only shown once!
+            "key_prefix": key_prefix,
+            "permissions": perm_list,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "created_at": api_key.created_at.isoformat() if api_key.created_at else None,
+            "message": "Store this key securely - it will not be shown again!"
+        }
+
+
+@app.get("/api/teams/{team_id}/api-keys")
+async def list_api_keys(team_id: str):
+    """List all API keys for a team (without the actual key values)"""
+    async with get_db_session() as session:
+        if session is None:
+            return {"api_keys": []}
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(APIKeyModel)
+            .where(APIKeyModel.team_id == team_id)
+            .order_by(APIKeyModel.created_at.desc())
+        )
+        api_keys = result.scalars().all()
+
+        return {
+            "api_keys": [
+                {
+                    "id": key.id,
+                    "name": key.name,
+                    "key_prefix": key.key_prefix,
+                    "permissions": key.permissions or ["read"],
+                    "last_used": key.last_used.isoformat() if key.last_used else None,
+                    "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+                    "created_at": key.created_at.isoformat() if key.created_at else None,
+                    "is_expired": key.expires_at and key.expires_at < datetime.utcnow(),
+                }
+                for key in api_keys
+            ]
+        }
+
+
+@app.delete("/api/teams/{team_id}/api-keys/{key_id}")
+async def revoke_api_key(
+    team_id: str,
+    key_id: str,
+    user_id: str = None,
+):
+    """Revoke (delete) an API key"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select, delete
+
+        # Find the key
+        result = await session.execute(
+            select(APIKeyModel)
+            .where(APIKeyModel.id == key_id)
+            .where(APIKeyModel.team_id == team_id)
+        )
+        api_key = result.scalar_one_or_none()
+        if not api_key:
+            raise HTTPException(404, "API key not found")
+
+        key_name = api_key.name
+
+        # Delete the key
+        await session.execute(
+            delete(APIKeyModel).where(APIKeyModel.id == key_id)
+        )
+        await session.flush()
+
+        # Log activity
+        await log_activity(
+            team_id=team_id,
+            user_id=user_id or "system",
+            action="delete",
+            resource_type="api_key",
+            resource_id=key_id,
+            details={"name": key_name}
+        )
+
+        return {"success": True, "message": f"API key '{key_name}' revoked"}
+
+
+@app.post("/api/auth/verify-key")
+async def verify_api_key_endpoint(
+    api_key: str = Form(...),
+):
+    """Verify an API key and return its permissions"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        # Extract prefix to find the key
+        key_prefix = api_key[:10] if len(api_key) >= 10 else api_key
+
+        result = await session.execute(
+            select(APIKeyModel)
+            .where(APIKeyModel.key_prefix == key_prefix)
+        )
+        stored_key = result.scalar_one_or_none()
+
+        if not stored_key:
+            raise HTTPException(401, "Invalid API key")
+
+        # Verify the hash
+        if not verify_api_key(api_key, stored_key.key_hash):
+            raise HTTPException(401, "Invalid API key")
+
+        # Check expiry
+        if stored_key.expires_at and stored_key.expires_at < datetime.utcnow():
+            raise HTTPException(401, "API key has expired")
+
+        # Update last used timestamp
+        stored_key.last_used = datetime.utcnow()
+        await session.flush()
+
+        return {
+            "valid": True,
+            "team_id": stored_key.team_id,
+            "permissions": stored_key.permissions or ["read"],
+            "name": stored_key.name,
+        }
 
 
 # ============== Main Entry ==============

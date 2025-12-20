@@ -139,6 +139,7 @@ A winning proposal ensures:
 **API Endpoints**:
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - Login user
+- `POST /api/auth/verify-key` - Verify API key
 - `POST /api/teams` - Create team
 - `GET /api/teams` - List teams
 - `GET /api/teams/{team_id}` - Get team details with members
@@ -146,6 +147,9 @@ A winning proposal ensures:
 - `PUT /api/teams/{team_id}/members/{user_id}` - Update member role
 - `DELETE /api/teams/{team_id}/members/{user_id}` - Remove member
 - `GET /api/teams/{team_id}/activity` - Get team activity log
+- `POST /api/teams/{team_id}/api-keys` - Create API key
+- `GET /api/teams/{team_id}/api-keys` - List API keys
+- `DELETE /api/teams/{team_id}/api-keys/{key_id}` - Revoke API key
 
 ### Vector Search UI
 **Goal:** AI-powered semantic search interface for Company Library.

@@ -1792,6 +1792,108 @@ function TeamsView() {
 - Contributor: Can add/edit library content, view team
 - Viewer: Read-only access to library content
 
+### 14.6 API Keys for Programmatic Access
+
+**Location:** `api/main.py`
+
+API keys enable programmatic access to PropelAI for integrations and automation.
+
+**Key Features:**
+- Secure key generation with SHA256 hashing
+- Only the full key is shown once at creation time
+- Keys identified by prefix for fast lookup
+- Permission levels: read, write, admin
+- Optional expiration dates
+- Activity logging for all key operations
+
+**Database Model:**
+
+```python
+class APIKeyModel(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id"))
+    user_id = Column(String(50), ForeignKey("users.id"))
+    name = Column(String(255), nullable=False)
+    key_hash = Column(String(255), nullable=False)  # SHA256 hash
+    key_prefix = Column(String(10), nullable=False)  # First 10 chars
+    permissions = Column(JSONB, default=list)  # ["read", "write", "admin"]
+    last_used = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+```
+
+**API Endpoints:**
+
+```
+POST /api/teams/{team_id}/api-keys
+Content-Type: application/x-www-form-urlencoded
+
+name=CI+Pipeline&permissions=read,write&expires_days=90
+
+Response:
+{
+  "id": "KEY-A1B2C3D4",
+  "name": "CI Pipeline",
+  "key": "pk_abc123...",  // Only shown once!
+  "key_prefix": "pk_abc123",
+  "permissions": ["read", "write"],
+  "expires_at": "2025-03-20T10:00:00",
+  "message": "Store this key securely - it will not be shown again!"
+}
+```
+
+```
+GET /api/teams/{team_id}/api-keys
+
+Response:
+{
+  "api_keys": [
+    {
+      "id": "KEY-A1B2C3D4",
+      "name": "CI Pipeline",
+      "key_prefix": "pk_abc123",
+      "permissions": ["read", "write"],
+      "last_used": "2024-12-20T15:30:00",
+      "expires_at": "2025-03-20T10:00:00",
+      "is_expired": false
+    }
+  ]
+}
+```
+
+```
+DELETE /api/teams/{team_id}/api-keys/{key_id}
+
+Response:
+{
+  "success": true,
+  "message": "API key 'CI Pipeline' revoked"
+}
+```
+
+```
+POST /api/auth/verify-key
+Content-Type: application/x-www-form-urlencoded
+
+api_key=pk_abc123...
+
+Response:
+{
+  "valid": true,
+  "team_id": "TEAM-A1B2C3D4",
+  "permissions": ["read", "write"],
+  "name": "CI Pipeline"
+}
+```
+
+**Security Considerations:**
+- Keys are never stored in plain text (only SHA256 hash)
+- Full key is only returned at creation time
+- Expired keys are rejected at verification
+- All key operations are logged to activity log
+
 ---
 
 ## Appendix A: Dependencies

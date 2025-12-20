@@ -581,6 +581,7 @@ class V4EndToEndTests:
                 TeamModel,
                 TeamMembershipModel,
                 ActivityLogModel,
+                APIKeyModel,
                 UserRole,
             )
             self.record(
@@ -779,6 +780,51 @@ class V4EndToEndTests:
                     f"ActivityLogModel test failed: {e}"
                 )
 
+    def test_phase5_api_key_model(self):
+        """Test APIKeyModel for programmatic access"""
+        try:
+            from api.database import APIKeyModel
+
+            required_fields = ['id', 'team_id', 'user_id', 'name', 'key_hash', 'key_prefix', 'permissions']
+
+            if hasattr(APIKeyModel, '__table__'):
+                columns = [c.name for c in APIKeyModel.__table__.columns]
+                missing = [f for f in required_fields if f not in columns]
+
+                if missing:
+                    self.record(
+                        "Phase 5: APIKeyModel",
+                        False,
+                        f"Missing columns: {missing}"
+                    )
+                else:
+                    self.record(
+                        "Phase 5: APIKeyModel",
+                        True,
+                        "APIKeyModel supports programmatic access",
+                        {"columns": columns[:7]}
+                    )
+            else:
+                self.record(
+                    "Phase 5: APIKeyModel",
+                    True,
+                    "APIKeyModel exists"
+                )
+        except ImportError as e:
+            if "fastapi" in str(e).lower() or "sqlalchemy" in str(e).lower():
+                self.record(
+                    "Phase 5: APIKeyModel",
+                    True,
+                    "Database dependencies not installed",
+                    skipped=True
+                )
+            else:
+                self.record(
+                    "Phase 5: APIKeyModel",
+                    False,
+                    f"APIKeyModel test failed: {e}"
+                )
+
     # =========================================================================
     # API Endpoint Tests
     # =========================================================================
@@ -911,6 +957,7 @@ class V4EndToEndTests:
         self.test_phase5_team_model_structure()
         self.test_phase5_team_membership_model()
         self.test_phase5_activity_log_model()
+        self.test_phase5_api_key_model()
 
         # API Verification
         print("\n[API Endpoint Verification]")

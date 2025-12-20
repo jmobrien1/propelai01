@@ -343,6 +343,43 @@ class ActivityLogModel(Base):
         }
 
 
+class APIKeyModel(Base):
+    """API keys for programmatic access"""
+    __tablename__ = "api_keys"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    key_hash = Column(String(255), nullable=False)  # SHA256 hash of the key
+    key_prefix = Column(String(10), nullable=False)  # First 8 chars for identification
+    permissions = Column(JSONB, default=list)  # ["read", "write", "admin"]
+    last_used = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_api_keys_team_id', 'team_id'),
+        Index('idx_api_keys_user_id', 'user_id'),
+        Index('idx_api_keys_key_prefix', 'key_prefix'),
+    )
+
+    def to_dict(self, include_prefix: bool = True) -> Dict[str, Any]:
+        result = {
+            "id": self.id,
+            "team_id": self.team_id,
+            "user_id": self.user_id,
+            "name": self.name,
+            "permissions": self.permissions or ["read"],
+            "last_used": self.last_used.isoformat() if self.last_used else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_prefix:
+            result["key_prefix"] = self.key_prefix
+        return result
+
+
 # ============== Database Connection ==============
 
 # Engine and session factory (initialized lazily)
