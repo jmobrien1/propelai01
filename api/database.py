@@ -252,11 +252,128 @@ async def init_db():
 
     try:
         async with engine.begin() as conn:
+            # Create SQLAlchemy-managed tables
             await conn.run_sync(Base.metadata.create_all)
+
+        # Initialize pgvector extension and Company Library tables
+        await init_vector_tables()
+
         print("[DB] Database initialized successfully")
         return True
     except Exception as e:
         print(f"[DB] Failed to initialize database: {e}")
+        return False
+
+
+async def init_vector_tables():
+    """Initialize pgvector extension and Company Library tables"""
+    engine = _get_engine()
+    if engine is None:
+        return False
+
+    # SQL for pgvector and Company Library tables
+    init_sql = """
+    -- Enable pgvector extension (requires superuser or pre-installed)
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    -- Try to enable vector extension (may already be enabled by hosting provider)
+    DO $$
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS "vector";
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'pgvector extension not available or already enabled';
+    END $$;
+
+    -- Company profile metadata
+    CREATE TABLE IF NOT EXISTS company_profiles (
+        id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+        company_name VARCHAR(500) NOT NULL,
+        duns_number VARCHAR(20),
+        cage_code VARCHAR(10),
+        naics_codes TEXT[],
+        set_aside_types TEXT[],
+        clearance_level VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Capabilities with vector embeddings
+    CREATE TABLE IF NOT EXISTS capabilities (
+        id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+        company_id UUID REFERENCES company_profiles(id) ON DELETE CASCADE,
+        name VARCHAR(500) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(100),
+        keywords TEXT[],
+        embedding vector(1536),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Past performance records with vector embeddings
+    CREATE TABLE IF NOT EXISTS past_performances (
+        id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+        company_id UUID REFERENCES company_profiles(id) ON DELETE CASCADE,
+        project_name VARCHAR(500) NOT NULL,
+        client_name VARCHAR(500),
+        client_agency VARCHAR(500),
+        contract_number VARCHAR(100),
+        contract_value DECIMAL(15,2),
+        period_of_performance VARCHAR(100),
+        description TEXT NOT NULL,
+        relevance_keywords TEXT[],
+        metrics JSONB,
+        embedding vector(1536),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Key personnel with vector embeddings
+    CREATE TABLE IF NOT EXISTS key_personnel (
+        id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+        company_id UUID REFERENCES company_profiles(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        title VARCHAR(255),
+        role VARCHAR(255),
+        years_experience INTEGER,
+        clearance_level VARCHAR(50),
+        certifications TEXT[],
+        bio TEXT NOT NULL,
+        expertise_areas TEXT[],
+        embedding vector(1536),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Differentiators with vector embeddings
+    CREATE TABLE IF NOT EXISTS differentiators (
+        id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+        company_id UUID REFERENCES company_profiles(id) ON DELETE CASCADE,
+        title VARCHAR(500) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(100),
+        proof_points TEXT[],
+        competitor_comparison TEXT,
+        embedding vector(1536),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+
+    try:
+        async with engine.begin() as conn:
+            from sqlalchemy import text
+            # Execute each statement separately
+            for statement in init_sql.split(';'):
+                statement = statement.strip()
+                if statement and not statement.startswith('--'):
+                    try:
+                        await conn.execute(text(statement))
+                    except Exception as e:
+                        # Log but continue - table may already exist
+                        if 'already exists' not in str(e).lower():
+                            print(f"[DB] Warning: {e}")
+
+        print("[DB] Company Library tables ready")
+        return True
+    except Exception as e:
+        print(f"[DB] Warning: Could not initialize vector tables: {e}")
         return False
 
 
