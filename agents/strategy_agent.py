@@ -1,26 +1,56 @@
 """
 PropelAI Strategy Agent - "The Capture Manager"
-Play 2: The Strategy Engine (Win Themes)
+v4.0 Phase 2: Iron Triangle Logic Engine
 
-Goal: Define *why* we win before writing a single word
+Goal: Model dependencies between Section L, M, and C
 
 This agent:
-1. Analyzes Section M (Evaluation Factors)
-2. Queries past bid strategies from the Agent-Trace database
-3. Performs competitor ghosting analysis
-4. Generates win themes and discriminators
-5. Creates annotated outline with page allocations
+1. Analyzes Section M (Evaluation Factors) - extract scoring weights
+2. Cross-walks Section M factors → Section C (SOW) paragraphs
+3. Validates Section L allows corresponding proposal volumes
+4. Detects conflicts (page limits, structure mismatches)
+5. Generates win themes and discriminators
+6. Creates annotated outline with page allocations
 
-Uses high-reasoning model (Gemini 1.5 Pro or Claude) for strategic synthesis
+Uses high-reasoning model for strategic synthesis
 """
 
 import json
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 
-from core.state import ProposalState, ProposalPhase
+# Try to import from core, fallback to standalone
+try:
+    from core.state import ProposalState, ProposalPhase
+except ImportError:
+    # Standalone mode - define minimal types
+    ProposalState = Dict[str, Any]
+    class ProposalPhase(str, Enum):
+        STRATEGY = "strategy"
+        DRAFTING = "drafting"
+        REVIEW = "review"
+
+# Import Phase 2 data models
+try:
+    from agents.enhanced_compliance.document_structure import (
+        UCFSection,
+        DocumentStructure,
+        SectionBoundary,
+        WinTheme as WinThemeModel,
+        CompetitorProfile as CompetitorProfileModel,
+        EvaluationFactor,
+        StructureConflict,
+        LMCCrossWalk,
+        StrategyAnalysis,
+        ConflictType,
+        ConflictSeverity,
+    )
+    PHASE2_MODELS_AVAILABLE = True
+except ImportError:
+    PHASE2_MODELS_AVAILABLE = False
 
 
 class StrategyFramework(str, Enum):
@@ -683,3 +713,408 @@ def create_strategy_agent(
         llm_client=llm_client,
         past_performance_store=past_performance_store
     )
+
+
+# =============================================================================
+# Phase 2: Iron Triangle Logic Engine
+# =============================================================================
+
+class IronTriangleAnalyzer:
+    """
+    The Iron Triangle Logic Engine.
+
+    Analyzes the relationship between:
+    - Section L (Instructions): How to format/submit the proposal
+    - Section M (Evaluation): How the government scores proposals
+    - Section C (SOW/PWS): What work must be performed
+
+    Key functions:
+    1. Extract evaluation factors from Section M with weights
+    2. Cross-walk M factors to C requirements
+    3. Validate L instructions allow adequate coverage
+    4. Detect conflicts (page limits, missing sections, etc.)
+    """
+
+    # Patterns for extracting page limits
+    PAGE_LIMIT_PATTERNS = [
+        r'(?:not\s+(?:to\s+)?exceed|maximum\s+of|limited\s+to|no\s+more\s+than)\s+(\d+)\s+pages?',
+        r'(\d+)\s+page\s+(?:limit|maximum)',
+        r'(?:shall\s+not\s+exceed|must\s+not\s+exceed)\s+(\d+)\s+pages?',
+    ]
+
+    # Patterns for extracting evaluation weights
+    WEIGHT_PATTERNS = [
+        (r'(?:significantly|substantially)\s+more\s+important\s+than', 0.4),
+        (r'(?:slightly|somewhat)\s+more\s+important\s+than', 0.25),
+        (r'equal(?:ly)?\s+important|same\s+(?:weight|importance)', 0.2),
+        (r'(?:slightly|somewhat)\s+less\s+important\s+than', 0.15),
+        (r'(?:significantly|substantially)\s+less\s+important\s+than', 0.1),
+    ]
+
+    # Patterns for evaluation factors
+    FACTOR_PATTERNS = [
+        r'Factor\s+(\d+)[:\s]+([^\n]+)',
+        r'(\d+)\.\s*([A-Z][^:\n]+)(?:\s*[:\-])',
+        r'M\.(\d+(?:\.\d+)?)\s+([^\n]+)',
+        r'(?:Evaluation\s+)?(?:Factor|Criterion)\s*[:\-]?\s*([^\n]+)',
+    ]
+
+    def __init__(self):
+        self.conflicts: List[Dict] = []
+        self.cross_walks: List[Dict] = []
+
+    def analyze(
+        self,
+        structure: Optional[Any] = None,
+        section_l_content: str = "",
+        section_m_content: str = "",
+        section_c_content: str = "",
+        requirements: Optional[List[Dict]] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform full Iron Triangle analysis.
+
+        Args:
+            structure: DocumentStructure from parser (optional)
+            section_l_content: Raw text of Section L
+            section_m_content: Raw text of Section M
+            section_c_content: Raw text of Section C/SOW/PWS
+            requirements: List of extracted requirements
+
+        Returns:
+            StrategyAnalysis as dict
+        """
+        self.conflicts = []
+        self.cross_walks = []
+
+        # Extract from structure if provided
+        if structure and hasattr(structure, 'sections'):
+            if hasattr(structure.sections, 'get'):
+                l_section = structure.sections.get('SECTION_L') or structure.sections.get(UCFSection.SECTION_L if PHASE2_MODELS_AVAILABLE else 'L')
+                m_section = structure.sections.get('SECTION_M') or structure.sections.get(UCFSection.SECTION_M if PHASE2_MODELS_AVAILABLE else 'M')
+                c_section = structure.sections.get('SECTION_C') or structure.sections.get(UCFSection.SECTION_C if PHASE2_MODELS_AVAILABLE else 'C')
+
+                if l_section and hasattr(l_section, 'content'):
+                    section_l_content = section_l_content or l_section.content
+                if m_section and hasattr(m_section, 'content'):
+                    section_m_content = section_m_content or m_section.content
+                if c_section and hasattr(c_section, 'content'):
+                    section_c_content = section_c_content or c_section.content
+
+        # Step 1: Extract evaluation factors from Section M
+        evaluation_factors = self._extract_evaluation_factors(section_m_content)
+
+        # Step 2: Extract L instructions and page limits
+        l_instructions = self._extract_l_instructions(section_l_content)
+
+        # Step 3: Count C requirements by category
+        c_requirement_counts = self._count_requirements_by_section(requirements or [])
+
+        # Step 4: Build cross-walks (L → M → C mapping)
+        self.cross_walks = self._build_cross_walks(
+            l_instructions, evaluation_factors, c_requirement_counts
+        )
+
+        # Step 5: Detect conflicts
+        self.conflicts = self._detect_conflicts(
+            l_instructions, evaluation_factors, self.cross_walks
+        )
+
+        # Build analysis result
+        analysis = {
+            "evaluation_factors": evaluation_factors,
+            "l_instructions": l_instructions,
+            "cross_walks": self.cross_walks,
+            "conflicts": self.conflicts,
+            "summary": {
+                "total_l_instructions": len(l_instructions),
+                "total_m_factors": len(evaluation_factors),
+                "total_c_requirements": sum(c_requirement_counts.values()),
+                "conflict_count": len(self.conflicts),
+                "critical_conflicts": len([c for c in self.conflicts if c.get("severity") == "critical"]),
+                "coverage_score": self._calculate_coverage_score(self.cross_walks)
+            },
+            "analyzed_at": datetime.now().isoformat(),
+            "analysis_version": "4.0.0-phase2"
+        }
+
+        return analysis
+
+    def _extract_evaluation_factors(self, section_m: str) -> List[Dict]:
+        """Extract evaluation factors from Section M text."""
+        factors = []
+        factor_id = 0
+
+        if not section_m:
+            return factors
+
+        # Try each pattern
+        for pattern in self.FACTOR_PATTERNS:
+            for match in re.finditer(pattern, section_m, re.IGNORECASE | re.MULTILINE):
+                factor_id += 1
+                groups = match.groups()
+
+                factor = {
+                    "factor_id": f"M-{factor_id:02d}",
+                    "name": groups[-1].strip() if groups else "Unknown",
+                    "source_text": match.group(0)[:200],
+                    "weight": None,
+                    "weight_numeric": None,
+                    "sub_factors": [],
+                    "maps_to_section_l": [],
+                    "maps_to_section_c": []
+                }
+
+                # Look for weight language near this factor
+                context_start = max(0, match.start() - 100)
+                context_end = min(len(section_m), match.end() + 500)
+                context = section_m[context_start:context_end]
+
+                for weight_pattern, weight_value in self.WEIGHT_PATTERNS:
+                    if re.search(weight_pattern, context, re.IGNORECASE):
+                        factor["weight"] = weight_pattern.replace(r'\s+', ' ').replace('(?:', '').replace(')', '')
+                        factor["weight_numeric"] = weight_value
+                        break
+
+                # Look for sub-factors
+                subfactor_pattern = r'(?:Sub-?factor|Element)\s*(\d+)[:\s]+([^\n]+)'
+                for sub_match in re.finditer(subfactor_pattern, context, re.IGNORECASE):
+                    factor["sub_factors"].append({
+                        "id": f"{factor['factor_id']}.{sub_match.group(1)}",
+                        "name": sub_match.group(2).strip()
+                    })
+
+                factors.append(factor)
+
+        # Deduplicate by name similarity
+        seen_names = set()
+        unique_factors = []
+        for f in factors:
+            name_key = f["name"].lower()[:30]
+            if name_key not in seen_names:
+                seen_names.add(name_key)
+                unique_factors.append(f)
+
+        return unique_factors
+
+    def _extract_l_instructions(self, section_l: str) -> List[Dict]:
+        """Extract proposal instructions from Section L."""
+        instructions = []
+
+        if not section_l:
+            return instructions
+
+        # Extract volume/section structure
+        volume_pattern = r'Volume\s+([IVX\d]+)[:\s]+([^\n]+)'
+        for match in re.finditer(volume_pattern, section_l, re.IGNORECASE):
+            instruction = {
+                "ref": f"L-VOL-{match.group(1)}",
+                "type": "volume",
+                "title": match.group(2).strip(),
+                "page_limit": None,
+                "content": ""
+            }
+
+            # Look for page limit in context
+            context_end = min(len(section_l), match.end() + 500)
+            context = section_l[match.start():context_end]
+
+            for page_pattern in self.PAGE_LIMIT_PATTERNS:
+                page_match = re.search(page_pattern, context, re.IGNORECASE)
+                if page_match:
+                    instruction["page_limit"] = int(page_match.group(1))
+                    break
+
+            instructions.append(instruction)
+
+        # Extract section-level instructions
+        section_pattern = r'L\.(\d+(?:\.\d+)*)\s+([^\n]+)'
+        for match in re.finditer(section_pattern, section_l, re.IGNORECASE):
+            instruction = {
+                "ref": f"L.{match.group(1)}",
+                "type": "section",
+                "title": match.group(2).strip(),
+                "page_limit": None,
+                "content": ""
+            }
+
+            # Look for page limit
+            context_end = min(len(section_l), match.end() + 300)
+            context = section_l[match.start():context_end]
+
+            for page_pattern in self.PAGE_LIMIT_PATTERNS:
+                page_match = re.search(page_pattern, context, re.IGNORECASE)
+                if page_match:
+                    instruction["page_limit"] = int(page_match.group(1))
+                    break
+
+            instructions.append(instruction)
+
+        return instructions
+
+    def _count_requirements_by_section(self, requirements: List[Dict]) -> Dict[str, int]:
+        """Count requirements by their source section."""
+        counts = {"C": 0, "L": 0, "M": 0, "SOW": 0, "PWS": 0, "other": 0}
+
+        for req in requirements:
+            section = req.get("section", "").upper()
+            if section.startswith("C") or section == "SOW" or section == "PWS":
+                counts["C"] += 1
+            elif section.startswith("L"):
+                counts["L"] += 1
+            elif section.startswith("M"):
+                counts["M"] += 1
+            else:
+                counts["other"] += 1
+
+        return counts
+
+    def _build_cross_walks(
+        self,
+        l_instructions: List[Dict],
+        m_factors: List[Dict],
+        c_counts: Dict[str, int]
+    ) -> List[Dict]:
+        """Build L → M → C cross-walk mappings."""
+        cross_walks = []
+
+        # For each L instruction, try to find related M factors
+        for l_inst in l_instructions:
+            l_title_lower = l_inst.get("title", "").lower()
+
+            cross_walk = {
+                "l_instruction_ref": l_inst["ref"],
+                "l_instruction_text": l_inst["title"],
+                "l_page_limit": l_inst.get("page_limit"),
+                "l_volume": l_inst.get("type"),
+                "m_factor_refs": [],
+                "m_factors": [],
+                "c_requirement_refs": [],
+                "c_requirement_count": 0,
+                "coverage_score": 0.0,
+                "gaps": []
+            }
+
+            # Match M factors by keyword similarity
+            for m_factor in m_factors:
+                m_name_lower = m_factor.get("name", "").lower()
+
+                # Simple keyword matching
+                keywords = ["technical", "management", "past performance", "cost", "price",
+                           "staffing", "quality", "transition", "approach"]
+
+                for kw in keywords:
+                    if kw in l_title_lower and kw in m_name_lower:
+                        cross_walk["m_factor_refs"].append(m_factor["factor_id"])
+                        cross_walk["m_factors"].append(m_factor)
+                        break
+
+            # Estimate C requirement count based on factor type
+            if "technical" in l_title_lower:
+                cross_walk["c_requirement_count"] = c_counts.get("C", 0) // 2
+            elif "management" in l_title_lower:
+                cross_walk["c_requirement_count"] = c_counts.get("C", 0) // 4
+
+            # Calculate coverage
+            if cross_walk["m_factor_refs"]:
+                cross_walk["coverage_score"] = min(1.0, len(cross_walk["m_factor_refs"]) * 0.3)
+            else:
+                cross_walk["gaps"].append(f"No M factors mapped to {l_inst['ref']}")
+
+            cross_walks.append(cross_walk)
+
+        return cross_walks
+
+    def _detect_conflicts(
+        self,
+        l_instructions: List[Dict],
+        m_factors: List[Dict],
+        cross_walks: List[Dict]
+    ) -> List[Dict]:
+        """Detect conflicts between L, M, and C sections."""
+        conflicts = []
+        conflict_id = 0
+
+        # Check 1: Page limit conflicts
+        for cross_walk in cross_walks:
+            page_limit = cross_walk.get("l_page_limit")
+            factor_count = len(cross_walk.get("m_factors", []))
+            subfactor_count = sum(len(f.get("sub_factors", [])) for f in cross_walk.get("m_factors", []))
+
+            if page_limit and factor_count > 0:
+                # Estimate minimum pages needed (rough: 2 pages per sub-factor, 3 per factor)
+                min_pages_needed = factor_count * 3 + subfactor_count * 2
+
+                if min_pages_needed > page_limit:
+                    conflict_id += 1
+                    conflicts.append({
+                        "conflict_id": f"CONF-{conflict_id:03d}",
+                        "conflict_type": "page_limit_exceeded",
+                        "severity": "high" if min_pages_needed > page_limit * 1.5 else "medium",
+                        "description": f"Page limit of {page_limit} may be insufficient for {factor_count} factors with {subfactor_count} sub-factors",
+                        "section_l_ref": cross_walk["l_instruction_ref"],
+                        "section_m_ref": ", ".join(cross_walk.get("m_factor_refs", [])),
+                        "expected": f"{min_pages_needed} pages minimum",
+                        "actual": f"{page_limit} page limit",
+                        "recommendation": "Consider condensing content or requesting page limit increase via Q&A",
+                        "detected_at": datetime.now().isoformat()
+                    })
+
+        # Check 2: Unaddressed evaluation factors
+        addressed_factors = set()
+        for cw in cross_walks:
+            addressed_factors.update(cw.get("m_factor_refs", []))
+
+        for factor in m_factors:
+            if factor["factor_id"] not in addressed_factors:
+                conflict_id += 1
+                conflicts.append({
+                    "conflict_id": f"CONF-{conflict_id:03d}",
+                    "conflict_type": "unaddressed_factor",
+                    "severity": "critical" if factor.get("weight_numeric", 0) > 0.3 else "high",
+                    "description": f"Evaluation factor '{factor['name']}' has no corresponding L instruction",
+                    "section_m_ref": factor["factor_id"],
+                    "expected": "L instruction addressing this factor",
+                    "actual": "No matching L instruction found",
+                    "recommendation": f"Review Section L for instructions related to '{factor['name']}'",
+                    "detected_at": datetime.now().isoformat()
+                })
+
+        # Check 3: Missing volume structure
+        has_technical = any("technical" in l.get("title", "").lower() for l in l_instructions)
+        has_management = any("management" in l.get("title", "").lower() for l in l_instructions)
+        has_past_perf = any("past" in l.get("title", "").lower() and "performance" in l.get("title", "").lower() for l in l_instructions)
+
+        if not has_technical and any("technical" in f.get("name", "").lower() for f in m_factors):
+            conflict_id += 1
+            conflicts.append({
+                "conflict_id": f"CONF-{conflict_id:03d}",
+                "conflict_type": "missing_section",
+                "severity": "critical",
+                "description": "Technical evaluation factor exists but no Technical volume instruction found",
+                "recommendation": "Verify Section L contains Technical volume instructions",
+                "detected_at": datetime.now().isoformat()
+            })
+
+        return conflicts
+
+    def _calculate_coverage_score(self, cross_walks: List[Dict]) -> float:
+        """Calculate overall L-M-C coverage score."""
+        if not cross_walks:
+            return 0.0
+
+        scores = [cw.get("coverage_score", 0) for cw in cross_walks]
+        return sum(scores) / len(scores) if scores else 0.0
+
+    def get_conflicts_by_severity(self, severity: str) -> List[Dict]:
+        """Get conflicts filtered by severity."""
+        return [c for c in self.conflicts if c.get("severity") == severity]
+
+    def get_critical_conflicts(self) -> List[Dict]:
+        """Get only critical conflicts."""
+        return self.get_conflicts_by_severity("critical")
+
+
+def create_iron_triangle_analyzer() -> IronTriangleAnalyzer:
+    """Factory function to create an Iron Triangle Analyzer."""
+    return IronTriangleAnalyzer()

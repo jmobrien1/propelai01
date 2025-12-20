@@ -237,6 +237,276 @@ class SourceCoordinate:
         )
 
 
+# =============================================================================
+# Phase 2: Iron Triangle Logic Engine - Strategic Data Models
+# =============================================================================
+
+class ConflictSeverity(Enum):
+    """Severity levels for detected conflicts"""
+    CRITICAL = "critical"      # Will cause non-compliance or disqualification
+    HIGH = "high"              # Significant risk to evaluation
+    MEDIUM = "medium"          # Should be addressed but not blocking
+    LOW = "low"                # Minor issue or suggestion
+
+
+class ConflictType(Enum):
+    """Types of conflicts that can be detected"""
+    PAGE_LIMIT_EXCEEDED = "page_limit_exceeded"
+    MISSING_SECTION = "missing_section"
+    UNADDRESSED_FACTOR = "unaddressed_factor"
+    FORMAT_MISMATCH = "format_mismatch"
+    CROSS_REFERENCE_BROKEN = "cross_reference_broken"
+    EVALUATION_GAP = "evaluation_gap"
+    INSTRUCTION_CONFLICT = "instruction_conflict"
+
+
+@dataclass
+class WinTheme:
+    """
+    A win theme represents a competitive discriminator.
+
+    Per the tech spec: "What we have that they don't" + "How this helps the client"
+
+    Win themes are the foundation of a compelling proposal - they answer
+    "Why should the government choose us over competitors?"
+    """
+    theme_id: str                                    # e.g., "WT-001"
+    discriminator: str                               # What makes us unique
+    benefit_statement: str                           # How this helps the client
+    proof_points: List[str] = field(default_factory=list)  # IDs from Company Library
+
+    # Links to RFP
+    addresses_factors: List[str] = field(default_factory=list)  # Section M factor IDs
+    addresses_requirements: List[str] = field(default_factory=list)  # Requirement IDs
+
+    # Metadata
+    priority: int = 1                                # 1 = highest priority
+    confidence: float = 0.8                          # How confident we are this resonates
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "theme_id": self.theme_id,
+            "discriminator": self.discriminator,
+            "benefit_statement": self.benefit_statement,
+            "proof_points": self.proof_points,
+            "addresses_factors": self.addresses_factors,
+            "addresses_requirements": self.addresses_requirements,
+            "priority": self.priority,
+            "confidence": self.confidence
+        }
+
+
+@dataclass
+class CompetitorProfile:
+    """
+    Profile of a known or likely competitor.
+
+    Enables "ghosting" strategies - subtle critiques that highlight
+    our strengths vs competitor weaknesses without naming them.
+    """
+    name: str                                        # Competitor name (may be "Unknown Incumbent")
+    known_weaknesses: List[str] = field(default_factory=list)
+    likely_solution_approach: str = ""               # How they'll probably respond
+    past_performance_issues: List[str] = field(default_factory=list)
+
+    # Ghosting opportunities
+    ghost_points: List[str] = field(default_factory=list)  # Statements that highlight their weakness
+
+    # Intelligence source
+    source: str = ""                                 # Where we learned this (public, past experience, etc.)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "known_weaknesses": self.known_weaknesses,
+            "likely_solution_approach": self.likely_solution_approach,
+            "past_performance_issues": self.past_performance_issues,
+            "ghost_points": self.ghost_points,
+            "source": self.source
+        }
+
+
+@dataclass
+class EvaluationFactor:
+    """
+    A Section M evaluation factor with scoring weight.
+
+    Captures what the government cares about and how much.
+    """
+    factor_id: str                                   # e.g., "M.2.1", "Factor-1"
+    name: str                                        # e.g., "Technical Approach"
+    description: str = ""
+    weight: Optional[str] = None                     # e.g., "significantly more important than"
+    weight_numeric: Optional[float] = None           # Normalized 0-1 if extractable
+
+    # Sub-factors
+    sub_factors: List['EvaluationFactor'] = field(default_factory=list)
+
+    # Cross-references
+    maps_to_section_l: List[str] = field(default_factory=list)  # L references
+    maps_to_section_c: List[str] = field(default_factory=list)  # C/SOW references
+
+    # Source tracking
+    source_page: Optional[int] = None
+    source_text: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "factor_id": self.factor_id,
+            "name": self.name,
+            "description": self.description,
+            "weight": self.weight,
+            "weight_numeric": self.weight_numeric,
+            "sub_factors": [sf.to_dict() for sf in self.sub_factors],
+            "maps_to_section_l": self.maps_to_section_l,
+            "maps_to_section_c": self.maps_to_section_c,
+            "source_page": self.source_page
+        }
+
+
+@dataclass
+class StructureConflict:
+    """
+    A detected conflict between RFP sections (L, M, C).
+
+    Examples:
+    - Section L limits Volume 1 to 20 pages, but M sub-factors imply 30 pages
+    - Section M references a factor not addressed in L instructions
+    - Section C requirement has no corresponding L submission instruction
+    """
+    conflict_id: str
+    conflict_type: ConflictType
+    severity: ConflictSeverity
+    description: str
+
+    # Involved sections
+    section_l_ref: Optional[str] = None              # L.4.B.2
+    section_m_ref: Optional[str] = None              # M.2.1
+    section_c_ref: Optional[str] = None              # C.3.1.a
+
+    # Details
+    expected: str = ""                               # What was expected
+    actual: str = ""                                 # What was found
+    recommendation: str = ""                         # How to resolve
+
+    # Source
+    detected_at: str = ""                            # ISO timestamp
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "conflict_id": self.conflict_id,
+            "conflict_type": self.conflict_type.value,
+            "severity": self.severity.value,
+            "description": self.description,
+            "section_l_ref": self.section_l_ref,
+            "section_m_ref": self.section_m_ref,
+            "section_c_ref": self.section_c_ref,
+            "expected": self.expected,
+            "actual": self.actual,
+            "recommendation": self.recommendation,
+            "detected_at": self.detected_at
+        }
+
+
+@dataclass
+class LMCCrossWalk:
+    """
+    Cross-reference mapping between Section L, M, and C.
+
+    The core of the "Iron Triangle" - shows how instructions (L),
+    evaluation factors (M), and work requirements (C) relate.
+    """
+    # Section L (Instructions)
+    l_instruction_ref: str                           # e.g., "L.4.B.2"
+    l_instruction_text: str = ""
+    l_page_limit: Optional[int] = None
+    l_volume: Optional[str] = None                   # e.g., "Volume I - Technical"
+
+    # Section M (Evaluation)
+    m_factor_refs: List[str] = field(default_factory=list)
+    m_factors: List[EvaluationFactor] = field(default_factory=list)
+
+    # Section C (SOW/PWS)
+    c_requirement_refs: List[str] = field(default_factory=list)
+    c_requirement_count: int = 0
+
+    # Analysis
+    coverage_score: float = 0.0                      # 0-1, how well C maps to M
+    gaps: List[str] = field(default_factory=list)    # Missing mappings
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "l_instruction_ref": self.l_instruction_ref,
+            "l_instruction_text": self.l_instruction_text,
+            "l_page_limit": self.l_page_limit,
+            "l_volume": self.l_volume,
+            "m_factor_refs": self.m_factor_refs,
+            "m_factors": [f.to_dict() for f in self.m_factors],
+            "c_requirement_refs": self.c_requirement_refs,
+            "c_requirement_count": self.c_requirement_count,
+            "coverage_score": self.coverage_score,
+            "gaps": self.gaps
+        }
+
+
+@dataclass
+class StrategyAnalysis:
+    """
+    Complete strategic analysis of an RFP.
+
+    Output of the StrategyAgent - contains all cross-walks,
+    conflicts, win themes, and recommendations.
+    """
+    rfp_id: str
+    solicitation_number: str
+
+    # Iron Triangle mappings
+    cross_walks: List[LMCCrossWalk] = field(default_factory=list)
+
+    # Evaluation factors extracted from Section M
+    evaluation_factors: List[EvaluationFactor] = field(default_factory=list)
+
+    # Detected conflicts
+    conflicts: List[StructureConflict] = field(default_factory=list)
+
+    # Strategic elements
+    win_themes: List[WinTheme] = field(default_factory=list)
+    competitor_profiles: List[CompetitorProfile] = field(default_factory=list)
+
+    # Summary metrics
+    total_l_instructions: int = 0
+    total_m_factors: int = 0
+    total_c_requirements: int = 0
+    coverage_score: float = 0.0                      # Overall L-M-C alignment
+    conflict_count: int = 0
+    critical_conflicts: int = 0
+
+    # Metadata
+    analyzed_at: str = ""
+    analysis_version: str = "4.0.0-phase2"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rfp_id": self.rfp_id,
+            "solicitation_number": self.solicitation_number,
+            "cross_walks": [cw.to_dict() for cw in self.cross_walks],
+            "evaluation_factors": [ef.to_dict() for ef in self.evaluation_factors],
+            "conflicts": [c.to_dict() for c in self.conflicts],
+            "win_themes": [wt.to_dict() for wt in self.win_themes],
+            "competitor_profiles": [cp.to_dict() for cp in self.competitor_profiles],
+            "summary": {
+                "total_l_instructions": self.total_l_instructions,
+                "total_m_factors": self.total_m_factors,
+                "total_c_requirements": self.total_c_requirements,
+                "coverage_score": self.coverage_score,
+                "conflict_count": self.conflict_count,
+                "critical_conflicts": self.critical_conflicts
+            },
+            "analyzed_at": self.analyzed_at,
+            "analysis_version": self.analysis_version
+        }
+
+
 @dataclass
 class DocumentStructure:
     """Complete structural analysis of an RFP"""

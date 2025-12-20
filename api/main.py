@@ -289,7 +289,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "4.0.0-phase1",
+        "version": "4.0.0-phase2",
         "components": {
             "enhanced_compliance_agent": "ready",
             "amendment_processor": "ready",
@@ -299,6 +299,7 @@ async def health_check():
             "best_practices_extractor": "ready" if best_practices_extractor else "not available",
             "best_practices_ctm_export": "ready" if best_practices_exporter else "not available",
             "coordinate_extractor": coordinate_extractor_status,  # v4.0 Phase 1: Trust Gate
+            "iron_triangle_analyzer": "ready",  # v4.0 Phase 2: L-M-C Cross-Walking
         }
     }
 
@@ -1145,6 +1146,191 @@ async def get_requirement_source(rfp_id: str, req_id: str):
             "extraction_confidence": 0.0,
             "error": "Text coordinates not found in PDF"
         }
+
+
+# ============== Phase 2: Strategy Analysis (Iron Triangle) ==============
+
+@app.get("/api/rfp/{rfp_id}/strategy")
+async def get_strategy_analysis(rfp_id: str):
+    """
+    Get Iron Triangle strategy analysis for an RFP.
+
+    Performs L-M-C cross-walking analysis:
+    - Extracts evaluation factors from Section M
+    - Maps factors to Section L instructions
+    - Detects conflicts (page limits, missing sections)
+    - Returns cross-walk mappings and coverage score
+    """
+    from agents.strategy_agent import create_iron_triangle_analyzer
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Check if we have cached strategy analysis
+    if rfp.get("strategy_analysis"):
+        return rfp["strategy_analysis"]
+
+    # Get section content from structure or raw content
+    structure = rfp.get("document_structure")
+    section_l = rfp.get("section_l_content", "")
+    section_m = rfp.get("section_m_content", "")
+    section_c = rfp.get("section_c_content", "")
+
+    # If no section content, try to extract from full text
+    if not section_m and rfp.get("full_text"):
+        full_text = rfp["full_text"]
+        # Simple extraction - look for Section M header
+        import re
+        m_match = re.search(r'SECTION\s+M[:\s\-]+(.+?)(?=SECTION\s+[A-LN-Z]|$)', full_text, re.IGNORECASE | re.DOTALL)
+        if m_match:
+            section_m = m_match.group(1)
+
+        l_match = re.search(r'SECTION\s+L[:\s\-]+(.+?)(?=SECTION\s+M|$)', full_text, re.IGNORECASE | re.DOTALL)
+        if l_match:
+            section_l = l_match.group(1)
+
+    # Perform Iron Triangle analysis
+    analyzer = create_iron_triangle_analyzer()
+    analysis = analyzer.analyze(
+        structure=structure,
+        section_l_content=section_l,
+        section_m_content=section_m,
+        section_c_content=section_c,
+        requirements=rfp.get("requirements", [])
+    )
+
+    # Add RFP metadata
+    analysis["rfp_id"] = rfp_id
+    analysis["solicitation_number"] = rfp.get("solicitation_number", rfp_id)
+
+    # Cache the analysis
+    rfp["strategy_analysis"] = analysis
+    store[rfp_id] = rfp
+
+    return analysis
+
+
+@app.get("/api/rfp/{rfp_id}/conflicts")
+async def get_conflicts(rfp_id: str, severity: Optional[str] = None):
+    """
+    Get detected conflicts for an RFP.
+
+    Returns conflicts between Section L, M, and C:
+    - page_limit_exceeded: Page limits may be insufficient
+    - unaddressed_factor: Evaluation factor without L instruction
+    - missing_section: Required volume not found
+
+    Query params:
+    - severity: Filter by 'critical', 'high', 'medium', 'low'
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Get or compute strategy analysis
+    if not rfp.get("strategy_analysis"):
+        # Trigger analysis
+        analysis_response = await get_strategy_analysis(rfp_id)
+        conflicts = analysis_response.get("conflicts", [])
+    else:
+        conflicts = rfp["strategy_analysis"].get("conflicts", [])
+
+    # Filter by severity if specified
+    if severity:
+        conflicts = [c for c in conflicts if c.get("severity") == severity]
+
+    return {
+        "rfp_id": rfp_id,
+        "total_conflicts": len(conflicts),
+        "conflicts": conflicts
+    }
+
+
+@app.post("/api/rfp/{rfp_id}/win-themes")
+async def add_win_theme(rfp_id: str, win_theme: Dict[str, Any]):
+    """
+    Add a win theme to an RFP.
+
+    Win themes are competitive discriminators that answer:
+    "Why should the government choose us?"
+
+    Request body:
+    {
+        "discriminator": "What makes us unique",
+        "benefit_statement": "How this helps the client",
+        "proof_points": ["PP-001", "PP-002"],
+        "addresses_factors": ["M-01", "M-02"],
+        "priority": 1
+    }
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Initialize win_themes list if needed
+    if "win_themes" not in rfp:
+        rfp["win_themes"] = []
+
+    # Generate theme ID
+    theme_id = f"WT-{len(rfp['win_themes']) + 1:03d}"
+
+    # Build win theme
+    new_theme = {
+        "theme_id": theme_id,
+        "discriminator": win_theme.get("discriminator", ""),
+        "benefit_statement": win_theme.get("benefit_statement", ""),
+        "proof_points": win_theme.get("proof_points", []),
+        "addresses_factors": win_theme.get("addresses_factors", []),
+        "addresses_requirements": win_theme.get("addresses_requirements", []),
+        "priority": win_theme.get("priority", len(rfp["win_themes"]) + 1),
+        "confidence": win_theme.get("confidence", 0.8),
+        "created_at": datetime.now().isoformat()
+    }
+
+    rfp["win_themes"].append(new_theme)
+    store[rfp_id] = rfp
+
+    return new_theme
+
+
+@app.get("/api/rfp/{rfp_id}/win-themes")
+async def get_win_themes(rfp_id: str):
+    """Get all win themes for an RFP."""
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    return {
+        "rfp_id": rfp_id,
+        "win_themes": rfp.get("win_themes", [])
+    }
+
+
+@app.get("/api/rfp/{rfp_id}/cross-walks")
+async def get_cross_walks(rfp_id: str):
+    """
+    Get L-M-C cross-walk mappings for an RFP.
+
+    Shows how Section L instructions map to Section M factors,
+    which in turn relate to Section C requirements.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Get or compute strategy analysis
+    if not rfp.get("strategy_analysis"):
+        analysis_response = await get_strategy_analysis(rfp_id)
+        cross_walks = analysis_response.get("cross_walks", [])
+    else:
+        cross_walks = rfp["strategy_analysis"].get("cross_walks", [])
+
+    return {
+        "rfp_id": rfp_id,
+        "cross_walks": cross_walks,
+        "coverage_score": rfp.get("strategy_analysis", {}).get("summary", {}).get("coverage_score", 0)
+    }
 
 
 # ============== Export ==============

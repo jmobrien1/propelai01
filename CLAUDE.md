@@ -1,6 +1,6 @@
 # PropelAI: Autonomous Proposal Operating System
 **Current Status:** Moving from v3.3 (Linear Script) to v4.0 (Stateful Agentic Architecture).
-**Strategic Priority:** Phase 1 - "The Trust Gate" (Source Traceability & Compliance Accuracy).
+**Strategic Priority:** Phase 2 - "Iron Triangle Logic Engine" (L-M-C Cross-Walking).
 
 ## 1. Architecture & Tech Stack
 - **Backend:** Python 3.10+ / FastAPI / Uvicorn.
@@ -27,11 +27,12 @@
 - `api/main.py`: Primary API entry point.
 - `agents/enhanced_compliance/parser.py`: PDF ingestion logic with coordinate extraction.
 - `agents/enhanced_compliance/document_structure.py`: Data models (ComplianceMatrix, SourceCoordinate, BoundingBox).
+- `agents/strategy_agent.py`: Iron Triangle logic engine (L-M-C cross-walking).
 - `PRODUCT_ROADMAP_PRD.md`: The plan for the next 3 sprints.
 
 ## 5. v4.0 Architecture Phases
 
-### Phase 1: Trust Gate (Source Traceability Engine) - IN PROGRESS
+### Phase 1: Trust Gate (Source Traceability Engine) - COMPLETE ✓
 **Goal:** Visual overlays proving extraction accuracy via `SourceCoordinate`.
 
 **Data Models** (`document_structure.py`):
@@ -46,10 +47,25 @@
 **API Endpoint**:
 - `GET /api/rfp/{rfp_id}/requirements/{req_id}/source` - Returns bounding boxes for frontend overlay
 
-### Phase 2: Iron Triangle Logic Engine
-**Goal:** Model dependencies between Section L, M, and C.
-- `StrategyAgent`: Cross-walk L→M→C, detect conflicts (page limits, structure)
-- New models: `WinTheme`, `CompetitorProfile`
+### Phase 2: Iron Triangle Logic Engine - IN PROGRESS
+**Goal:** Model dependencies between Section L, M, and C. Move from "Shredding" to "Reasoning".
+
+**Data Models** (`document_structure.py`):
+- `WinTheme`: Discriminators and proof points for competitive advantage
+- `CompetitorProfile`: Known weaknesses and likely approaches for ghosting strategies
+- `EvaluationFactor`: Section M scoring weights and sub-factors
+- `StructureConflict`: Detected conflicts between L/M/C sections
+
+**Strategy Agent** (`agents/strategy_agent.py`):
+- Decomposition: Ingest Section M, extract scoring weights
+- Cross-Walking: Map Section M factors → Section C (SOW) paragraphs
+- Validation: Verify Section L allows corresponding proposal volumes
+- Conflict Detection: Page count conflicts, structure mismatches
+
+**API Endpoints**:
+- `GET /api/rfp/{rfp_id}/strategy` - Returns L-M-C analysis
+- `GET /api/rfp/{rfp_id}/conflicts` - Returns detected conflicts
+- `POST /api/rfp/{rfp_id}/win-themes` - Add win themes
 
 ### Phase 3: Drafting Agent (PEARL Framework)
 **Goal:** Prevent LLM hallucination via structured planning.
@@ -68,3 +84,14 @@
 - **PDF Origin:** Bottom-left, measured in points (72 pts/inch)
 - **Web Origin:** Top-left, measured in percentage (0.0-1.0)
 - **Conversion:** `web_y = 1.0 - (pdf_y + height) / page_height`
+
+## 7. Iron Triangle Concepts
+The "Iron Triangle" links three critical RFP sections:
+- **Section L (Instructions):** How to format/submit the proposal
+- **Section M (Evaluation):** How the government scores proposals
+- **Section C (SOW/PWS):** What work must be performed
+
+A winning proposal ensures:
+1. Every L instruction is followed (compliance)
+2. Every M factor is addressed with evidence (scoring)
+3. Every C requirement is mapped to proposal content (traceability)
