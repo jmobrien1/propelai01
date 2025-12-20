@@ -905,12 +905,14 @@ def process_rfp_background(rfp_id: str):
         amendment_processor.load_base_requirements(result.requirements_graph)
         
         # Update store
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
         store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "requirements_graph": result.requirements_graph,
             "stats": stats,
-            "amendment_processor": amendment_processor
+            "amendment_processor": amendment_processor,
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
         })
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
@@ -1064,6 +1066,7 @@ def process_rfp_semantic_background(rfp_id: str):
         store.set_status(rfp_id, "processing", 90, "Finalizing...")
         
         # Store semantic results
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
         store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
@@ -1071,7 +1074,8 @@ def process_rfp_semantic_background(rfp_id: str):
             "stats": stats,
             "evaluation_factors": result.evaluation_factors,
             "warnings": result.warnings,
-            "extraction_mode": "semantic"
+            "extraction_mode": "semantic",
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
         })
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
@@ -1272,12 +1276,14 @@ def process_rfp_best_practices_background(rfp_id: str):
         store.set_status(rfp_id, "processing", 95, "Finalizing...")
         
         # Store results
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
         store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "best_practices_result": result,  # Keep full result for export
             "stats": stats,
-            "extraction_mode": "best_practices"
+            "extraction_mode": "best_practices",
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
         })
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
@@ -1570,12 +1576,14 @@ def process_rfp_resilient_background(rfp_id: str):
         store.set_status(rfp_id, "processing", 95, "Finalizing...")
 
         # Store results
+        # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
         store.update(rfp_id, {
             "status": "completed",
             "requirements": requirements,
             "resilient_result": result.to_dict(),
             "stats": stats,
-            "extraction_mode": "resilient_v3"
+            "extraction_mode": "resilient_v3",
+            "outline": None  # Clear cached outline - will be regenerated from new requirements
         })
 
         # Log quality summary
@@ -2859,8 +2867,15 @@ async def export_annotated_outline(rfp_id: str):
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
+    # v4.0: Debug logging for data isolation tracing
+    print(f"[DEBUG] export_annotated_outline called for RFP: {rfp_id}")
+    print(f"[DEBUG] RFP name: {rfp.get('name')}, solicitation: {rfp.get('solicitation_number')}")
+    print(f"[DEBUG] Requirements count in store: {len(rfp.get('requirements', []))}")
+
     outline = rfp.get("outline")
+    if outline:
+        print(f"[DEBUG] Using CACHED outline (already generated)")
     if not outline:
         generator = SmartOutlineGenerator()
         # v3.1 FIX: Use category field (set by extraction), not section field
@@ -2882,7 +2897,13 @@ async def export_annotated_outline(rfp_id: str):
                     if r.get("category") not in ["L_COMPLIANCE", "EVALUATION"]]
         stats = {"is_non_ucf_format": len(section_l) == 0}
 
+        print(f"[DEBUG] REGENERATING outline from {len(rfp.get('requirements', []))} requirements")
         print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}, technical count: {len(technical)}")
+
+        # Log sample requirement to verify data isolation
+        if section_l:
+            print(f"[DEBUG] Sample section_l requirement: {section_l[0].get('text', '')[:100]}...")
+
         outline_obj = generator.generate_from_compliance_matrix(
             section_l_requirements=section_l,
             section_m_requirements=section_m,
