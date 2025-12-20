@@ -1,0 +1,50 @@
+2025-12-20T14:29:34Z clientIP="71.62.189.24" requestID="0a578003-12d9-4a02" responseTimeMS=4 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:29:34.137495959Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:30:34Z clientIP="71.62.189.24" requestID="7c78a0e7-0e5e-4508" responseTimeMS=2 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:30:34.078794644Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:31:34Z clientIP="71.62.189.24" requestID="aa64aadd-29b8-4faf" responseTimeMS=4 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:31:34.099599798Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:31:47.028029223Z ==> Detected service running on port 10000
+2025-12-20T14:31:47.224250601Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2025-12-20T14:32:34Z clientIP="71.62.189.24" requestID="a5d94091-3ece-410d" responseTimeMS=11 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:32:34.141670116Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:33:34Z clientIP="71.62.189.24" requestID="72ccabb7-306f-48d7" responseTimeMS=4 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:33:34.084478156Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:34:34Z clientIP="71.62.189.24" requestID="654829de-31fd-419b" responseTimeMS=15 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:34:34.105195633Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:35:34Z clientIP="71.62.189.24" requestID="80bbd3e1-a038-4f3d" responseTimeMS=2 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:35:34.105466956Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:36:34Z clientIP="71.62.189.24" requestID="fa04ee3d-7b62-4035" responseTimeMS=3 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:36:34.125594614Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:37:34Z clientIP="71.62.189.24" requestID="b0498234-9c0e-4e14" responseTimeMS=2 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:37:34.093431656Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:38:34Z clientIP="71.62.189.24" requestID="9c78bbc7-8cd6-4224" responseTimeMS=3 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:38:34.135285449Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:39:34Z clientIP="71.62.189.24" requestID="2692a84f-fdc2-463e" responseTimeMS=3 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:39:34.079461067Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:40:34Z clientIP="71.62.189.24" requestID="d23d602b-6b2d-455c" responseTimeMS=4 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:40:34.092714643Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:41:34Z clientIP="71.62.189.24" requestID="750e2d24-819f-4d8d" responseTimeMS=6 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:41:34.051263668Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:42:34Z clientIP="71.62.189.24" requestID="9d3721e8-d967-49eb" responseTimeMS=4 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:42:34.089442036Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:43:34Z clientIP="71.62.189.24" requestID="36b8579b-8279-41b8" responseTimeMS=2 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:43:34.080904648Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:44:34Z clientIP="71.62.189.24" requestID="5de63dc3-f41d-4deb" responseTimeMS=2 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:44:34.031884473Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:45:34Z clientIP="71.62.189.24" requestID="d10a566a-1063-4549" responseTimeMS=17 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:45:34.094840928Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:46:34Z clientIP="71.62.189.24" requestID="91355704-f78a-4f67" responseTimeMS=3 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:46:34.126892816Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:47:34Z clientIP="71.62.189.24" requestID="2747412b-6924-4995" responseTimeMS=3 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:47:34.041419472Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:48:34Z clientIP="71.62.189.24" requestID="fda22446-5840-40bd" responseTimeMS=4 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:48:34.070880766Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:49:54Z clientIP="71.62.189.24" requestID="f2426e93-8db9-4927" responseTimeMS=3 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:49:54.674280882Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-20T14:49:55Z clientIP="71.62.189.24" requestID="3b7e0252-e4db-48c3" responseTimeMS=6 responseBytes=18046 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:49:55.549341766Z INFO:     71.62.189.24:0 - "GET / HTTP/1.1" 200 OK
+2025-12-20T14:49:56Z clientIP="71.62.189.24" requestID="ec0df9f0-94d5-4379" responseTimeMS=6 responseBytes=3073 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:49:56Z clientIP="71.62.189.24" requestID="349ae911-cc9e-4312" responseTimeMS=1 responseBytes=424 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-20T14:49:56.497506819Z INFO:     71.62.189.24:0 - "GET /api/upload-config HTTP/1.1" 200 OK
+2025-12-20T14:49:56.499238876Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
