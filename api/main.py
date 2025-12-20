@@ -1486,7 +1486,9 @@ async def export_annotated_outline(rfp_id: str):
     
     try:
         exporter = AnnotatedOutlineExporter()
-        doc_bytes = exporter.export(outline, requirements, outline.get("format_requirements", {}), config)
+        # v4.0 FIX: Explicitly handle None format_requirements
+        format_reqs = outline.get("format_requirements") or {}
+        doc_bytes = exporter.export(outline, requirements, format_reqs, config)
         
         safe_name = "".join(c for c in rfp.get("name", rfp_id) if c.isalnum() or c in " -_")[:50]
         filename = f"{safe_name}_Annotated_Outline.docx"

@@ -716,7 +716,11 @@ class SmartOutlineGenerator:
     
     def to_json(self, outline: ProposalOutline) -> Dict[str, Any]:
         """Convert outline to JSON format for API"""
-        
+
+        # v4.0 FIX: Defensive None checks to prevent iteration errors
+        volumes = outline.volumes or []
+        eval_factors = outline.eval_factors or []
+
         return {
             "rfp_format": outline.rfp_format,
             "total_pages": outline.total_pages,
@@ -727,25 +731,29 @@ class SmartOutlineGenerator:
                     "type": vol.volume_type.value,
                     "page_limit": vol.page_limit,
                     "order": vol.order,
-                    "eval_factors": vol.eval_factors,
+                    "eval_factors": vol.eval_factors or [],
+                    # v3.3: Evidence tracking for Strict Constructionist approach
+                    "evidence_source": vol.evidence_source.value if hasattr(vol, 'evidence_source') else "default",
+                    "confidence": vol.confidence.value if hasattr(vol, 'confidence') else "low",
                     "sections": [
                         {
                             "id": sec.id,
                             "title": sec.name,  # UI expects 'title' not 'name'
                             "name": sec.name,   # Keep both for compatibility
                             "page_limit": sec.page_limit,
-                            "content_requirements": sec.requirements,  # UI expects this name
-                            "requirements": sec.requirements,
+                            "content_requirements": sec.requirements or [],  # UI expects this name
+                            "requirements": sec.requirements or [],
+                            "eval_criteria": sec.eval_criteria or [],  # v3.0: Pass evaluation criteria
                             "compliance_checkpoints": [],  # Can be populated later
                             "subsections": [
                                 {"id": sub.id, "title": sub.name, "name": sub.name}
-                                for sub in sec.subsections
+                                for sub in (sec.subsections or [])
                             ]
                         }
-                        for sec in vol.sections
+                        for sec in (vol.sections or [])
                     ]
                 }
-                for vol in sorted(outline.volumes, key=lambda v: v.order)
+                for vol in sorted(volumes, key=lambda v: v.order)
             ],
             # UI expects 'evaluation_factors' not 'eval_factors'
             "evaluation_factors": [
@@ -754,10 +762,10 @@ class SmartOutlineGenerator:
                     "name": ef.name,
                     "weight": ef.weight,
                     "importance": ef.importance,
-                    "criteria": ef.criteria,
+                    "criteria": ef.criteria or [],
                     "subfactors": []  # Can be populated later
                 }
-                for ef in outline.eval_factors
+                for ef in eval_factors
             ],
             "eval_factors": [  # Keep for backward compatibility
                 {
@@ -765,9 +773,9 @@ class SmartOutlineGenerator:
                     "name": ef.name,
                     "weight": ef.weight,
                     "importance": ef.importance,
-                    "criteria": ef.criteria
+                    "criteria": ef.criteria or []
                 }
-                for ef in outline.eval_factors
+                for ef in eval_factors
             ],
             "format_requirements": {
                 "font": outline.format_requirements.font_name,
