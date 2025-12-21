@@ -1,0 +1,190 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\froman\fcharset0 Times-Bold;\f2\froman\fcharset0 Times-Italic;
+\f3\fmodern\fcharset0 Courier;\f4\fnil\fcharset128 HiraMinProN-W6;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid1\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid101\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid2}
+{\list\listtemplateid3\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid201\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid3}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}{\listoverride\listid3\listoverridecount0\ls3}}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\fs24 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Based on the structure and content of the annotated outline provided in the source text (specifically matching the pattern of 
+\f1\b "Attachment 1 Stament Of Work_Annotated_Outline.docx"
+\f0\b0  and 
+\f1\b "Attachment 2 Placement Procedures_Annotated_Outline.docx"
+\f0\b0 ), here is an analysis of the newest output.\
+This output represents a 
+\f1\b Phase 1 (Ingestion & Shredding)
+\f0\b0  maturity level. It successfully creates a structural skeleton but currently lacks the higher-level "Strategic Intelligence" (Phase 2) and specific metadata extraction required for the full v4.0 "Trust Gate" vision.\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f1\b\fs28 \cf0 1. Structural Analysis: The "Iron Triangle" Implementation\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 The outline successfully implements the core architectural requirement of mapping the 
+\f1\b "Iron Triangle"
+\f0\b0  (Section L, M, and C) into a unified view for the writer.\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls1\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Color-Coded Source Traceability:
+\f0\b0  The document utilizes a specific color legend to visually distinguish between source types: 
+\f1\b Red
+\f0\b0  for Section L (Instructions), 
+\f1\b Blue
+\f0\b0  for Section M (Evaluation), and 
+\f1\b Purple
+\f0\b0  for Section C (SOW),. This directly supports the "compliance-first" workflow by ensuring writers can see 
+\f2\i how
+\f0\i0  to write (L), 
+\f2\i what
+\f0\i0  to write (C), and 
+\f2\i how
+\f0\i0  it is scored (M) in a single view.\
+\ls1\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Granular Requirement Mapping:
+\f0\b0  Instead of a generic blank page, the outline creates a table for every major section (e.g., "SEC-SF-2. Sub Factor 2: Infrastructure Approach"). It explicitly injects the relevant text from the RFP into these tables,. For example, it pulls specific text like 
+\f2\i "The approach should address how the offeror will execute infrastructure upgrades..."
+\f0\i0  directly into the writing prompt.\
+\ls1\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Format Enforcement:
+\f0\b0  The "Submission & Format Requirements" table at the top, acts as an immediate compliance checklist (Font, Margins, Page Limits), adhering to the best practices for stopping non-compliance early.\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f1\b\fs28 \cf0 2. Critical Deficiencies & "Null" Data\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 The analysis reveals several execution gaps where the extraction agents failed to retrieve specific metadata, creating "technical debt" in the document that a human must currently fix.\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls2\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Metadata Extraction Failure:
+\f0\b0  The header explicitly lists 
+\f1\b "Solicitation Number: null"
+\f0\b0  and 
+\f1\b "Proposal Due: TBD"
+\f0\b0 ,. This indicates that the 
+\f3\fs26 RFPStructureParser
+\f0\fs24  or metadata extraction logic failed to locate these specific strings in the source PDF, or they were not passed correctly to the 
+\f3\fs26 SmartOutlineGenerator
+\f0\fs24 .\
+\ls2\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Typos in Templates:
+\f0\b0  The document title contains a hardcoded typo: 
+\f1\b "Stament Of Work"
+\f0\b0  (should be "Statement"),. This undermines the "professional polish" expected of an automated tool.\
+\ls2\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Evaluation Factor Extraction Gaps:
+\f0\b0  In some iterations, the output explicitly warns: 
+\f1\b "
+\f4 \uc0\u9888 
+\f1  No evaluation factors extracted. Review Section M of the RFP manually"
+\f0\b0 . This suggests the regex or semantic logic for parsing Section M is brittle when facing non-standard headers (e.g., "Basis for Award" vs. "Evaluation Factors").\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f1\b\fs28 \cf0 3. Comparison to Strategic Roadmap (v4.0 Goals)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 Mapping this output against your 
+\f1\b PropelAI v4.0 Architecture
+\f0\b0 , the current state shows progress but hasn't fully cleared the "Trust Gate."\
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrt\brdrnil \trbrdrl\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth1374\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth6454\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth7271\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 v4.0 Requirement\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Current Status in Output\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Gap Analysis\cell \row
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrl\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth1374\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth6454\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth7271\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 Trust Gate / Traceability
+\f0\b0 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 Partial.
+\f0\b0  Text is present, but there are no hyperlinks or coordinate references to the source PDF.\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 The user cannot click a requirement to verify it in the original PDF. The "Source Traceability" module needs to inject page numbers/links.\cell \row
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrl\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth1374\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth6454\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth7271\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 Strategic Intelligence
+\f0\b0 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 Missing.
+\f0\b0  The "Win Themes" sections are empty placeholders like 
+\f2\i "[Add win themes and discriminators for this section]"
+\f0\i0 ,.\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 The 
+\f1\b Strategy Agent
+\f0\b0  has not yet run to populate these fields with client-specific discriminators.\cell \row
+
+\itap1\trowd \taflags0 \trgaph108\trleft-108 \trbrdrl\brdrnil \trbrdrt\brdrnil \trbrdrr\brdrnil 
+\clvertalc \clshdrawnil \clwWidth1374\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth6454\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth7271\clftsWidth3 \clmart10 \clmarl10 \clmarb10 \clmarr10 \clbrdrt\brdrnil \clbrdrl\brdrnil \clbrdrb\brdrnil \clbrdrr\brdrnil \clpadt20 \clpadl20 \clpadb20 \clpadr20 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 Section L/M/C Mapping
+\f0\b0 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf0 Strong.
+\f0\b0  The table structure successfully juxtaposes Instructions (L), Evaluation (M), and SOW (C).\cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf0 This is the strongest feature. It successfully creates the "compliance matrix" view within the document.\cell \lastrow\row
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f1\b\fs28 \cf0 4. Immediate Recommendations for Refinement\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 To move this from a "v3.3" output to a true "v4.0" deliverable, the following changes are required in the codebase:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls3\ilvl0
+\f1\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Fix Metadata Regex:
+\f0\b0  Update 
+\f3\fs26 agents/enhanced_compliance/parser.py
+\f0\fs24  to better detect Solicitation Numbers (often looking for patterns like 
+\f3\fs26 FA8806...
+\f0\fs24  or 
+\f3\fs26 75N...
+\f0\fs24 ) to eliminate the "Solicitation Number: null" error.\
+\ls3\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Inject Page Numbers:
+\f0\b0  The extracted text blocks in the tables (e.g., 
+\f2\i "The Contractor shall support quarterly..."
+\f0\i0 ) should be suffixed with their source location (e.g., 
+\f3\fs26 [SOW, Pg 10]
+\f0\fs24 ) to improve trust.\
+\ls3\ilvl0
+\f1\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Dynamic "Win Themes":
+\f0\b0  Connect the "Company Library" (Feature 2 in your handoff) to the outline generator. Even if the AI doesn't write the theme, it should pull 
+\f2\i relevant past performance titles
+\f0\i0  into the "Win Themes" placeholder based on semantic similarity to the section requirements.\
+}
