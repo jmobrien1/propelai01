@@ -427,6 +427,45 @@ class APIKeyModel(Base):
         return result
 
 
+class UserSessionModel(Base):
+    """Active user sessions for session management"""
+    __tablename__ = "user_sessions"
+
+    id = Column(String(50), primary_key=True)
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(255), nullable=False)  # Hash of JWT token for revocation
+    device_info = Column(String(500), nullable=True)  # User agent / device description
+    ip_address = Column(String(50), nullable=True)
+    location = Column(String(255), nullable=True)  # Approximate location from IP
+    is_current = Column(Boolean, default=False)  # Is this the current session?
+    last_active = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+
+    # Relationship
+    user = relationship("UserModel", backref="sessions")
+
+    __table_args__ = (
+        Index('idx_user_sessions_user_id', 'user_id'),
+        Index('idx_user_sessions_token_hash', 'token_hash'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "device_info": self.device_info,
+            "ip_address": self.ip_address,
+            "location": self.location,
+            "is_current": self.is_current,
+            "is_active": self.revoked_at is None and datetime.utcnow() < self.expires_at,
+            "last_active": self.last_active.isoformat() if self.last_active else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+        }
+
+
 # ============== Database Connection ==============
 
 # Engine and session factory (initialized lazily)

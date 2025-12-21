@@ -3565,12 +3565,40 @@ async def add_differentiator_vector(
 
 from api.database import (
     UserModel, TeamModel, TeamMembershipModel, ActivityLogModel, APIKeyModel,
-    TeamInvitationModel, UserRole
+    TeamInvitationModel, UserRole, UserSessionModel
 )
 import uuid
 import hashlib
 import secrets
 from datetime import timedelta
+
+# Email service for password reset and invitations
+try:
+    from api.email_service import email_service, EmailService
+    EMAIL_SERVICE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Email service not available: {e}")
+    EMAIL_SERVICE_AVAILABLE = False
+    email_service = None
+
+# Redis for distributed rate limiting and session storage
+try:
+    import redis.asyncio as redis
+    REDIS_URL = os.environ.get("REDIS_URL", "")
+    if REDIS_URL:
+        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        REDIS_AVAILABLE = True
+        print(f"[Redis] Connected to Redis for rate limiting")
+    else:
+        redis_client = None
+        REDIS_AVAILABLE = False
+except ImportError:
+    redis_client = None
+    REDIS_AVAILABLE = False
+except Exception as e:
+    print(f"Warning: Redis not available: {e}")
+    redis_client = None
+    REDIS_AVAILABLE = False
 
 # JWT Authentication
 try:
@@ -3663,26 +3691,66 @@ _current_user: Optional[Dict] = None
 
 class RateLimiter:
     """
-    In-memory rate limiter using sliding window algorithm.
-    For production, consider Redis-based rate limiting.
+    Hybrid rate limiter using sliding window algorithm.
+    Uses Redis when available (for distributed systems), falls back to in-memory.
     """
 
     def __init__(self):
         self._requests: Dict[str, List[float]] = {}
         self._lock = asyncio.Lock()
 
-    async def is_rate_limited(
+    async def _redis_is_rate_limited(
         self,
         key: str,
         max_requests: int,
-        window_seconds: int = 60
+        window_seconds: int
     ) -> tuple[bool, int]:
-        """
-        Check if a key is rate limited.
+        """Redis-based rate limiting using sorted sets"""
+        try:
+            now = time.time()
+            window_start = now - window_seconds
+            redis_key = f"rate_limit:{key}"
 
-        Returns:
-            tuple: (is_limited, retry_after_seconds)
-        """
+            # Use pipeline for atomic operations
+            pipe = redis_client.pipeline()
+
+            # Remove old entries
+            pipe.zremrangebyscore(redis_key, 0, window_start)
+
+            # Count current entries
+            pipe.zcard(redis_key)
+
+            # Add current request
+            pipe.zadd(redis_key, {str(now): now})
+
+            # Set expiry on the key
+            pipe.expire(redis_key, window_seconds + 60)
+
+            results = await pipe.execute()
+            current_count = results[1]
+
+            if current_count >= max_requests:
+                # Get oldest entry to calculate retry-after
+                oldest = await redis_client.zrange(redis_key, 0, 0, withscores=True)
+                if oldest:
+                    oldest_time = float(oldest[0][1])
+                    retry_after = int(oldest_time + window_seconds - now) + 1
+                    return True, max(retry_after, 1)
+                return True, window_seconds
+
+            return False, 0
+
+        except Exception as e:
+            print(f"[RateLimiter] Redis error, falling back to memory: {e}")
+            return await self._memory_is_rate_limited(key, max_requests, window_seconds)
+
+    async def _memory_is_rate_limited(
+        self,
+        key: str,
+        max_requests: int,
+        window_seconds: int
+    ) -> tuple[bool, int]:
+        """In-memory rate limiting using sliding window"""
         async with self._lock:
             now = time.time()
             window_start = now - window_seconds
@@ -3708,8 +3776,24 @@ class RateLimiter:
             self._requests[key].append(now)
             return False, 0
 
+    async def is_rate_limited(
+        self,
+        key: str,
+        max_requests: int,
+        window_seconds: int = 60
+    ) -> tuple[bool, int]:
+        """
+        Check if a key is rate limited.
+
+        Returns:
+            tuple: (is_limited, retry_after_seconds)
+        """
+        if REDIS_AVAILABLE and redis_client:
+            return await self._redis_is_rate_limited(key, max_requests, window_seconds)
+        return await self._memory_is_rate_limited(key, max_requests, window_seconds)
+
     async def cleanup_old_entries(self, max_age_seconds: int = 3600):
-        """Remove entries older than max_age to prevent memory leaks"""
+        """Remove entries older than max_age to prevent memory leaks (in-memory only)"""
         async with self._lock:
             cutoff = time.time() - max_age_seconds
             keys_to_remove = []
@@ -3878,6 +3962,15 @@ async def login_user(
 
         # Generate JWT token
         token = create_jwt_token(user.id, user.email, user.name)
+        token_expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+
+        # Create session record for session management
+        await create_session(
+            user_id=user.id,
+            token=token,
+            request=request,
+            expires_at=token_expiry
+        )
 
         return {
             "success": True,
@@ -4106,22 +4199,35 @@ async def forgot_password(
             reset_token = generate_reset_token()
             expiry = datetime.utcnow() + timedelta(hours=PASSWORD_RESET_EXPIRY_HOURS)
 
-            # Store token (in production, send via email)
+            # Store token
             _password_reset_tokens[reset_token] = {
                 "user_id": user.id,
                 "email": user.email,
                 "expires_at": expiry,
             }
 
-            # In production, send email with reset link
-            # For development, return the token directly
-            return {
+            # Send password reset email
+            email_sent = False
+            if EMAIL_SERVICE_AVAILABLE and email_service:
+                email_sent = await email_service.send_password_reset(
+                    to_email=user.email,
+                    reset_token=reset_token,
+                    user_name=user.name
+                )
+
+            # In console mode or if email fails, still return the token for development
+            response = {
                 "success": True,
-                "message": "Password reset token generated",
-                "reset_token": reset_token,  # Remove in production - send via email
-                "expires_in": PASSWORD_RESET_EXPIRY_HOURS * 3600,
-                "note": "In production, this token would be sent via email"
+                "message": "If an account exists, a reset link has been sent",
+                "email_sent": email_sent,
             }
+
+            # Only include token in development (console email mode)
+            if not email_sent:
+                response["reset_token"] = reset_token
+                response["note"] = "Email not configured - token provided directly"
+
+            return response
 
         # Return same response to prevent email enumeration
         return {"success": True, "message": "If an account exists, a reset link has been sent"}
@@ -4376,6 +4482,7 @@ async def disable_2fa(
 
 @app.post("/api/auth/2fa/verify")
 async def verify_2fa_code(
+    request: Request,
     user_id: str = Form(...),
     code: str = Form(...),
 ):
@@ -4413,6 +4520,15 @@ async def verify_2fa_code(
 
             # Generate JWT token
             token = create_jwt_token(user.id, user.email, user.name)
+            token_expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+
+            # Create session record for session management
+            await create_session(
+                user_id=user.id,
+                token=token,
+                request=request,
+                expires_at=token_expiry
+            )
 
             return {
                 "success": True,
@@ -4434,6 +4550,15 @@ async def verify_2fa_code(
 
         # Generate JWT token
         token = create_jwt_token(user.id, user.email, user.name)
+        token_expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+
+        # Create session record for session management
+        await create_session(
+            user_id=user.id,
+            token=token,
+            request=request,
+            expires_at=token_expiry
+        )
 
         return {
             "success": True,
@@ -5002,6 +5127,13 @@ async def create_invitation(
         session.add(invitation)
         await session.flush()
 
+        # Get inviter name for email
+        inviter = await session.execute(
+            select(UserModel).where(UserModel.id == inviter_id)
+        )
+        inviter_user = inviter.scalar_one_or_none()
+        inviter_name = inviter_user.name if inviter_user else "A team member"
+
         # Log activity
         await log_activity(
             team_id=team_id,
@@ -5012,15 +5144,31 @@ async def create_invitation(
             details={"email": email, "role": role}
         )
 
-        # In production, send email with invitation link
-        # For now, return the token for testing
-        return {
+        # Send invitation email
+        email_sent = False
+        if EMAIL_SERVICE_AVAILABLE and email_service:
+            email_sent = await email_service.send_team_invitation(
+                to_email=email,
+                team_name=team.name,
+                inviter_name=inviter_name,
+                invitation_token=token,
+                role=role
+            )
+
+        response = {
             "success": True,
             "invitation": invitation.to_dict(),
-            "invitation_token": token,  # In production, this would be sent via email
-            "invitation_url": f"/accept-invite?token={token}",
             "message": f"Invitation sent to {email}",
+            "email_sent": email_sent,
         }
+
+        # Only include token in development (console email mode)
+        if not email_sent:
+            response["invitation_token"] = token
+            response["invitation_url"] = f"/accept-invite?token={token}"
+            response["note"] = "Email not configured - token provided directly"
+
+        return response
 
 
 @app.get("/api/teams/{team_id}/invitations")
@@ -5252,6 +5400,233 @@ async def verify_api_key_endpoint(
             "team_id": stored_key.team_id,
             "permissions": stored_key.permissions or ["read"],
             "name": stored_key.name,
+        }
+
+
+# ============== SESSION MANAGEMENT ==============
+
+
+def get_device_info(request: Request) -> str:
+    """Extract device info from request headers"""
+    user_agent = request.headers.get("user-agent", "Unknown")
+    # Simplify user agent for display
+    if "Mobile" in user_agent:
+        if "iPhone" in user_agent:
+            return "iPhone"
+        elif "Android" in user_agent:
+            return "Android"
+        else:
+            return "Mobile Device"
+    elif "Chrome" in user_agent:
+        return "Chrome Browser"
+    elif "Firefox" in user_agent:
+        return "Firefox Browser"
+    elif "Safari" in user_agent:
+        return "Safari Browser"
+    elif "Edge" in user_agent:
+        return "Edge Browser"
+    else:
+        return user_agent[:50] if user_agent else "Unknown"
+
+
+def get_client_ip(request: Request) -> str:
+    """Get client IP from request, handling proxies"""
+    # Check X-Forwarded-For header first (for reverse proxies)
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    # Check X-Real-IP header
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip
+    # Fall back to direct client
+    return request.client.host if request.client else "Unknown"
+
+
+async def create_session(
+    user_id: str,
+    token: str,
+    request: Request,
+    expires_at: datetime
+) -> Optional[str]:
+    """Create a new session record for a user"""
+    async with get_db_session() as session:
+        if session is None:
+            return None
+
+        # Hash the token for storage
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+        session_record = UserSessionModel(
+            id=generate_id(),
+            user_id=user_id,
+            token_hash=token_hash,
+            device_info=get_device_info(request),
+            ip_address=get_client_ip(request),
+            is_current=True,
+            last_active=datetime.utcnow(),
+            expires_at=expires_at,
+        )
+        session.add(session_record)
+        await session.flush()
+        return session_record.id
+
+
+async def update_session_activity(token: str) -> None:
+    """Update the last_active timestamp for a session"""
+    async with get_db_session() as session:
+        if session is None:
+            return
+
+        from sqlalchemy import select, update
+
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        await session.execute(
+            update(UserSessionModel)
+            .where(UserSessionModel.token_hash == token_hash)
+            .values(last_active=datetime.utcnow())
+        )
+
+
+@app.get("/api/sessions")
+async def list_sessions(
+    request: Request,
+    authorization: str = Header(None),
+):
+    """List all active sessions for the current user"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    # Get current token hash to mark current session
+    current_token_hash = hashlib.sha256(parts[1].encode()).hexdigest()
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserSessionModel)
+            .where(UserSessionModel.user_id == user_id)
+            .where(UserSessionModel.revoked_at == None)
+            .where(UserSessionModel.expires_at > datetime.utcnow())
+            .order_by(UserSessionModel.last_active.desc())
+        )
+        sessions = result.scalars().all()
+
+        return {
+            "sessions": [
+                {
+                    **s.to_dict(),
+                    "is_current": s.token_hash == current_token_hash,
+                }
+                for s in sessions
+            ]
+        }
+
+
+@app.delete("/api/sessions/{session_id}")
+async def revoke_session(
+    session_id: str,
+    authorization: str = Header(None),
+):
+    """Revoke a specific session"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserSessionModel)
+            .where(UserSessionModel.id == session_id)
+            .where(UserSessionModel.user_id == user_id)
+        )
+        session_record = result.scalar_one_or_none()
+
+        if not session_record:
+            raise HTTPException(404, "Session not found")
+
+        if session_record.revoked_at:
+            raise HTTPException(400, "Session already revoked")
+
+        session_record.revoked_at = datetime.utcnow()
+        await session.flush()
+
+        return {"success": True, "message": "Session revoked"}
+
+
+@app.post("/api/sessions/revoke-all")
+async def revoke_all_sessions(
+    request: Request,
+    keep_current: bool = Form(True),
+    authorization: str = Header(None),
+):
+    """Revoke all sessions for the current user (optionally keep current)"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    current_token_hash = hashlib.sha256(parts[1].encode()).hexdigest()
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select, update
+
+        # Build the update query
+        query = (
+            update(UserSessionModel)
+            .where(UserSessionModel.user_id == user_id)
+            .where(UserSessionModel.revoked_at == None)
+            .values(revoked_at=datetime.utcnow())
+        )
+
+        # Optionally exclude current session
+        if keep_current:
+            query = query.where(UserSessionModel.token_hash != current_token_hash)
+
+        result = await session.execute(query)
+        revoked_count = result.rowcount
+
+        return {
+            "success": True,
+            "revoked_count": revoked_count,
+            "message": f"Revoked {revoked_count} session(s)",
         }
 
 

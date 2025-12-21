@@ -24,15 +24,17 @@
 3. **Immutability:** Do not modify `AS_BUILT_TDD.md` unless architecture changes. It is the source of truth.
 
 ## 4. Key Files
-- `api/main.py`: Primary API entry point (3500+ lines).
+- `api/main.py`: Primary API entry point (5500+ lines).
 - `api/vector_store.py`: pgvector semantic search for Company Library.
 - `api/database.py`: PostgreSQL ORM with SQLAlchemy 2.0.
+- `api/email_service.py`: Email abstraction with SMTP/SendGrid support.
 - `agents/strategy_agent.py`: Iron Triangle logic engine (StrategyAgent, CompetitorAnalyzer).
 - `agents/drafting_workflow.py`: LangGraph drafting workflow (F-B-P framework).
 - `agents/enhanced_compliance/pdf_coordinate_extractor.py`: Trust Gate coordinate extraction.
 - `agents/enhanced_compliance/document_types.py`: Guided upload document classification.
 - `web/index.html`: React SPA with guided upload wizard (v4.1 dark theme).
 - `init.sql`: PostgreSQL schema with pgvector extension.
+- `tests/test_auth_v41.py`: Integration tests for auth, teams, and 2FA.
 
 ## 5. v4.0 Architecture Phases
 
@@ -183,9 +185,13 @@ A winning proposal ensures:
 **Goal:** Prevent API abuse on authentication endpoints.
 
 **Implementation** (`api/main.py`):
-- In-memory sliding window rate limiter
-- Per-IP tracking with configurable limits
+- Hybrid rate limiter: Uses Redis when available, falls back to in-memory
+- Sliding window algorithm with per-IP tracking
 - Returns 429 Too Many Requests with Retry-After header
+
+**Redis Configuration:**
+- Set `REDIS_URL` environment variable to enable distributed rate limiting
+- Example: `REDIS_URL=redis://localhost:6379`
 
 **Rate Limits:**
 - Login: 5 attempts per minute
@@ -212,6 +218,55 @@ A winning proposal ensures:
 - QR code display for authenticator app scanning
 - Backup codes display with copy functionality
 - 2FA challenge during login flow in AuthModal
+
+### Email Service
+**Goal:** Provide email sending abstraction for password reset and team invitations.
+
+**Implementation** (`api/email_service.py`):
+- Pluggable provider architecture (Console, SMTP, SendGrid)
+- HTML email templates with professional styling
+- Automatic fallback to console output in development
+
+**Providers:**
+- `console`: Prints emails to console (default, for development)
+- `smtp`: Standard SMTP with TLS support
+- `sendgrid`: SendGrid API integration
+
+**Configuration (Environment Variables):**
+- `EMAIL_PROVIDER`: "console" | "smtp" | "sendgrid"
+- `EMAIL_FROM`: Sender email address
+- `EMAIL_FROM_NAME`: Sender display name
+- `APP_BASE_URL`: Base URL for links in emails
+
+**SMTP Settings:**
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_USE_TLS`
+
+**SendGrid Settings:**
+- `SENDGRID_API_KEY`: SendGrid API key
+
+**Email Types:**
+- Password reset emails with secure tokens
+- Team invitation emails with role information
+- Welcome emails for new users
+
+### Session Management
+**Goal:** Allow users to view and revoke active sessions across devices.
+
+**Implementation** (`api/main.py`, `api/database.py`):
+- UserSessionModel tracks active sessions
+- Token hash storage for secure session identification
+- Device info and IP address tracking
+
+**API Endpoints:**
+- `GET /api/sessions` - List all active sessions for current user
+- `DELETE /api/sessions/{session_id}` - Revoke a specific session
+- `POST /api/sessions/revoke-all` - Revoke all sessions (optionally keep current)
+
+**Session Data:**
+- Device info (browser/mobile detection)
+- IP address (with proxy support)
+- Last active timestamp
+- Expiration tracking
 
 ## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
