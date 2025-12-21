@@ -649,21 +649,160 @@ class SmartOutlineGenerator:
             return VolumeType.SMALL_BUSINESS
         else:
             return VolumeType.OTHER
-    
+
+    def _detect_rating_type(self, text: str) -> Optional[str]:
+        """
+        Detect evaluation rating methodology from Section M text.
+
+        Returns:
+            "Adjectival" if adjectival ratings are used (Outstanding/Acceptable/etc.)
+            "Numerical" if point-based scoring is used
+            None if unable to determine
+        """
+        text_lower = text.lower()
+
+        # Adjectival rating patterns (common federal rating scales)
+        adjectival_patterns = [
+            r"outstanding",
+            r"exceptional",
+            r"very\s+good",
+            r"good\s+rating",
+            r"satisfactory",
+            r"acceptable",
+            r"marginal",
+            r"unacceptable",
+            r"adjectival\s+rating",
+            r"color\s+rating",
+            r"blue.*green.*yellow.*red",  # Color-coded ratings
+            r"rated\s+as\s+(?:outstanding|exceptional|acceptable)",
+        ]
+
+        # Count adjectival indicators
+        adjectival_count = sum(
+            1 for p in adjectival_patterns
+            if re.search(p, text_lower)
+        )
+
+        # Numerical rating patterns
+        numerical_patterns = [
+            r"\d+\s*(?:points?|pts)",
+            r"maximum\s+(?:of\s+)?\d+\s*points?",
+            r"(\d+)\s*out\s+of\s+(\d+)",
+            r"weighted\s+(?:at\s+)?\d+%?",
+            r"total\s+(?:possible\s+)?points?[:\s]+\d+",
+        ]
+
+        numerical_count = sum(
+            1 for p in numerical_patterns
+            if re.search(p, text_lower)
+        )
+
+        # Determine rating type based on patterns found
+        if adjectival_count >= 2:
+            return "Adjectival"
+        elif numerical_count >= 2:
+            return "Numerical"
+        elif adjectival_count > 0 and numerical_count == 0:
+            return "Adjectival"
+        elif numerical_count > 0 and adjectival_count == 0:
+            return "Numerical"
+
+        return None
+
+    def _extract_importance_order(self, text: str) -> List[Tuple[str, str]]:
+        """
+        Extract relative importance ordering of evaluation factors.
+
+        Common patterns:
+        - "Technical is more important than Cost"
+        - "Factors listed in descending order of importance"
+        - "Technical and Management are of equal importance"
+
+        Returns:
+            List of tuples (factor_name, importance_level)
+            e.g., [("Technical", "Most Important"), ("Cost", "Less Important")]
+        """
+        importance = []
+        text_lower = text.lower()
+
+        # Pattern: "X is more important than Y"
+        more_important = re.findall(
+            r"(technical|management|cost|price|past\s*performance|experience|personnel)"
+            r"\s+(?:is|are)\s+(?:more|most)\s+important\s+than\s+"
+            r"(technical|management|cost|price|past\s*performance|experience|personnel)",
+            text_lower
+        )
+        for higher, lower in more_important:
+            importance.append((higher.strip().title(), "More Important"))
+            importance.append((lower.strip().title(), "Less Important"))
+
+        # Pattern: "descending order of importance"
+        if "descending order of importance" in text_lower:
+            # The first factor mentioned is most important
+            factors = re.findall(
+                r"factor\s*\d+[,:\s]+([a-z\s]+?)(?:\.|,|factor)",
+                text_lower
+            )
+            for i, factor in enumerate(factors[:5]):  # Limit to first 5
+                level = "Most Important" if i == 0 else f"#{i+1} Important"
+                importance.append((factor.strip().title(), level))
+
+        # Pattern: "equally important"
+        equal_match = re.search(
+            r"(technical|management|cost|price|past\s*performance)\s+and\s+"
+            r"(technical|management|cost|price|past\s*performance)\s+"
+            r"(?:are\s+)?(?:of\s+)?equal(?:ly)?\s+import",
+            text_lower
+        )
+        if equal_match:
+            importance.append((equal_match.group(1).strip().title(), "Equal"))
+            importance.append((equal_match.group(2).strip().title(), "Equal"))
+
+        # Pattern: "significantly more important"
+        sig_more = re.findall(
+            r"(technical|management|past\s*performance)\s+(?:is|are)\s+"
+            r"significantly\s+more\s+important",
+            text_lower
+        )
+        for factor in sig_more:
+            importance.append((factor.strip().title(), "Significantly More Important"))
+
+        return importance
+
+    def _get_factor_importance(
+        self,
+        factor_name: str,
+        importance_order: List[Tuple[str, str]]
+    ) -> Optional[str]:
+        """Get the importance level for a specific factor."""
+        factor_lower = factor_name.lower()
+
+        for name, level in importance_order:
+            if name.lower() in factor_lower or factor_lower in name.lower():
+                return level
+
+        return None
+
     def _extract_eval_factors(self, section_m: List[Dict]) -> List[EvaluationFactor]:
         """Extract evaluation factors from Section M"""
         factors = []
         seen = set()
-        
+
         all_text = " ".join([
-            r.get("text", "") or r.get("full_text", "") 
+            r.get("text", "") or r.get("full_text", "")
             for r in section_m
         ])
-        
+
+        # Detect rating methodology (adjectival vs. numerical)
+        rating_type = self._detect_rating_type(all_text)
+
+        # Detect relative importance ordering
+        importance_order = self._extract_importance_order(all_text)
+
         # Look for clean Factor N patterns at start of lines
         for req in section_m:
             req_text = req.get("text", "") or req.get("full_text", "") or ""
-            
+
             # Match: "Factor N, Full Name" at line start
             match = re.search(
                 r"^Factor\s*(\d+)[,:\s]+([A-Z][A-Za-z\s,\-–&]+?)(?:\.\.\.|$)",
@@ -674,20 +813,27 @@ class SmartOutlineGenerator:
                 factor_num = match.group(1)
                 factor_name = match.group(2).strip()
                 factor_name = re.sub(r'[\s,\-–]+$', '', factor_name).title()
-                
+
                 # Skip garbage
                 garbage = ['condition', 'shall', 'must', 'will']
                 if any(g in factor_name.lower() for g in garbage):
                     continue
-                
+
                 key = f"factor_{factor_num}"
                 if key not in seen and len(factor_name) > 5:
                     seen.add(key)
-                    
+
+                    # Determine weight based on rating type
+                    weight = rating_type if rating_type else None
+
+                    # Check if this factor has a specified importance
+                    importance = self._get_factor_importance(factor_name, importance_order)
+
                     factor = EvaluationFactor(
                         id=f"EVAL-F{factor_num}",
                         name=f"Factor {factor_num}: {factor_name}",
-                        weight=None
+                        weight=weight,
+                        importance=importance
                     )
                     factors.append(factor)
         
@@ -698,24 +844,26 @@ class SmartOutlineGenerator:
             default_factors = {
                 "1": "Experience",
                 "2": "Program and Project Management",
-                "3": "Technical Approach", 
+                "3": "Technical Approach",
                 "4": "Key Personnel",
                 "5": "Facilities and Equipment",
                 "6": "Past Performance",
             }
-            
+
             for num, name in default_factors.items():
                 if f"factor {num}" in all_text_lower or f"factor{num}" in all_text_lower:
                     key = f"factor_{num}"
                     if key not in seen:
                         seen.add(key)
+                        importance = self._get_factor_importance(name, importance_order)
                         factor = EvaluationFactor(
                             id=f"EVAL-F{num}",
                             name=f"Factor {num}: {name}",
-                            weight=None
+                            weight=rating_type if rating_type else None,
+                            importance=importance
                         )
                         factors.append(factor)
-        
+
         # Still no factors? Look for general criteria keywords
         if not factors:
             criteria_keywords = [
@@ -725,12 +873,15 @@ class SmartOutlineGenerator:
                 ("Price", "EVAL-PRICE"),
                 ("Cost", "EVAL-COST"),
             ]
-            
+
             for name, eval_id in criteria_keywords:
                 if name.lower() in all_text.lower():
+                    importance = self._get_factor_importance(name, importance_order)
                     factor = EvaluationFactor(
                         id=eval_id,
-                        name=name
+                        name=name,
+                        weight=rating_type if rating_type else None,
+                        importance=importance
                     )
                     factors.append(factor)
         
@@ -1028,44 +1179,101 @@ class SmartOutlineGenerator:
     
     def _extract_submission_info(self, section_l: List[Dict]) -> SubmissionInfo:
         """Extract submission info from Section L"""
-        
+
         all_text = " ".join([
-            r.get("text", "") or r.get("full_text", "") 
+            r.get("text", "") or r.get("full_text", "")
             for r in section_l
         ])
-        
+
         submission = SubmissionInfo()
-        
-        # Look for due date
+
+        # Month name pattern for reuse
+        month_names = r"(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+
+        # Comprehensive date patterns (ordered by specificity)
         date_patterns = [
-            r"(?:due|submit|submission)\s*(?:date|by|on)?\s*[:\s]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
-            r"no\s+later\s+than[:\s]*([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
-            r"(\d{1,2}:\d{2}\s*(?:AM|PM)\s+(?:ET|EST|PT|PST|CT|CST)?\s+(?:on\s+)?[A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+            # Full datetime with timezone: "2:00 PM ET on January 15, 2025"
+            (r"(\d{1,2}:\d{2}\s*(?:AM|PM)?\s*(?:ET|EST|EDT|PT|PST|PDT|CT|CST|CDT|MT|MST|MDT)?\s*(?:on\s+)?)" +
+             month_names + r"\s+\d{1,2},?\s+\d{4}"),
+            # Written month format: "January 15, 2025" or "15 January 2025"
+            (month_names + r"\s+\d{1,2},?\s+\d{4}"),
+            (r"\d{1,2}\s+" + month_names + r",?\s+\d{4}"),
+            # Military format: "15 JAN 2025"
+            (r"\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+\d{4}"),
+            # ISO format: "2025-01-15"
+            (r"\d{4}-\d{2}-\d{2}"),
+            # US format: "01/15/2025" or "01-15-2025"
+            (r"\d{1,2}[/-]\d{1,2}[/-]\d{4}"),
+            # Short year: "01/15/25"
+            (r"\d{1,2}[/-]\d{1,2}[/-]\d{2}"),
         ]
-        
-        for pattern in date_patterns:
-            match = re.search(pattern, all_text, re.IGNORECASE)
-            if match:
-                submission.due_date = match.group(1)
+
+        # Context patterns that indicate a due date follows
+        due_date_contexts = [
+            r"(?:proposal|quote|quotation|response)\s+due[:\s]+",
+            r"due\s+(?:date|by|on)[:\s]+",
+            r"submission\s+(?:date|deadline)[:\s]+",
+            r"closing\s+date[:\s]+",
+            r"no\s+later\s+than[:\s]+",
+            r"proposals?\s+(?:shall|must)\s+be\s+(?:received|submitted)\s+(?:by|no\s+later\s+than)[:\s]+",
+            r"deadline[:\s]+",
+            r"responses?\s+due[:\s]+",
+        ]
+
+        # Try context-aware extraction first
+        for context in due_date_contexts:
+            for date_pattern in date_patterns:
+                full_pattern = context + r"\s*(" + date_pattern + r")"
+                match = re.search(full_pattern, all_text, re.IGNORECASE)
+                if match:
+                    submission.due_date = match.group(1).strip()
+                    break
+            if submission.due_date:
                 break
-        
+
+        # Fallback: try date patterns without context
+        if not submission.due_date:
+            for date_pattern in date_patterns:
+                match = re.search(r"(" + date_pattern + r")", all_text, re.IGNORECASE)
+                if match:
+                    # Validate it looks like a future date (not a contract date)
+                    date_str = match.group(1)
+                    # Skip if it looks like a contract number
+                    if not re.search(r"[A-Z]{2}\d{4}", date_str):
+                        submission.due_date = date_str.strip()
+                        break
+
+        # Extract time separately if not already in due_date
+        if submission.due_date and not re.search(r"\d{1,2}:\d{2}", submission.due_date):
+            time_patterns = [
+                r"(\d{1,2}:\d{2}\s*(?:AM|PM))\s*(?:ET|EST|EDT|PT|PST|PDT|CT|CST|CDT|MT|MST|MDT)?",
+                r"(\d{1,2}:\d{2})\s*(?:hours?|hrs?)",
+            ]
+            for time_pattern in time_patterns:
+                time_match = re.search(time_pattern, all_text, re.IGNORECASE)
+                if time_match:
+                    submission.due_time = time_match.group(1).strip()
+                    break
+
         # Look for submission method
         method_patterns = [
             r"submit\s+(?:via|through|to)\s+(email|portal|sam\.gov|electronic)",
             r"(electronic\s+submission)",
+            r"submit\s+(?:electronically\s+)?(?:via|to)\s+([\w\.]+)",
+            r"proposals?\s+shall\s+be\s+(?:submitted|delivered)\s+(?:via|through|to)\s+(\w+)",
         ]
-        
+
         for pattern in method_patterns:
             match = re.search(pattern, all_text, re.IGNORECASE)
             if match:
                 submission.method = match.group(1)
                 break
-        
+
         # Look for email
         email_match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", all_text)
         if email_match:
             submission.email = email_match.group(0)
-        
+
         return submission
     
     def _apply_page_limits(self, section_l: List[Dict], volumes: List[ProposalVolume]):
