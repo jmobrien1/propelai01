@@ -726,6 +726,353 @@ class TestLogging:
         assert "timestamp" in data
 
 
+# ============== File Upload Security Tests ==============
+
+class TestFileUploadSecurity:
+    """Tests for file upload security validation"""
+
+    def test_sanitize_filename_basic(self):
+        """Test basic filename sanitization"""
+        from api.main import sanitize_filename
+
+        # Normal filename
+        assert sanitize_filename("document.pdf") == "document.pdf"
+
+        # Remove path components
+        assert sanitize_filename("/etc/passwd") == "passwd"
+        assert sanitize_filename("../../../etc/passwd") == "passwd"
+        assert sanitize_filename("C:\\Windows\\System32\\cmd.exe") == "cmd.exe"
+
+    def test_sanitize_filename_special_chars(self):
+        """Test filename sanitization removes special characters"""
+        from api.main import sanitize_filename
+
+        # Replace problematic characters
+        assert sanitize_filename('file<>:"/\\|?*.pdf') == "file________.pdf"
+
+    def test_sanitize_filename_null_bytes(self):
+        """Test filename sanitization removes null bytes"""
+        from api.main import sanitize_filename
+
+        # Remove null bytes
+        assert sanitize_filename("file\x00.pdf") == "file.pdf"
+
+    def test_sanitize_filename_empty(self):
+        """Test handling of empty filenames"""
+        from api.main import sanitize_filename
+
+        assert sanitize_filename("") == "unnamed_file"
+        assert sanitize_filename(None) == "unnamed_file"
+        assert sanitize_filename(".") == "unnamed_file"
+        assert sanitize_filename("..") == "unnamed_file"
+
+    def test_sanitize_filename_long(self):
+        """Test truncation of long filenames"""
+        from api.main import sanitize_filename
+
+        long_name = "a" * 300 + ".pdf"
+        sanitized = sanitize_filename(long_name)
+        assert len(sanitized) <= 255
+        assert sanitized.endswith(".pdf")
+
+    def test_validate_file_extension(self):
+        """Test file extension validation"""
+        from api.main import validate_file_extension
+
+        # Allowed extensions
+        assert validate_file_extension("document.pdf") is True
+        assert validate_file_extension("document.docx") is True
+        assert validate_file_extension("spreadsheet.xlsx") is True
+        assert validate_file_extension("document.doc") is True
+        assert validate_file_extension("spreadsheet.xls") is True
+
+        # Disallowed extensions
+        assert validate_file_extension("script.exe") is False
+        assert validate_file_extension("script.sh") is False
+        assert validate_file_extension("script.js") is False
+        assert validate_file_extension("image.png") is False
+
+    def test_file_signature_constants(self):
+        """Test that file signature constants are defined correctly"""
+        from api.main import FILE_SIGNATURES, ALLOWED_EXTENSIONS
+
+        # All allowed extensions should have signatures
+        for ext in ALLOWED_EXTENSIONS:
+            assert ext in FILE_SIGNATURES, f"Missing signature for {ext}"
+
+        # PDF should start with %PDF
+        assert b"%PDF" in FILE_SIGNATURES[".pdf"]
+
+        # DOCX/XLSX are ZIP files
+        assert b"PK\x03\x04" in FILE_SIGNATURES[".docx"]
+        assert b"PK\x03\x04" in FILE_SIGNATURES[".xlsx"]
+
+    def test_max_file_size(self):
+        """Test max file size constant"""
+        from api.main import MAX_FILE_SIZE, get_max_file_size_mb
+
+        # Should be 50 MB
+        assert MAX_FILE_SIZE == 50 * 1024 * 1024
+        assert get_max_file_size_mb() == 50.0
+
+    @pytest.mark.asyncio
+    async def test_validate_uploaded_file_valid_pdf(self):
+        """Test validation of a valid PDF file"""
+        from api.main import validate_uploaded_file, FileValidationError
+        from unittest.mock import AsyncMock
+
+        # Create mock file with valid PDF content
+        mock_file = AsyncMock()
+        mock_file.filename = "test.pdf"
+        mock_file.content_type = "application/pdf"
+        mock_file.read = AsyncMock(return_value=b"%PDF-1.4 test content")
+        mock_file.seek = AsyncMock()
+
+        content, filename = await validate_uploaded_file(mock_file)
+
+        assert filename == "test.pdf"
+        assert content.startswith(b"%PDF")
+
+    @pytest.mark.asyncio
+    async def test_validate_uploaded_file_wrong_extension(self):
+        """Test validation rejects disallowed extensions"""
+        from api.main import validate_uploaded_file, FileValidationError
+        from unittest.mock import AsyncMock
+
+        mock_file = AsyncMock()
+        mock_file.filename = "malware.exe"
+        mock_file.content_type = "application/x-executable"
+        mock_file.read = AsyncMock(return_value=b"MZ...")
+        mock_file.seek = AsyncMock()
+
+        with pytest.raises(FileValidationError) as exc:
+            await validate_uploaded_file(mock_file)
+
+        assert "not allowed" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_uploaded_file_empty(self):
+        """Test validation rejects empty files"""
+        from api.main import validate_uploaded_file, FileValidationError
+        from unittest.mock import AsyncMock
+
+        mock_file = AsyncMock()
+        mock_file.filename = "empty.pdf"
+        mock_file.content_type = "application/pdf"
+        mock_file.read = AsyncMock(return_value=b"")
+        mock_file.seek = AsyncMock()
+
+        with pytest.raises(FileValidationError) as exc:
+            await validate_uploaded_file(mock_file)
+
+        assert "Empty files" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_uploaded_file_wrong_magic_bytes(self):
+        """Test validation rejects files with wrong content"""
+        from api.main import validate_uploaded_file, FileValidationError
+        from unittest.mock import AsyncMock
+
+        # PDF extension but wrong content (looks like an EXE)
+        mock_file = AsyncMock()
+        mock_file.filename = "fake.pdf"
+        mock_file.content_type = "application/pdf"
+        mock_file.read = AsyncMock(return_value=b"MZ\x90\x00This is not a PDF")
+        mock_file.seek = AsyncMock()
+
+        with pytest.raises(FileValidationError) as exc:
+            await validate_uploaded_file(mock_file)
+
+        assert "does not match" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_uploaded_file_too_large(self):
+        """Test validation rejects files over size limit"""
+        from api.main import validate_uploaded_file, FileValidationError, MAX_FILE_SIZE
+        from unittest.mock import AsyncMock
+
+        # File larger than max size
+        mock_file = AsyncMock()
+        mock_file.filename = "large.pdf"
+        mock_file.content_type = "application/pdf"
+        mock_file.read = AsyncMock(return_value=b"%PDF" + b"x" * (MAX_FILE_SIZE + 1))
+        mock_file.seek = AsyncMock()
+
+        with pytest.raises(FileValidationError) as exc:
+            await validate_uploaded_file(mock_file)
+
+        assert "exceeds maximum" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_uploaded_file_path_traversal(self):
+        """Test that path traversal is prevented"""
+        from api.main import validate_uploaded_file
+        from unittest.mock import AsyncMock
+
+        mock_file = AsyncMock()
+        mock_file.filename = "../../../etc/passwd.pdf"
+        mock_file.content_type = "application/pdf"
+        mock_file.read = AsyncMock(return_value=b"%PDF-1.4 content")
+        mock_file.seek = AsyncMock()
+
+        content, filename = await validate_uploaded_file(mock_file)
+
+        # Filename should be sanitized
+        assert "/" not in filename
+        assert ".." not in filename
+        assert filename == "passwd.pdf"
+
+
+# ============== Pagination Tests ==============
+
+class TestPagination:
+    """Tests for pagination helpers"""
+
+    def test_get_pagination_params_defaults(self):
+        """Test default pagination parameters"""
+        from api.main import get_pagination_params
+
+        offset, limit = get_pagination_params()
+        assert offset == 0
+        assert limit == 20
+
+    def test_get_pagination_params_page_2(self):
+        """Test page 2 offset calculation"""
+        from api.main import get_pagination_params
+
+        offset, limit = get_pagination_params(page=2, page_size=20)
+        assert offset == 20
+        assert limit == 20
+
+    def test_get_pagination_params_custom_page_size(self):
+        """Test custom page size"""
+        from api.main import get_pagination_params
+
+        offset, limit = get_pagination_params(page=3, page_size=10)
+        assert offset == 20
+        assert limit == 10
+
+    def test_get_pagination_params_max_page_size(self):
+        """Test that page size is clamped to max 100"""
+        from api.main import get_pagination_params
+
+        offset, limit = get_pagination_params(page=1, page_size=500)
+        assert limit == 100
+
+    def test_get_pagination_params_min_page_size(self):
+        """Test that page size is clamped to min 1"""
+        from api.main import get_pagination_params
+
+        offset, limit = get_pagination_params(page=1, page_size=0)
+        assert limit == 1
+
+    def test_get_pagination_params_negative_page(self):
+        """Test that page is clamped to min 1"""
+        from api.main import get_pagination_params
+
+        offset, limit = get_pagination_params(page=-5, page_size=20)
+        assert offset == 0  # Page 1 means offset 0
+
+    def test_paginate_function_basic(self):
+        """Test basic pagination response"""
+        from api.main import paginate
+
+        items = ["a", "b", "c"]
+        result = paginate(items, page=1, page_size=10, total=3)
+
+        assert result.items == ["a", "b", "c"]
+        assert result.total == 3
+        assert result.page == 1
+        assert result.page_size == 10
+        assert result.total_pages == 1
+        assert result.has_next is False
+        assert result.has_prev is False
+
+    def test_paginate_function_with_next(self):
+        """Test pagination with next page available"""
+        from api.main import paginate
+
+        items = ["a", "b"]
+        result = paginate(items, page=1, page_size=2, total=5)
+
+        assert result.total == 5
+        assert result.page == 1
+        assert result.total_pages == 3
+        assert result.has_next is True
+        assert result.has_prev is False
+
+    def test_paginate_function_middle_page(self):
+        """Test pagination on middle page"""
+        from api.main import paginate
+
+        items = ["c", "d"]
+        result = paginate(items, page=2, page_size=2, total=6)
+
+        assert result.page == 2
+        assert result.total_pages == 3
+        assert result.has_next is True
+        assert result.has_prev is True
+
+    def test_paginate_function_last_page(self):
+        """Test pagination on last page"""
+        from api.main import paginate
+
+        items = ["e", "f"]
+        result = paginate(items, page=3, page_size=2, total=6)
+
+        assert result.page == 3
+        assert result.total_pages == 3
+        assert result.has_next is False
+        assert result.has_prev is True
+
+    def test_paginate_function_empty(self):
+        """Test pagination with empty results"""
+        from api.main import paginate
+
+        items = []
+        result = paginate(items, page=1, page_size=10, total=0)
+
+        assert result.items == []
+        assert result.total == 0
+        assert result.total_pages == 1
+        assert result.has_next is False
+        assert result.has_prev is False
+
+    def test_pagination_params_model(self):
+        """Test PaginationParams model"""
+        from api.main import PaginationParams
+
+        params = PaginationParams(page=3, page_size=25)
+        assert params.offset == 50
+        assert params.limit == 25
+
+
+# ============== API Versioning Tests ==============
+
+class TestAPIVersioning:
+    """Tests for API versioning"""
+
+    def test_api_version_constants(self):
+        """Test API version constants are defined"""
+        from api.main import API_VERSION, API_VERSION_MAJOR, API_VERSION_MINOR, API_VERSION_PATCH
+
+        assert API_VERSION == "4.1.0"
+        assert API_VERSION_MAJOR == 4
+        assert API_VERSION_MINOR == 1
+        assert API_VERSION_PATCH == 0
+
+    def test_get_api_version_function(self):
+        """Test get_api_version helper function"""
+        from api.main import get_api_version
+
+        version_info = get_api_version()
+
+        assert version_info["version"] == "4.1.0"
+        assert version_info["major"] == 4
+        assert version_info["minor"] == 1
+        assert version_info["patch"] == 0
+
+
 # ============== Async Test Runner ==============
 
 if __name__ == "__main__":

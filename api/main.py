@@ -163,6 +163,140 @@ def sanitize_filename(filename: str) -> str:
     return filename
 
 
+# ============== File Upload Security ==============
+
+# Maximum file size (50 MB)
+MAX_FILE_SIZE = 50 * 1024 * 1024
+
+# Allowed file extensions and their MIME types
+ALLOWED_EXTENSIONS = {
+    ".pdf": ["application/pdf"],
+    ".docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    ".doc": ["application/msword"],
+    ".xlsx": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+    ".xls": ["application/vnd.ms-excel"],
+}
+
+# Magic bytes signatures for file type validation
+FILE_SIGNATURES = {
+    ".pdf": [b"%PDF"],
+    ".docx": [b"PK\x03\x04"],  # ZIP-based format
+    ".doc": [b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"],  # OLE Compound Document
+    ".xlsx": [b"PK\x03\x04"],  # ZIP-based format
+    ".xls": [b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"],  # OLE Compound Document
+}
+
+
+class FileValidationError(Exception):
+    """Exception raised when file validation fails"""
+    pass
+
+
+async def validate_uploaded_file(file: UploadFile) -> tuple[bytes, str]:
+    """
+    Validate an uploaded file for security.
+
+    Returns:
+        Tuple of (file_content, sanitized_filename)
+
+    Raises:
+        FileValidationError: If validation fails
+    """
+    # Sanitize filename
+    original_filename = file.filename or "unnamed_file"
+    safe_filename = sanitize_filename(original_filename)
+
+    # Get extension
+    ext = Path(safe_filename).suffix.lower()
+
+    # Check allowed extension
+    if ext not in ALLOWED_EXTENSIONS:
+        raise FileValidationError(
+            f"File type '{ext}' is not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS.keys())}"
+        )
+
+    # Read file content
+    content = await file.read()
+
+    # Check file size
+    if len(content) > MAX_FILE_SIZE:
+        size_mb = len(content) / (1024 * 1024)
+        max_mb = MAX_FILE_SIZE / (1024 * 1024)
+        raise FileValidationError(
+            f"File size ({size_mb:.1f} MB) exceeds maximum allowed size ({max_mb:.0f} MB)"
+        )
+
+    # Check for empty files
+    if len(content) == 0:
+        raise FileValidationError("Empty files are not allowed")
+
+    # Validate magic bytes
+    valid_signature = False
+    signatures = FILE_SIGNATURES.get(ext, [])
+    for sig in signatures:
+        if content.startswith(sig):
+            valid_signature = True
+            break
+
+    if signatures and not valid_signature:
+        raise FileValidationError(
+            f"File content does not match expected format for '{ext}' files"
+        )
+
+    # Check MIME type if provided by client (optional check)
+    if file.content_type:
+        allowed_mimes = ALLOWED_EXTENSIONS.get(ext, [])
+        # Be lenient with MIME types as browsers can be inconsistent
+        # Just log a warning if mismatch
+        if allowed_mimes and file.content_type not in allowed_mimes:
+            logger.warning(
+                f"MIME type mismatch: got {file.content_type}, expected one of {allowed_mimes}",
+                extra={"filename": safe_filename}
+            )
+
+    # Additional security: scan for embedded scripts in documents
+    # Check for common malicious patterns in file content
+    malicious_patterns = [
+        b"<script",
+        b"javascript:",
+        b"vbscript:",
+        b"powershell",
+        b"/bin/bash",
+        b"/bin/sh",
+        b"cmd.exe",
+    ]
+
+    # Only check text-readable portions (first and last 10KB) to avoid false positives
+    # in binary content
+    check_content = content[:10240] + content[-10240:] if len(content) > 20480 else content
+    check_lower = check_content.lower()
+
+    for pattern in malicious_patterns:
+        if pattern.lower() in check_lower:
+            logger.warning(
+                f"Suspicious pattern detected in file: {safe_filename}",
+                extra={"pattern": pattern.decode('utf-8', errors='ignore')}
+            )
+            # Don't block, just log - could be legitimate content
+            break
+
+    # Reset file position for any subsequent reads
+    await file.seek(0)
+
+    return content, safe_filename
+
+
+def validate_file_extension(filename: str) -> bool:
+    """Quick check if file extension is allowed"""
+    ext = Path(filename).suffix.lower()
+    return ext in ALLOWED_EXTENSIONS
+
+
+def get_max_file_size_mb() -> float:
+    """Get maximum file size in MB"""
+    return MAX_FILE_SIZE / (1024 * 1024)
+
+
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -379,6 +513,89 @@ class AmendmentUpload(BaseModel):
     """Amendment upload request"""
     amendment_number: int
     amendment_date: Optional[str] = None
+
+
+# ============== Pagination ==============
+
+class PaginationParams(BaseModel):
+    """Standard pagination parameters"""
+    page: int = Field(default=1, ge=1, description="Page number (1-indexed)")
+    page_size: int = Field(default=20, ge=1, le=100, description="Items per page (max 100)")
+
+    @property
+    def offset(self) -> int:
+        """Calculate offset for database queries"""
+        return (self.page - 1) * self.page_size
+
+    @property
+    def limit(self) -> int:
+        """Alias for page_size"""
+        return self.page_size
+
+
+class PaginatedResponse(BaseModel):
+    """Standard paginated response wrapper"""
+    items: List[Any]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+def paginate(
+    items: List[Any],
+    page: int = 1,
+    page_size: int = 20,
+    total: Optional[int] = None
+) -> PaginatedResponse:
+    """
+    Create a paginated response from a list of items.
+
+    Args:
+        items: List of items (already sliced for current page)
+        page: Current page number (1-indexed)
+        page_size: Items per page
+        total: Total number of items (if None, uses len(items))
+
+    Returns:
+        PaginatedResponse with metadata
+    """
+    if total is None:
+        total = len(items)
+
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1
+    )
+
+
+def get_pagination_params(
+    page: int = 1,
+    page_size: int = 20
+) -> tuple[int, int]:
+    """
+    Validate and return pagination parameters.
+
+    Args:
+        page: Page number (1-indexed)
+        page_size: Items per page
+
+    Returns:
+        Tuple of (offset, limit)
+    """
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))  # Clamp between 1 and 100
+    offset = (page - 1) * page_size
+    return offset, page_size
 
 
 # ============== Hybrid Store (In-Memory + Database) ==============
@@ -662,6 +879,36 @@ import contextvars
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
 
 
+# ============== API Versioning ==============
+
+API_VERSION = "4.1.0"
+API_VERSION_MAJOR = 4
+API_VERSION_MINOR = 1
+API_VERSION_PATCH = 0
+
+
+class APIVersionMiddleware(BaseHTTPMiddleware):
+    """Add API version headers to all responses"""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+
+        # Add API version headers
+        response.headers["X-API-Version"] = API_VERSION
+        response.headers["X-API-Deprecated"] = "false"
+
+        # Check for version in request header
+        requested_version = request.headers.get("X-API-Version")
+        if requested_version and requested_version != API_VERSION:
+            # Log version mismatch (client might need to update)
+            major = int(requested_version.split(".")[0]) if "." in requested_version else 0
+            if major < API_VERSION_MAJOR:
+                response.headers["X-API-Deprecated"] = "true"
+                response.headers["X-API-Upgrade-Message"] = f"Please upgrade to API v{API_VERSION}"
+
+        return response
+
+
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Add unique request ID to all requests for tracing and logging"""
 
@@ -692,6 +939,17 @@ def get_request_id() -> str:
     return request_id_var.get()
 
 
+def get_api_version() -> dict:
+    """Get current API version info"""
+    return {
+        "version": API_VERSION,
+        "major": API_VERSION_MAJOR,
+        "minor": API_VERSION_MINOR,
+        "patch": API_VERSION_PATCH
+    }
+
+
+app.add_middleware(APIVersionMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 
@@ -735,6 +993,48 @@ async def root():
 </body></html>""", status_code=200)
 
 
+# ============== API Version ==============
+
+@app.get("/api/version")
+async def get_version():
+    """
+    Get API version information.
+
+    Returns current API version, changelog summary, and deprecation warnings.
+    """
+    return {
+        "version": API_VERSION,
+        "major": API_VERSION_MAJOR,
+        "minor": API_VERSION_MINOR,
+        "patch": API_VERSION_PATCH,
+        "changelog": {
+            "4.1.0": [
+                "Added team workspaces with RBAC",
+                "Added two-factor authentication (2FA)",
+                "Added session management",
+                "Added rate limiting (Redis + in-memory)",
+                "Added email service integration",
+                "Added file upload security validation",
+                "Added standard pagination for list endpoints",
+                "Added security headers middleware",
+                "Added GDPR data export/delete",
+                "Added structured JSON logging",
+            ],
+            "4.0.0": [
+                "Trust Gate with source traceability",
+                "Iron Triangle logic engine",
+                "LangGraph drafting workflow",
+                "PostgreSQL + pgvector integration",
+            ]
+        },
+        "deprecations": [],
+        "links": {
+            "documentation": "/docs",
+            "health": "/api/health"
+        }
+    }
+
+
 # ============== Health Check ==============
 
 @app.get("/api/health")
@@ -746,7 +1046,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "4.1.0",
+        "version": API_VERSION,
         "storage": {
             "type": storage_type,
             "upload_dir": str(UPLOAD_DIR),
@@ -911,24 +1211,43 @@ async def create_rfp(rfp: RFPCreate):
 
 
 @app.get("/api/rfp")
-async def list_rfps():
-    """List all RFPs"""
-    rfps = store.list_all()
-    return {
-        "count": len(rfps),
-        "rfps": [
-            {
-                "id": r["id"],
-                "name": r["name"],
-                "solicitation_number": r["solicitation_number"],
-                "status": r["status"],
-                "files_count": len(r["files"]),
-                "requirements_count": len(r["requirements"]),
-                "created_at": r["created_at"]
-            }
-            for r in rfps
-        ]
-    }
+async def list_rfps(
+    page: int = 1,
+    page_size: int = 20
+):
+    """
+    List all RFPs with pagination.
+
+    Query Parameters:
+    - page: Page number (1-indexed, default 1)
+    - page_size: Items per page (1-100, default 20)
+    """
+    offset, limit = get_pagination_params(page, page_size)
+
+    # Get all RFPs and apply pagination
+    all_rfps = store.list_all()
+    total = len(all_rfps)
+
+    # Sort by created_at descending (newest first)
+    all_rfps.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # Apply pagination
+    paginated_rfps = all_rfps[offset:offset + limit]
+
+    items = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "solicitation_number": r["solicitation_number"],
+            "status": r["status"],
+            "files_count": len(r["files"]),
+            "requirements_count": len(r["requirements"]),
+            "created_at": r["created_at"]
+        }
+        for r in paginated_rfps
+    ]
+
+    return paginate(items, page, limit, total).model_dump()
 
 
 @app.get("/api/rfp/{rfp_id}")
@@ -975,51 +1294,102 @@ async def upload_files(
     rfp_id: str,
     files: List[UploadFile] = File(...)
 ):
-    """Upload RFP documents"""
+    """
+    Upload RFP documents with security validation.
+
+    Validates:
+    - File extension (PDF, DOCX, DOC, XLSX, XLS)
+    - File size (max 50 MB)
+    - File content (magic bytes verification)
+    - Filename sanitization
+    """
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     # Create upload directory for this RFP
     rfp_dir = UPLOAD_DIR / rfp_id
     rfp_dir.mkdir(exist_ok=True)
-    
+
     uploaded = []
+    skipped = []
     file_paths = list(rfp["file_paths"])
     file_names = list(rfp["files"])
-    
+
     for file in files:
-        # Validate file type
-        ext = Path(file.filename).suffix.lower()
-        if ext not in [".pdf", ".docx", ".xlsx", ".doc", ".xls"]:
-            continue
-        
-        # Save file
-        file_path = rfp_dir / file.filename
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        
-        file_paths.append(str(file_path))
-        file_names.append(file.filename)
-        
-        uploaded.append({
-            "name": file.filename,
-            "size": len(content),
-            "type": ext[1:].upper()
-        })
-    
+        try:
+            # Validate file security
+            content, safe_filename = await validate_uploaded_file(file)
+
+            # Get extension for response
+            ext = Path(safe_filename).suffix.lower()
+
+            # Save file with sanitized name
+            file_path = rfp_dir / safe_filename
+            with open(file_path, "wb") as f:
+                f.write(content)
+
+            file_paths.append(str(file_path))
+            file_names.append(safe_filename)
+
+            uploaded.append({
+                "name": safe_filename,
+                "original_name": file.filename,
+                "size": len(content),
+                "type": ext[1:].upper()
+            })
+
+            logger.info(
+                f"File uploaded successfully: {safe_filename}",
+                extra={"rfp_id": rfp_id, "file_size": len(content)}
+            )
+
+        except FileValidationError as e:
+            skipped.append({
+                "name": file.filename,
+                "reason": str(e)
+            })
+            logger.warning(
+                f"File upload rejected: {file.filename} - {str(e)}",
+                extra={"rfp_id": rfp_id}
+            )
+
     # Update store
     store.update(rfp_id, {
         "files": file_names,
         "file_paths": file_paths,
         "status": "files_uploaded"
     })
-    
+
     return {
         "status": "uploaded",
         "files": uploaded,
-        "total_files": len(file_names)
+        "skipped": skipped,
+        "total_files": len(file_names),
+        "max_file_size_mb": get_max_file_size_mb()
+    }
+
+
+@app.get("/api/upload-constraints")
+async def get_upload_constraints():
+    """
+    Get file upload constraints for client-side validation.
+
+    Returns allowed file types, maximum file size, and other constraints.
+    """
+    return {
+        "max_file_size_bytes": MAX_FILE_SIZE,
+        "max_file_size_mb": get_max_file_size_mb(),
+        "allowed_extensions": list(ALLOWED_EXTENSIONS.keys()),
+        "allowed_mime_types": {
+            ext: mimes for ext, mimes in ALLOWED_EXTENSIONS.items()
+        },
+        "constraints": {
+            "max_filename_length": 255,
+            "empty_files_allowed": False,
+            "content_validation": True,  # Magic bytes verification
+            "filename_sanitization": True
+        }
     }
 
 
@@ -1069,10 +1439,16 @@ async def upload_files_guided(
     doc_types: str = Form(default="")  # Comma-separated doc_type values matching file order
 ):
     """
-    Upload RFP documents with explicit document type tags.
+    Upload RFP documents with explicit document type tags and security validation.
 
     This endpoint supports the guided upload UI where users specify
     what type of document each file is (SOW, Section L, Section M, etc.)
+
+    Validates:
+    - File extension (PDF, DOCX, DOC, XLSX, XLS)
+    - File size (max 50 MB)
+    - File content (magic bytes verification)
+    - Filename sanitization
 
     Args:
         rfp_id: The RFP identifier
@@ -1096,6 +1472,7 @@ async def upload_files_guided(
     rfp_dir.mkdir(exist_ok=True)
 
     uploaded = []
+    skipped = []
     file_paths = list(rfp.get("file_paths", []))
     file_names = list(rfp.get("files", []))
 
@@ -1103,43 +1480,61 @@ async def upload_files_guided(
     doc_metadata = rfp.get("document_metadata", {})
 
     for i, file in enumerate(files):
-        # Validate file type
-        ext = Path(file.filename).suffix.lower()
-        if ext not in [".pdf", ".docx", ".xlsx", ".doc", ".xls"]:
-            continue
+        try:
+            # Validate file security
+            content, safe_filename = await validate_uploaded_file(file)
 
-        # Get document type (from form or auto-detect)
-        if i < len(doc_type_list) and doc_type_list[i] and doc_type_list[i] != "auto_detect":
-            doc_type = doc_type_list[i]
-        elif GUIDED_UPLOAD_AVAILABLE:
-            doc_type = classify_document_by_filename(file.filename).value
-        else:
-            doc_type = "auto_detect"
+            # Get extension for response
+            ext = Path(safe_filename).suffix.lower()
 
-        # Save file
-        file_path = rfp_dir / file.filename
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            # Get document type (from form or auto-detect)
+            if i < len(doc_type_list) and doc_type_list[i] and doc_type_list[i] != "auto_detect":
+                doc_type = doc_type_list[i]
+            elif GUIDED_UPLOAD_AVAILABLE:
+                doc_type = classify_document_by_filename(safe_filename).value
+            else:
+                doc_type = "auto_detect"
 
-        file_paths.append(str(file_path))
-        file_names.append(file.filename)
+            # Save file with sanitized name
+            file_path = rfp_dir / safe_filename
+            with open(file_path, "wb") as f:
+                f.write(content)
 
-        # Store document metadata
-        doc_metadata[file.filename] = {
-            "doc_type": doc_type,
-            "file_path": str(file_path),
-            "size": len(content),
-            "uploaded_at": datetime.now().isoformat()
-        }
+            file_paths.append(str(file_path))
+            file_names.append(safe_filename)
 
-        uploaded.append({
-            "name": file.filename,
-            "size": len(content),
-            "type": ext[1:].upper(),
-            "doc_type": doc_type,
-            "doc_type_label": _get_doc_type_label(doc_type)
-        })
+            # Store document metadata
+            doc_metadata[safe_filename] = {
+                "doc_type": doc_type,
+                "file_path": str(file_path),
+                "size": len(content),
+                "uploaded_at": datetime.now().isoformat(),
+                "original_name": file.filename
+            }
+
+            uploaded.append({
+                "name": safe_filename,
+                "original_name": file.filename,
+                "size": len(content),
+                "type": ext[1:].upper(),
+                "doc_type": doc_type,
+                "doc_type_label": _get_doc_type_label(doc_type)
+            })
+
+            logger.info(
+                f"File uploaded successfully: {safe_filename}",
+                extra={"rfp_id": rfp_id, "doc_type": doc_type, "file_size": len(content)}
+            )
+
+        except FileValidationError as e:
+            skipped.append({
+                "name": file.filename,
+                "reason": str(e)
+            })
+            logger.warning(
+                f"File upload rejected: {file.filename} - {str(e)}",
+                extra={"rfp_id": rfp_id}
+            )
 
     # Update store with metadata
     store.update(rfp_id, {
@@ -1152,8 +1547,10 @@ async def upload_files_guided(
     return {
         "status": "uploaded",
         "files": uploaded,
+        "skipped": skipped,
         "total_files": len(file_names),
-        "document_summary": _summarize_documents(doc_metadata)
+        "document_summary": _summarize_documents(doc_metadata),
+        "max_file_size_mb": get_max_file_size_mb()
     }
 
 
@@ -2180,43 +2577,49 @@ async def get_requirements(
     priority: Optional[str] = None,
     section: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = 500,
-    offset: int = 0
+    page: int = 1,
+    page_size: int = 50
 ):
-    """Get requirements with optional filters"""
+    """
+    Get requirements with optional filters and pagination.
+
+    Query Parameters:
+    - type: Filter by requirement type
+    - priority: Filter by priority level
+    - section: Filter by document section
+    - search: Search in requirement text and ID
+    - page: Page number (1-indexed, default 1)
+    - page_size: Items per page (1-100, default 50)
+    """
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     requirements = rfp["requirements"]
-    
+
     # Apply filters
     if type and type != "all":
         requirements = [r for r in requirements if r["type"] == type]
-    
+
     if priority and priority != "all":
         requirements = [r for r in requirements if r["priority"] == priority]
-    
+
     if section and section != "all":
         requirements = [r for r in requirements if r["section"] == section]
-    
+
     if search:
         search_lower = search.lower()
         requirements = [
-            r for r in requirements 
+            r for r in requirements
             if search_lower in r["text"].lower() or search_lower in r["id"].lower()
         ]
-    
-    # Paginate
+
+    # Apply pagination
+    offset, limit = get_pagination_params(page, page_size)
     total = len(requirements)
-    requirements = requirements[offset:offset + limit]
-    
-    return {
-        "total": total,
-        "offset": offset,
-        "limit": limit,
-        "requirements": requirements
-    }
+    paginated = requirements[offset:offset + limit]
+
+    return paginate(paginated, page, limit, total).model_dump()
 
 
 @app.get("/api/rfp/{rfp_id}/requirements/{req_id}")
@@ -5554,16 +5957,32 @@ async def remove_team_member(team_id: str, user_id: str):
 @app.get("/api/teams/{team_id}/activity")
 async def get_team_activity(
     team_id: str,
-    limit: int = 50,
-    offset: int = 0,
+    page: int = 1,
+    page_size: int = 50,
 ):
-    """Get team activity log"""
+    """
+    Get team activity log with pagination.
+
+    Query Parameters:
+    - page: Page number (1-indexed, default 1)
+    - page_size: Items per page (1-100, default 50)
+    """
+    offset, limit = get_pagination_params(page, page_size)
+
     async with get_db_session() as session:
         if session is None:
-            return {"activities": []}
+            return paginate([], page, limit, 0).model_dump()
 
-        from sqlalchemy import select
+        from sqlalchemy import select, func
 
+        # Get total count
+        count_result = await session.execute(
+            select(func.count()).select_from(ActivityLogModel)
+            .where(ActivityLogModel.team_id == team_id)
+        )
+        total = count_result.scalar() or 0
+
+        # Get paginated results
         result = await session.execute(
             select(ActivityLogModel)
             .where(ActivityLogModel.team_id == team_id)
@@ -5572,7 +5991,8 @@ async def get_team_activity(
             .limit(limit)
         )
         activities = result.scalars().all()
-        return {"activities": [a.to_dict() for a in activities]}
+
+        return paginate([a.to_dict() for a in activities], page, limit, total).model_dump()
 
 
 async def log_activity(

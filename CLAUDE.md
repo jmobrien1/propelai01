@@ -24,7 +24,7 @@
 3. **Immutability:** Do not modify `AS_BUILT_TDD.md` unless architecture changes. It is the source of truth.
 
 ## 4. Key Files
-- `api/main.py`: Primary API entry point (5500+ lines).
+- `api/main.py`: Primary API entry point (6700+ lines).
 - `api/vector_store.py`: pgvector semantic search for Company Library.
 - `api/database.py`: PostgreSQL ORM with SQLAlchemy 2.0.
 - `api/email_service.py`: Email abstraction with SMTP/SendGrid support.
@@ -350,6 +350,83 @@ A winning proposal ensures:
 - Preserves X-Request-ID header from load balancers
 - Returns X-Request-ID in response headers
 - Logs requests with their ID for correlation
+
+### File Upload Security
+**Goal:** Prevent malicious file uploads and ensure data integrity.
+
+**Implementation** (`api/main.py`):
+- File size validation (max 50 MB)
+- File extension whitelist (PDF, DOCX, DOC, XLSX, XLS)
+- Magic bytes verification (content matches extension)
+- Filename sanitization (prevent path traversal)
+- MIME type validation
+- Suspicious pattern detection
+
+**Validation Functions:**
+- `validate_uploaded_file()`: Async file validation with all security checks
+- `sanitize_filename()`: Remove path components and dangerous characters
+- `validate_file_extension()`: Quick extension check
+
+**API Endpoint:**
+- `GET /api/upload-constraints` - Get allowed file types and size limits
+
+**Constants:**
+- `MAX_FILE_SIZE`: 50 MB
+- `ALLOWED_EXTENSIONS`: [.pdf, .docx, .doc, .xlsx, .xls]
+- `FILE_SIGNATURES`: Magic bytes for each file type
+
+### Standard Pagination
+**Goal:** Provide consistent pagination across all list endpoints.
+
+**Implementation** (`api/main.py`):
+- `PaginationParams` model with page/page_size
+- `PaginatedResponse` model with items, total, has_next, has_prev
+- `paginate()` helper function
+- `get_pagination_params()` with bounds checking
+
+**Response Format:**
+```json
+{
+  "items": [...],
+  "total": 100,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 5,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+**Paginated Endpoints:**
+- `GET /api/rfp` - List RFPs
+- `GET /api/rfp/{rfp_id}/requirements` - List requirements
+- `GET /api/teams/{team_id}/activity` - List activity log
+
+**Query Parameters:**
+- `page`: Page number (1-indexed, default 1)
+- `page_size`: Items per page (1-100, default 20)
+
+### API Versioning
+**Goal:** Enable API version tracking and deprecation management.
+
+**Implementation** (`api/main.py`):
+- APIVersionMiddleware adds version headers to all responses
+- Version constants for semantic versioning
+- Deprecation warnings for old API versions
+
+**Response Headers:**
+- `X-API-Version`: Current API version (e.g., "4.1.0")
+- `X-API-Deprecated`: "true" if client version is outdated
+- `X-API-Upgrade-Message`: Upgrade instructions if deprecated
+
+**API Endpoint:**
+- `GET /api/version` - Get version info and changelog
+
+**Version Constants:**
+- `API_VERSION`: "4.1.0"
+- `API_VERSION_MAJOR`: 4
+- `API_VERSION_MINOR`: 1
+- `API_VERSION_PATCH`: 0
 
 ## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
