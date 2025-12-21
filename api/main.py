@@ -3288,9 +3288,22 @@ async def get_requirements(
             if search_lower in r["text"].lower() or search_lower in r["id"].lower()
         ]
 
+    total = len(requirements)
+
+    # If page_size is 0, return all requirements (no pagination)
+    if page_size == 0:
+        return {
+            "items": requirements,
+            "total": total,
+            "page": 1,
+            "page_size": total,
+            "total_pages": 1,
+            "has_next": False,
+            "has_prev": False
+        }
+
     # Apply pagination
     offset, limit = get_pagination_params(page, page_size)
-    total = len(requirements)
     paginated = requirements[offset:offset + limit]
 
     return paginate(paginated, page, limit, total).model_dump()

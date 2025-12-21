@@ -672,10 +672,10 @@
                 try {
                     const [rfpData, reqData] = await Promise.all([
                         api.getRFP(currentRfpId),
-                        api.getRequirements(currentRfpId)
+                        api.getRequirements(currentRfpId, { page_size: 0 })
                     ]);
-                    
-                    setRequirements(reqData.requirements || []);
+
+                    setRequirements(reqData.items || reqData.requirements || []);
                     setStats(rfpData.stats);
                 } catch (e) {
                     setError('Failed to load requirements: ' + e.message);
