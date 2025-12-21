@@ -248,31 +248,48 @@ class CompanyLibraryParser:
         )
     
     def _extract_text(self, file_path: str) -> str:
-        """Extract text from document using pandoc"""
+        """Extract text from document using pandoc or python-docx fallback"""
         ext = os.path.splitext(file_path)[1].lower()
-        
+
         if ext == ".txt":
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         elif ext == ".md":
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
-        elif ext in [".docx", ".doc", ".pdf", ".rtf"]:
+        elif ext == ".docx":
+            # Try python-docx first (more reliable), then pandoc
             try:
-                result = subprocess.run(
-                    ["pandoc", file_path, "-t", "markdown", "--wrap=none"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60
-                )
-                if result.returncode == 0:
-                    return result.stdout
-                else:
-                    raise ValueError(f"Pandoc error: {result.stderr}")
-            except FileNotFoundError:
-                raise ValueError("Pandoc not installed - required for document parsing")
+                from docx import Document
+                doc = Document(file_path)
+                paragraphs = []
+                for para in doc.paragraphs:
+                    if para.text.strip():
+                        paragraphs.append(para.text)
+                return "\n\n".join(paragraphs)
+            except ImportError:
+                # Fall back to pandoc
+                return self._extract_with_pandoc(file_path)
+        elif ext in [".doc", ".pdf", ".rtf"]:
+            return self._extract_with_pandoc(file_path)
         else:
             raise ValueError(f"Unsupported file type: {ext}")
+
+    def _extract_with_pandoc(self, file_path: str) -> str:
+        """Extract text using pandoc"""
+        try:
+            result = subprocess.run(
+                ["pandoc", file_path, "-t", "markdown", "--wrap=none"],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if result.returncode == 0:
+                return result.stdout
+            else:
+                raise ValueError(f"Pandoc error: {result.stderr}")
+        except FileNotFoundError:
+            raise ValueError("Pandoc not installed - required for .doc/.pdf/.rtf parsing")
     
     def _detect_document_type(self, text: str) -> DocumentType:
         """Detect document type from content"""
