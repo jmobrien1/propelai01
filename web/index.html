@@ -3049,8 +3049,18 @@
             const [activeTab, setActiveTab] = useState('overview');
             const [searchQuery, setSearchQuery] = useState('');
             const [searchResults, setSearchResults] = useState([]);
+            const [showUploadModal, setShowUploadModal] = useState(false);
+            const [selectedDocType, setSelectedDocType] = useState(null);
+            const [pendingFile, setPendingFile] = useState(null);
             const fileInputRef = useRef(null);
-            
+
+            const documentTypes = [
+                { id: 'capabilities', name: 'Capabilities Statement', icon: 'Target', description: 'Company capabilities, services, and core competencies' },
+                { id: 'past_performance', name: 'Past Performance', icon: 'Award', description: 'Project descriptions, outcomes, and client references' },
+                { id: 'resume', name: 'Resume / CV', icon: 'User', description: 'Key personnel qualifications and experience' },
+                { id: 'corporate_info', name: 'Corporate Info', icon: 'Building', description: 'NAICS codes, certifications, contract vehicles' },
+            ];
+
             useEffect(() => {
                 loadLibrary();
             }, []);
@@ -3067,14 +3077,22 @@
                 }
             };
             
-            const handleFileUpload = async (e) => {
+            const handleFileSelect = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                
+                setPendingFile(file);
+                setShowUploadModal(true);
+                fileInputRef.current.value = '';
+            };
+
+            const handleUploadWithType = async () => {
+                if (!pendingFile || !selectedDocType) return;
+
                 setUploading(true);
                 const formData = new FormData();
-                formData.append('file', file);
-                
+                formData.append('file', pendingFile);
+                formData.append('document_type', selectedDocType);
+
                 try {
                     const response = await fetch('/api/library/upload', {
                         method: 'POST',
@@ -3083,12 +3101,14 @@
                     const result = await response.json();
                     if (result.success) {
                         loadLibrary();
+                        setShowUploadModal(false);
+                        setPendingFile(null);
+                        setSelectedDocType(null);
                     }
                 } catch (error) {
                     console.error('Error uploading:', error);
                 } finally {
                     setUploading(false);
-                    fileInputRef.current.value = '';
                 }
             };
             
@@ -3135,11 +3155,11 @@
                             <input
                                 type="file"
                                 ref={fileInputRef}
-                                onChange={handleFileUpload}
+                                onChange={handleFileSelect}
                                 accept=".docx,.doc,.pdf,.txt,.md"
                                 style={{ display: 'none' }}
                             />
-                            <button 
+                            <button
                                 className="btn btn-primary"
                                 onClick={() => fileInputRef.current.click()}
                                 disabled={uploading}
@@ -3308,6 +3328,66 @@
 
                     {activeTab === 'vector-search' && (
                         <VectorSearchPanel />
+                    )}
+
+                    {/* Document Type Selection Modal */}
+                    {showUploadModal && (
+                        <div className="modal-overlay" onClick={() => { setShowUploadModal(false); setPendingFile(null); setSelectedDocType(null); }}>
+                            <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+                                <div className="modal-header">
+                                    <h3>Select Document Type</h3>
+                                    <button className="modal-close" onClick={() => { setShowUploadModal(false); setPendingFile(null); setSelectedDocType(null); }}>×</button>
+                                </div>
+                                <div className="modal-body">
+                                    <p style={{ marginBottom: 16, color: 'var(--text-muted)' }}>
+                                        Uploading: <strong>{pendingFile?.name}</strong>
+                                    </p>
+                                    <p style={{ marginBottom: 16, fontSize: 13 }}>
+                                        Select the type of document to ensure proper parsing and categorization:
+                                    </p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                                        {documentTypes.map(docType => (
+                                            <div
+                                                key={docType.id}
+                                                onClick={() => setSelectedDocType(docType.id)}
+                                                style={{
+                                                    padding: 16,
+                                                    borderRadius: 8,
+                                                    border: selectedDocType === docType.id
+                                                        ? '2px solid var(--accent-blue)'
+                                                        : '1px solid var(--border-color)',
+                                                    background: selectedDocType === docType.id
+                                                        ? 'rgba(79, 140, 255, 0.1)'
+                                                        : 'var(--bg-tertiary)',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                    <Icon name={docType.icon} style={{ width: 20, height: 20, color: 'var(--accent-blue)' }} />
+                                                    <span style={{ fontWeight: 500 }}>{docType.name}</span>
+                                                </div>
+                                                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+                                                    {docType.description}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="modal-footer">
+                                    <button className="btn" onClick={() => { setShowUploadModal(false); setPendingFile(null); setSelectedDocType(null); }}>
+                                        Cancel
+                                    </button>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={handleUploadWithType}
+                                        disabled={!selectedDocType || uploading}
+                                    >
+                                        {uploading ? 'Uploading...' : 'Upload Document'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             );
