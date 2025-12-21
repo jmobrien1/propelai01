@@ -240,6 +240,10 @@ class UserModel(Base):
     totp_enabled = Column(Boolean, default=False)
     totp_backup_codes = Column(JSONB, default=list)  # Backup codes for recovery
 
+    # Account Lockout
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)  # NULL = not locked
+
     # Relationships
     team_memberships = relationship("TeamMembershipModel", back_populates="user", cascade="all, delete-orphan")
 

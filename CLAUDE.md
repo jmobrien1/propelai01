@@ -268,6 +268,42 @@ A winning proposal ensures:
 - Last active timestamp
 - Expiration tracking
 
+**UI** (`web/index.html`):
+- Sessions tab in ProfileModal
+- View all active sessions with device info
+- Revoke individual sessions
+- Sign out of all other devices
+
+### Account Lockout
+**Goal:** Prevent brute force attacks by locking accounts after failed attempts.
+
+**Implementation** (`api/main.py`, `api/database.py`):
+- Track failed login attempts per user
+- Lock account after 5 failed attempts
+- Auto-unlock after 15 minutes
+
+**UserModel Fields:**
+- `failed_login_attempts`: Counter for failed attempts
+- `locked_until`: DateTime when lockout expires
+
+### Security Headers
+**Goal:** Add security headers to protect against common web vulnerabilities.
+
+**Implementation** (`api/main.py`):
+- SecurityHeadersMiddleware adds headers to all responses
+- Configurable for development vs production
+
+**Headers Added:**
+- `X-Content-Type-Options: nosniff` - Prevent MIME sniffing
+- `X-Frame-Options: DENY` - Prevent clickjacking
+- `X-XSS-Protection: 1; mode=block` - XSS protection
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy` - Disable unused browser features
+
+**Optional (Environment Variables):**
+- `ENABLE_HSTS=true` - Enable Strict-Transport-Security
+- `ENABLE_CSP=true` - Enable Content-Security-Policy
+
 ## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation

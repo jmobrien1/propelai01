@@ -469,6 +469,64 @@ app.add_middleware(
 )
 
 
+# Security Headers Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses"""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+
+        # Prevent MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Prevent clickjacking
+        response.headers["X-Frame-Options"] = "DENY"
+
+        # Enable XSS protection
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # Strict Transport Security (HTTPS only)
+        # Only enable in production with HTTPS
+        if os.environ.get("ENABLE_HSTS", "").lower() == "true":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        # Referrer Policy
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Content Security Policy (relaxed for development)
+        # In production, tighten this significantly
+        if os.environ.get("ENABLE_CSP", "").lower() == "true":
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self'; "
+                "connect-src 'self' https:; "
+                "frame-ancestors 'none';"
+            )
+
+        # Permissions Policy
+        response.headers["Permissions-Policy"] = (
+            "accelerometer=(), "
+            "camera=(), "
+            "geolocation=(), "
+            "gyroscope=(), "
+            "magnetometer=(), "
+            "microphone=(), "
+            "payment=(), "
+            "usb=()"
+        )
+
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # ============== Startup Event ==============
 
 @app.on_event("startup")
@@ -3923,6 +3981,11 @@ async def register_user(
         }
 
 
+# Account lockout configuration
+ACCOUNT_LOCKOUT_THRESHOLD = 5  # Lock after 5 failed attempts
+ACCOUNT_LOCKOUT_DURATION_MINUTES = 15  # Lock for 15 minutes
+
+
 @app.post("/api/auth/login")
 async def login_user(
     request: Request,
@@ -3944,8 +4007,40 @@ async def login_user(
         )
         user = result.scalar_one_or_none()
 
+        # Check if account is locked
+        if user and user.locked_until:
+            if datetime.utcnow() < user.locked_until:
+                remaining_minutes = int((user.locked_until - datetime.utcnow()).total_seconds() / 60) + 1
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Account is locked. Try again in {remaining_minutes} minute(s)."
+                )
+            else:
+                # Lockout expired, reset
+                user.locked_until = None
+                user.failed_login_attempts = 0
+
         if not user or not verify_password(password, user.password_hash):
+            # Track failed attempt if user exists
+            if user:
+                user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+
+                if user.failed_login_attempts >= ACCOUNT_LOCKOUT_THRESHOLD:
+                    user.locked_until = datetime.utcnow() + timedelta(minutes=ACCOUNT_LOCKOUT_DURATION_MINUTES)
+                    await session.flush()
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Account locked due to too many failed attempts. Try again in {ACCOUNT_LOCKOUT_DURATION_MINUTES} minutes."
+                    )
+
+                await session.flush()
+
             raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        # Reset failed attempts on successful login
+        if user.failed_login_attempts:
+            user.failed_login_attempts = 0
+            user.locked_until = None
 
         # Check if 2FA is enabled
         if user.totp_enabled:
