@@ -72,13 +72,23 @@ class RFPModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Soft delete
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(String(50), nullable=True)
+    delete_reason = Column(String(500), nullable=True)
+
+    # Data retention
+    retention_days = Column(Integer, nullable=True)  # Days after deletion before permanent removal
+    permanent_delete_at = Column(DateTime, nullable=True)  # When to permanently delete
+
     # Relationships
     requirements = relationship("RequirementModel", back_populates="rfp", cascade="all, delete-orphan")
     amendments = relationship("AmendmentModel", back_populates="rfp", cascade="all, delete-orphan")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, include_deleted_info: bool = False) -> Dict[str, Any]:
         """Convert to dictionary for API responses"""
-        return {
+        result = {
             "id": self.id,
             "name": self.name,
             "solicitation_number": self.solicitation_number,
@@ -96,6 +106,17 @@ class RFPModel(Base):
             "requirements": [r.to_dict() for r in self.requirements] if self.requirements else [],
             "amendments": [a.to_dict() for a in self.amendments] if self.amendments else [],
         }
+
+        if include_deleted_info:
+            result.update({
+                "is_deleted": self.is_deleted or False,
+                "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
+                "deleted_by": self.deleted_by,
+                "delete_reason": self.delete_reason,
+                "permanent_delete_at": self.permanent_delete_at.isoformat() if self.permanent_delete_at else None,
+            })
+
+        return result
 
 
 class RequirementModel(Base):
@@ -328,7 +349,7 @@ class TeamMembershipModel(Base):
 
 
 class ActivityLogModel(Base):
-    """Activity audit trail"""
+    """Activity audit trail with enhanced logging"""
     __tablename__ = "activity_log"
 
     id = Column(String(50), primary_key=True)
@@ -338,16 +359,23 @@ class ActivityLogModel(Base):
     resource_type = Column(String(100), nullable=False)
     resource_id = Column(String(50), nullable=True)
     details = Column(JSONB, default=dict)
+
+    # Enhanced audit fields
+    ip_address = Column(String(50), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    request_id = Column(String(50), nullable=True)  # Correlation with request logs
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index('idx_activity_log_team_id', 'team_id'),
         Index('idx_activity_log_user_id', 'user_id'),
         Index('idx_activity_log_created_at', 'created_at'),
+        Index('idx_activity_log_action', 'action'),
     )
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
+    def to_dict(self, include_audit: bool = False) -> Dict[str, Any]:
+        result = {
             "id": self.id,
             "team_id": self.team_id,
             "user_id": self.user_id,
@@ -357,6 +385,15 @@ class ActivityLogModel(Base):
             "details": self.details or {},
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+        if include_audit:
+            result.update({
+                "ip_address": self.ip_address,
+                "user_agent": self.user_agent,
+                "request_id": self.request_id,
+            })
+
+        return result
 
 
 class TeamInvitationModel(Base):
@@ -473,6 +510,96 @@ class UserSessionModel(Base):
             "last_active": self.last_active.isoformat() if self.last_active else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+        }
+
+
+class WebhookModel(Base):
+    """Webhook subscriptions for event notifications"""
+    __tablename__ = "webhooks"
+
+    id = Column(String(50), primary_key=True)
+    team_id = Column(String(50), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name = Column(String(255), nullable=False)
+    url = Column(String(2000), nullable=False)
+    secret = Column(String(255), nullable=True)  # For signature verification
+    events = Column(JSONB, default=list)  # List of event types to subscribe to
+    is_active = Column(Boolean, default=True)
+    headers = Column(JSONB, default=dict)  # Custom headers to send
+    retry_count = Column(Integer, default=3)
+    timeout_seconds = Column(Integer, default=30)
+
+    # Stats
+    last_triggered = Column(DateTime, nullable=True)
+    last_success = Column(DateTime, nullable=True)
+    last_failure = Column(DateTime, nullable=True)
+    success_count = Column(Integer, default=0)
+    failure_count = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_webhooks_team_id', 'team_id'),
+        Index('idx_webhooks_is_active', 'is_active'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "team_id": self.team_id,
+            "user_id": self.user_id,
+            "name": self.name,
+            "url": self.url,
+            "events": self.events or [],
+            "is_active": self.is_active,
+            "headers": self.headers or {},
+            "retry_count": self.retry_count,
+            "timeout_seconds": self.timeout_seconds,
+            "last_triggered": self.last_triggered.isoformat() if self.last_triggered else None,
+            "last_success": self.last_success.isoformat() if self.last_success else None,
+            "last_failure": self.last_failure.isoformat() if self.last_failure else None,
+            "success_count": self.success_count,
+            "failure_count": self.failure_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class WebhookDeliveryModel(Base):
+    """Webhook delivery history for debugging"""
+    __tablename__ = "webhook_deliveries"
+
+    id = Column(String(50), primary_key=True)
+    webhook_id = Column(String(50), ForeignKey("webhooks.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String(100), nullable=False)
+    payload = Column(JSONB, nullable=False)
+    response_status = Column(Integer, nullable=True)
+    response_body = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    attempt_count = Column(Integer, default=1)
+    duration_ms = Column(Integer, nullable=True)
+    delivered_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_webhook_deliveries_webhook_id', 'webhook_id'),
+        Index('idx_webhook_deliveries_delivered_at', 'delivered_at'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "webhook_id": self.webhook_id,
+            "event_type": self.event_type,
+            "payload": self.payload,
+            "response_status": self.response_status,
+            "response_body": self.response_body[:500] if self.response_body else None,
+            "error_message": self.error_message,
+            "attempt_count": self.attempt_count,
+            "duration_ms": self.duration_ms,
+            "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
+            "success": self.response_status and 200 <= self.response_status < 300,
         }
 
 

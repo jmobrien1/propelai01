@@ -428,6 +428,100 @@ A winning proposal ensures:
 - `API_VERSION_MINOR`: 1
 - `API_VERSION_PATCH`: 0
 
+### Webhook System
+**Goal:** Enable integrations by sending event notifications to external services.
+
+**Database Models** (`api/database.py`):
+- `WebhookModel`: Webhook subscriptions with URL, secret, events
+- `WebhookDeliveryModel`: Delivery history for debugging
+
+**Event Types:**
+- RFP events: `rfp.created`, `rfp.updated`, `rfp.deleted`, `rfp.processed`
+- Requirement events: `requirement.extracted`
+- Draft events: `draft.started`, `draft.completed`, `draft.feedback_received`
+- Team events: `team.member_added`, `team.member_removed`
+- Library events: `library.item_added`, `library.item_updated`
+
+**API Endpoints:**
+- `GET /api/webhooks/events` - List available event types
+- `POST /api/teams/{team_id}/webhooks` - Create webhook
+- `GET /api/teams/{team_id}/webhooks` - List webhooks
+- `GET /api/teams/{team_id}/webhooks/{webhook_id}` - Get webhook details
+- `PUT /api/teams/{team_id}/webhooks/{webhook_id}` - Update webhook
+- `DELETE /api/teams/{team_id}/webhooks/{webhook_id}` - Delete webhook
+- `GET /api/teams/{team_id}/webhooks/{webhook_id}/deliveries` - View delivery history
+- `POST /api/teams/{team_id}/webhooks/{webhook_id}/test` - Send test event
+
+**Security:**
+- HMAC-SHA256 signature in `X-Webhook-Signature` header
+- Configurable retry count and timeout
+- Automatic exponential backoff on failures
+
+### Soft Delete & Data Retention
+**Goal:** Enable recovery of deleted data and comply with data retention policies.
+
+**Implementation** (`api/main.py`, `api/database.py`):
+- Soft delete moves RFPs to trash instead of permanent deletion
+- Configurable retention period (default 30 days)
+- Auto-purge after retention period expires
+
+**RFPModel Fields:**
+- `is_deleted`: Soft delete flag
+- `deleted_at`: Deletion timestamp
+- `deleted_by`: User who deleted
+- `delete_reason`: Optional deletion reason
+- `permanent_delete_at`: Scheduled permanent deletion date
+
+**API Endpoints:**
+- `DELETE /api/rfp/{rfp_id}` - Soft delete (use `?permanent=true` for hard delete)
+- `POST /api/rfp/{rfp_id}/restore` - Restore from trash
+- `GET /api/rfp/trash` - List deleted RFPs
+- `DELETE /api/rfp/trash/empty` - Empty trash (permanent delete all)
+- `GET /api/retention-policy` - View retention policy settings
+
+### Bulk Operations
+**Goal:** Perform operations on multiple RFPs efficiently.
+
+**Request Model:**
+```json
+{
+  "ids": ["rfp-001", "rfp-002", "rfp-003"],
+  "reason": "Optional reason for audit"
+}
+```
+
+**API Endpoints:**
+- `POST /api/rfp/bulk/delete` - Bulk delete RFPs
+- `POST /api/rfp/bulk/restore` - Bulk restore from trash
+- `POST /api/rfp/bulk/export` - Bulk export (JSON or CSV)
+- `POST /api/rfp/bulk/update-status` - Bulk status update
+
+**Response Format:**
+```json
+{
+  "success_count": 2,
+  "failure_count": 1,
+  "results": [
+    {"id": "rfp-001", "success": true, "action": "soft_deleted"},
+    {"id": "rfp-002", "success": true, "action": "soft_deleted"},
+    {"id": "rfp-003", "success": false, "error": "RFP not found"}
+  ]
+}
+```
+
+### Enhanced Audit Logging
+**Goal:** Provide comprehensive audit trail for compliance and debugging.
+
+**ActivityLogModel Fields:**
+- `ip_address`: Client IP address
+- `user_agent`: Client browser/app info
+- `request_id`: Correlation ID for request tracing
+
+**Features:**
+- Automatic request ID correlation
+- Structured JSON logging integration
+- Indexed by action type for efficient queries
+
 ## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation

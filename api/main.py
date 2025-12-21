@@ -724,9 +724,23 @@ class RFPStore:
         self._schedule_db_sync(rfp_id)
         return self.rfps[rfp_id]
 
-    def get(self, rfp_id: str) -> Optional[Dict]:
-        """Get RFP by ID"""
-        return self.rfps.get(rfp_id)
+    def get(self, rfp_id: str, include_deleted: bool = False) -> Optional[Dict]:
+        """
+        Get RFP by ID.
+
+        Args:
+            rfp_id: The RFP identifier
+            include_deleted: If True, also return soft-deleted RFPs
+        """
+        rfp = self.rfps.get(rfp_id)
+        if rfp is None:
+            return None
+
+        # Check if deleted
+        if not include_deleted and rfp.get("is_deleted"):
+            return None
+
+        return rfp
 
     def update(self, rfp_id: str, updates: Dict) -> Dict:
         """Update RFP"""
@@ -738,9 +752,17 @@ class RFPStore:
         self._schedule_db_sync(rfp_id)
         return self.rfps[rfp_id]
 
-    def list_all(self) -> List[Dict]:
-        """List all RFPs"""
-        return list(self.rfps.values())
+    def list_all(self, include_deleted: bool = False) -> List[Dict]:
+        """
+        List all RFPs.
+
+        Args:
+            include_deleted: If True, include soft-deleted RFPs
+        """
+        if include_deleted:
+            return list(self.rfps.values())
+        else:
+            return [r for r in self.rfps.values() if not r.get("is_deleted")]
 
     def delete(self, rfp_id: str) -> bool:
         """Delete RFP"""
@@ -1273,18 +1295,488 @@ async def get_rfp(rfp_id: str):
     }
 
 
+# Default data retention period (30 days)
+DEFAULT_RETENTION_DAYS = 30
+
+
 @app.delete("/api/rfp/{rfp_id}")
-async def delete_rfp(rfp_id: str):
-    """Delete an RFP"""
-    if not store.delete(rfp_id):
+async def delete_rfp(
+    rfp_id: str,
+    permanent: bool = False,
+    reason: str = None,
+    authorization: str = Header(None),
+):
+    """
+    Soft delete an RFP (moves to trash).
+
+    Query Parameters:
+    - permanent: If true, permanently deletes the RFP (skips trash)
+    - reason: Optional reason for deletion (for audit trail)
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
-    # Clean up files
-    rfp_dir = UPLOAD_DIR / rfp_id
-    if rfp_dir.exists():
-        shutil.rmtree(rfp_dir)
-    
-    return {"status": "deleted", "id": rfp_id}
+
+    # Get user ID from token if available
+    user_id = None
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            try:
+                payload = verify_jwt_token(parts[1])
+                user_id = payload.get("sub")
+            except ValueError:
+                pass
+
+    if permanent:
+        # Permanent delete - remove files and data
+        if not store.delete(rfp_id):
+            raise HTTPException(status_code=404, detail="RFP not found")
+
+        # Clean up files
+        rfp_dir = UPLOAD_DIR / rfp_id
+        if rfp_dir.exists():
+            shutil.rmtree(rfp_dir)
+
+        logger.info(f"RFP permanently deleted: {rfp_id}", extra={"user_id": user_id})
+
+        return {"status": "permanently_deleted", "id": rfp_id}
+    else:
+        # Soft delete - mark as deleted
+        permanent_delete_at = datetime.now() + timedelta(days=DEFAULT_RETENTION_DAYS)
+
+        store.update(rfp_id, {
+            "is_deleted": True,
+            "deleted_at": datetime.now().isoformat(),
+            "deleted_by": user_id,
+            "delete_reason": reason,
+            "permanent_delete_at": permanent_delete_at.isoformat(),
+            "status": "deleted"
+        })
+
+        logger.info(f"RFP soft deleted: {rfp_id}", extra={"user_id": user_id})
+
+        return {
+            "status": "deleted",
+            "id": rfp_id,
+            "can_restore_until": permanent_delete_at.isoformat(),
+            "message": f"RFP moved to trash. It will be permanently deleted after {DEFAULT_RETENTION_DAYS} days."
+        }
+
+
+@app.post("/api/rfp/{rfp_id}/restore")
+async def restore_rfp(
+    rfp_id: str,
+    authorization: str = Header(None),
+):
+    """
+    Restore a soft-deleted RFP from trash.
+    """
+    rfp = store.get(rfp_id, include_deleted=True)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    if not rfp.get("is_deleted"):
+        raise HTTPException(status_code=400, detail="RFP is not deleted")
+
+    # Check if past permanent delete date
+    permanent_delete_at = rfp.get("permanent_delete_at")
+    if permanent_delete_at:
+        if isinstance(permanent_delete_at, str):
+            permanent_delete_at = datetime.fromisoformat(permanent_delete_at)
+        if datetime.now() > permanent_delete_at:
+            raise HTTPException(
+                status_code=400,
+                detail="RFP cannot be restored - retention period has expired"
+            )
+
+    # Restore the RFP
+    store.update(rfp_id, {
+        "is_deleted": False,
+        "deleted_at": None,
+        "deleted_by": None,
+        "delete_reason": None,
+        "permanent_delete_at": None,
+        "status": rfp.get("_previous_status", "created")
+    })
+
+    logger.info(f"RFP restored: {rfp_id}")
+
+    return {
+        "status": "restored",
+        "id": rfp_id,
+        "message": "RFP has been restored from trash"
+    }
+
+
+@app.get("/api/rfp/trash")
+async def list_deleted_rfps(
+    page: int = 1,
+    page_size: int = 20,
+):
+    """
+    List all soft-deleted RFPs (trash).
+
+    Query Parameters:
+    - page: Page number (1-indexed, default 1)
+    - page_size: Items per page (1-100, default 20)
+    """
+    offset, limit = get_pagination_params(page, page_size)
+
+    # Get deleted RFPs
+    all_rfps = store.list_all(include_deleted=True)
+    deleted_rfps = [r for r in all_rfps if r.get("is_deleted")]
+    total = len(deleted_rfps)
+
+    # Sort by deleted_at descending
+    deleted_rfps.sort(key=lambda x: x.get("deleted_at", ""), reverse=True)
+
+    # Apply pagination
+    paginated = deleted_rfps[offset:offset + limit]
+
+    items = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "solicitation_number": r.get("solicitation_number"),
+            "deleted_at": r.get("deleted_at"),
+            "deleted_by": r.get("deleted_by"),
+            "delete_reason": r.get("delete_reason"),
+            "permanent_delete_at": r.get("permanent_delete_at"),
+            "files_count": len(r.get("files", [])),
+            "requirements_count": len(r.get("requirements", [])),
+        }
+        for r in paginated
+    ]
+
+    return paginate(items, page, limit, total).model_dump()
+
+
+@app.delete("/api/rfp/trash/empty")
+async def empty_trash(
+    authorization: str = Header(None),
+):
+    """
+    Permanently delete all RFPs in trash.
+    """
+    # Get user ID from token
+    user_id = None
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            try:
+                payload = verify_jwt_token(parts[1])
+                user_id = payload.get("sub")
+            except ValueError:
+                pass
+
+    # Get deleted RFPs
+    all_rfps = store.list_all(include_deleted=True)
+    deleted_rfps = [r for r in all_rfps if r.get("is_deleted")]
+
+    deleted_count = 0
+    for rfp in deleted_rfps:
+        rfp_id = rfp["id"]
+
+        # Delete from store
+        store.delete(rfp_id)
+
+        # Clean up files
+        rfp_dir = UPLOAD_DIR / rfp_id
+        if rfp_dir.exists():
+            shutil.rmtree(rfp_dir)
+
+        deleted_count += 1
+
+    logger.info(f"Trash emptied: {deleted_count} RFPs permanently deleted", extra={"user_id": user_id})
+
+    return {
+        "status": "trash_emptied",
+        "deleted_count": deleted_count,
+        "message": f"{deleted_count} RFPs permanently deleted"
+    }
+
+
+@app.get("/api/retention-policy")
+async def get_retention_policy():
+    """
+    Get data retention policy settings.
+    """
+    return {
+        "default_retention_days": DEFAULT_RETENTION_DAYS,
+        "description": f"Deleted RFPs are kept for {DEFAULT_RETENTION_DAYS} days before permanent deletion",
+        "policies": {
+            "rfp": {
+                "retention_days": DEFAULT_RETENTION_DAYS,
+                "soft_delete": True,
+                "auto_purge": True
+            },
+            "webhook_deliveries": {
+                "retention_days": 30,
+                "description": "Webhook delivery logs are kept for 30 days"
+            },
+            "activity_logs": {
+                "retention_days": 90,
+                "description": "Activity logs are kept for 90 days"
+            },
+            "sessions": {
+                "retention_days": 7,
+                "description": "Expired sessions are purged after 7 days"
+            }
+        }
+    }
+
+
+# ============== Bulk Operations ==============
+
+class BulkOperationRequest(BaseModel):
+    """Request for bulk operations"""
+    ids: List[str] = Field(..., description="List of RFP IDs to operate on")
+    reason: Optional[str] = Field(None, description="Reason for the operation (for audit)")
+
+
+class BulkOperationResult(BaseModel):
+    """Result of a bulk operation"""
+    success_count: int
+    failure_count: int
+    results: List[Dict[str, Any]]
+
+
+@app.post("/api/rfp/bulk/delete")
+async def bulk_delete_rfps(
+    request: BulkOperationRequest,
+    permanent: bool = False,
+    authorization: str = Header(None),
+):
+    """
+    Bulk delete multiple RFPs.
+
+    Query Parameters:
+    - permanent: If true, permanently deletes (skips trash)
+    """
+    # Get user ID from token
+    user_id = None
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            try:
+                payload = verify_jwt_token(parts[1])
+                user_id = payload.get("sub")
+            except ValueError:
+                pass
+
+    results = []
+    success_count = 0
+    failure_count = 0
+
+    for rfp_id in request.ids:
+        try:
+            rfp = store.get(rfp_id)
+            if not rfp:
+                results.append({"id": rfp_id, "success": False, "error": "RFP not found"})
+                failure_count += 1
+                continue
+
+            if permanent:
+                store.delete(rfp_id)
+                rfp_dir = UPLOAD_DIR / rfp_id
+                if rfp_dir.exists():
+                    shutil.rmtree(rfp_dir)
+                results.append({"id": rfp_id, "success": True, "action": "permanently_deleted"})
+            else:
+                permanent_delete_at = datetime.now() + timedelta(days=DEFAULT_RETENTION_DAYS)
+                store.update(rfp_id, {
+                    "is_deleted": True,
+                    "deleted_at": datetime.now().isoformat(),
+                    "deleted_by": user_id,
+                    "delete_reason": request.reason,
+                    "permanent_delete_at": permanent_delete_at.isoformat(),
+                    "status": "deleted"
+                })
+                results.append({"id": rfp_id, "success": True, "action": "soft_deleted"})
+
+            success_count += 1
+
+        except Exception as e:
+            results.append({"id": rfp_id, "success": False, "error": str(e)})
+            failure_count += 1
+
+    logger.info(
+        f"Bulk delete: {success_count} succeeded, {failure_count} failed",
+        extra={"user_id": user_id, "permanent": permanent}
+    )
+
+    return BulkOperationResult(
+        success_count=success_count,
+        failure_count=failure_count,
+        results=results
+    )
+
+
+@app.post("/api/rfp/bulk/restore")
+async def bulk_restore_rfps(
+    request: BulkOperationRequest,
+    authorization: str = Header(None),
+):
+    """
+    Bulk restore multiple RFPs from trash.
+    """
+    results = []
+    success_count = 0
+    failure_count = 0
+
+    for rfp_id in request.ids:
+        try:
+            rfp = store.get(rfp_id, include_deleted=True)
+            if not rfp:
+                results.append({"id": rfp_id, "success": False, "error": "RFP not found"})
+                failure_count += 1
+                continue
+
+            if not rfp.get("is_deleted"):
+                results.append({"id": rfp_id, "success": False, "error": "RFP is not deleted"})
+                failure_count += 1
+                continue
+
+            # Check retention period
+            permanent_delete_at = rfp.get("permanent_delete_at")
+            if permanent_delete_at:
+                if isinstance(permanent_delete_at, str):
+                    permanent_delete_at = datetime.fromisoformat(permanent_delete_at)
+                if datetime.now() > permanent_delete_at:
+                    results.append({"id": rfp_id, "success": False, "error": "Retention period expired"})
+                    failure_count += 1
+                    continue
+
+            store.update(rfp_id, {
+                "is_deleted": False,
+                "deleted_at": None,
+                "deleted_by": None,
+                "delete_reason": None,
+                "permanent_delete_at": None,
+                "status": rfp.get("_previous_status", "created")
+            })
+
+            results.append({"id": rfp_id, "success": True, "action": "restored"})
+            success_count += 1
+
+        except Exception as e:
+            results.append({"id": rfp_id, "success": False, "error": str(e)})
+            failure_count += 1
+
+    logger.info(f"Bulk restore: {success_count} succeeded, {failure_count} failed")
+
+    return BulkOperationResult(
+        success_count=success_count,
+        failure_count=failure_count,
+        results=results
+    )
+
+
+@app.post("/api/rfp/bulk/export")
+async def bulk_export_rfps(
+    request: BulkOperationRequest,
+    format: str = "json",
+):
+    """
+    Bulk export multiple RFPs.
+
+    Query Parameters:
+    - format: Export format (json, csv)
+    """
+    export_data = []
+
+    for rfp_id in request.ids:
+        rfp = store.get(rfp_id)
+        if rfp:
+            export_data.append({
+                "id": rfp["id"],
+                "name": rfp["name"],
+                "solicitation_number": rfp.get("solicitation_number"),
+                "agency": rfp.get("agency"),
+                "status": rfp["status"],
+                "files_count": len(rfp.get("files", [])),
+                "requirements_count": len(rfp.get("requirements", [])),
+                "created_at": rfp.get("created_at"),
+                "updated_at": rfp.get("updated_at"),
+                "requirements": rfp.get("requirements", [])
+            })
+
+    if format == "csv":
+        # Convert to CSV
+        import io
+        import csv
+
+        output = io.StringIO()
+        if export_data:
+            # Flatten requirements for CSV
+            flat_data = []
+            for rfp in export_data:
+                base = {k: v for k, v in rfp.items() if k != "requirements"}
+                if rfp.get("requirements"):
+                    for req in rfp["requirements"]:
+                        flat_data.append({**base, **{"req_" + k: v for k, v in req.items()}})
+                else:
+                    flat_data.append(base)
+
+            if flat_data:
+                writer = csv.DictWriter(output, fieldnames=flat_data[0].keys())
+                writer.writeheader()
+                writer.writerows(flat_data)
+
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=rfp_export.csv"}
+        )
+
+    return {
+        "format": "json",
+        "count": len(export_data),
+        "data": export_data
+    }
+
+
+@app.post("/api/rfp/bulk/update-status")
+async def bulk_update_status(
+    ids: List[str],
+    status: str,
+    authorization: str = Header(None),
+):
+    """
+    Bulk update status for multiple RFPs.
+    """
+    valid_statuses = ["created", "files_uploaded", "processing", "processed", "reviewed", "archived"]
+    if status not in valid_statuses:
+        raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+
+    results = []
+    success_count = 0
+    failure_count = 0
+
+    for rfp_id in ids:
+        try:
+            rfp = store.get(rfp_id)
+            if not rfp:
+                results.append({"id": rfp_id, "success": False, "error": "RFP not found"})
+                failure_count += 1
+                continue
+
+            store.update(rfp_id, {"status": status})
+            results.append({"id": rfp_id, "success": True, "new_status": status})
+            success_count += 1
+
+        except Exception as e:
+            results.append({"id": rfp_id, "success": False, "error": str(e)})
+            failure_count += 1
+
+    logger.info(f"Bulk status update to '{status}': {success_count} succeeded, {failure_count} failed")
+
+    return BulkOperationResult(
+        success_count=success_count,
+        failure_count=failure_count,
+        results=results
+    )
 
 
 # ============== File Upload ==============
@@ -4311,7 +4803,7 @@ async def add_differentiator_vector(
 
 from api.database import (
     UserModel, TeamModel, TeamMembershipModel, ActivityLogModel, APIKeyModel,
-    TeamInvitationModel, UserRole, UserSessionModel
+    TeamInvitationModel, UserRole, UserSessionModel, WebhookModel, WebhookDeliveryModel
 )
 import uuid
 import hashlib
@@ -6002,12 +6494,35 @@ async def log_activity(
     resource_type: str,
     resource_id: str = None,
     details: Dict = None,
+    ip_address: str = None,
+    user_agent: str = None,
+    request_id: str = None,
 ):
-    """Log an activity for audit trail"""
+    """
+    Log an activity for audit trail with enhanced metadata.
+
+    Args:
+        team_id: Team identifier
+        user_id: User who performed the action
+        action: Action performed (create, update, delete, etc.)
+        resource_type: Type of resource affected
+        resource_id: ID of the affected resource
+        details: Additional details about the action
+        ip_address: Client IP address
+        user_agent: Client user agent
+        request_id: Correlation ID for request tracing
+    """
     try:
         async with get_db_session() as session:
             if session is None:
                 return
+
+            # Get request ID from context if not provided
+            if request_id is None:
+                try:
+                    request_id = get_request_id()
+                except Exception:
+                    pass
 
             activity = ActivityLogModel(
                 id=generate_id(),
@@ -6017,11 +6532,28 @@ async def log_activity(
                 resource_type=resource_type,
                 resource_id=resource_id,
                 details=details or {},
+                ip_address=ip_address,
+                user_agent=user_agent[:500] if user_agent and len(user_agent) > 500 else user_agent,
+                request_id=request_id,
             )
             session.add(activity)
             await session.flush()
+
+            # Also log to structured logger
+            logger.info(
+                f"Activity: {action} on {resource_type}",
+                extra={
+                    "activity_id": activity.id,
+                    "team_id": team_id,
+                    "user_id": user_id,
+                    "action": action,
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                    "request_id": request_id,
+                }
+            )
     except Exception as e:
-        print(f"[Activity Log] Error: {e}")
+        logger.error(f"[Activity Log] Error: {e}")
 
 
 # ============== API Key Management ==============
@@ -6192,6 +6724,534 @@ async def revoke_api_key(
         )
 
         return {"success": True, "message": f"API key '{key_name}' revoked"}
+
+
+# ============== WEBHOOKS ==============
+
+# Supported webhook event types
+WEBHOOK_EVENTS = [
+    "rfp.created",
+    "rfp.updated",
+    "rfp.deleted",
+    "rfp.processed",
+    "requirement.extracted",
+    "draft.started",
+    "draft.completed",
+    "draft.feedback_received",
+    "team.member_added",
+    "team.member_removed",
+    "library.item_added",
+    "library.item_updated",
+]
+
+
+async def trigger_webhook_event(
+    team_id: str,
+    event_type: str,
+    payload: Dict[str, Any],
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Trigger webhooks for a specific event.
+
+    This queues webhook deliveries to run in the background.
+    """
+    async with get_db_session() as session:
+        if session is None:
+            return
+
+        from sqlalchemy import select
+
+        # Find active webhooks subscribed to this event
+        result = await session.execute(
+            select(WebhookModel)
+            .where(
+                WebhookModel.team_id == team_id,
+                WebhookModel.is_active == True
+            )
+        )
+        webhooks = result.scalars().all()
+
+        for webhook in webhooks:
+            # Check if webhook is subscribed to this event
+            if webhook.events and event_type not in webhook.events:
+                continue
+
+            # Queue the delivery
+            if background_tasks:
+                background_tasks.add_task(
+                    deliver_webhook,
+                    webhook.id,
+                    event_type,
+                    payload
+                )
+            else:
+                # If no background tasks, run synchronously
+                asyncio.create_task(deliver_webhook(webhook.id, event_type, payload))
+
+
+async def deliver_webhook(webhook_id: str, event_type: str, payload: Dict[str, Any]):
+    """
+    Deliver a webhook with retry logic.
+    """
+    import aiohttp
+    import hmac
+    import hashlib
+
+    async with get_db_session() as session:
+        if session is None:
+            return
+
+        from sqlalchemy import select
+
+        # Get webhook
+        result = await session.execute(
+            select(WebhookModel).where(WebhookModel.id == webhook_id)
+        )
+        webhook = result.scalar_one_or_none()
+        if not webhook:
+            return
+
+        # Prepare payload
+        delivery_payload = {
+            "event": event_type,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "data": payload
+        }
+        payload_json = json.dumps(delivery_payload)
+
+        # Prepare headers
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "PropelAI-Webhook/4.1",
+            "X-Webhook-Event": event_type,
+            "X-Webhook-Delivery": generate_id(),
+        }
+
+        # Add signature if secret is set
+        if webhook.secret:
+            signature = hmac.new(
+                webhook.secret.encode(),
+                payload_json.encode(),
+                hashlib.sha256
+            ).hexdigest()
+            headers["X-Webhook-Signature"] = f"sha256={signature}"
+
+        # Add custom headers
+        if webhook.headers:
+            headers.update(webhook.headers)
+
+        # Attempt delivery with retries
+        max_retries = webhook.retry_count or 3
+        timeout = aiohttp.ClientTimeout(total=webhook.timeout_seconds or 30)
+
+        response_status = None
+        response_body = None
+        error_message = None
+        duration_ms = 0
+        attempt_count = 0
+
+        for attempt in range(max_retries):
+            attempt_count = attempt + 1
+            start_time = time.time()
+
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as client:
+                    async with client.post(
+                        webhook.url,
+                        data=payload_json,
+                        headers=headers
+                    ) as response:
+                        response_status = response.status
+                        response_body = await response.text()
+                        duration_ms = int((time.time() - start_time) * 1000)
+
+                        # Success - exit retry loop
+                        if 200 <= response_status < 300:
+                            break
+
+            except asyncio.TimeoutError:
+                error_message = f"Timeout after {webhook.timeout_seconds}s"
+                duration_ms = int((time.time() - start_time) * 1000)
+            except aiohttp.ClientError as e:
+                error_message = str(e)
+                duration_ms = int((time.time() - start_time) * 1000)
+            except Exception as e:
+                error_message = f"Unexpected error: {str(e)}"
+                duration_ms = int((time.time() - start_time) * 1000)
+
+            # Wait before retry (exponential backoff)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+
+        # Record delivery
+        delivery = WebhookDeliveryModel(
+            id=generate_id(),
+            webhook_id=webhook_id,
+            event_type=event_type,
+            payload=delivery_payload,
+            response_status=response_status,
+            response_body=response_body[:5000] if response_body else None,
+            error_message=error_message,
+            attempt_count=attempt_count,
+            duration_ms=duration_ms,
+        )
+        session.add(delivery)
+
+        # Update webhook stats
+        webhook.last_triggered = datetime.utcnow()
+        if response_status and 200 <= response_status < 300:
+            webhook.last_success = datetime.utcnow()
+            webhook.success_count = (webhook.success_count or 0) + 1
+        else:
+            webhook.last_failure = datetime.utcnow()
+            webhook.failure_count = (webhook.failure_count or 0) + 1
+
+        await session.flush()
+
+
+@app.get("/api/webhooks/events")
+async def list_webhook_events():
+    """List all available webhook event types"""
+    return {
+        "events": WEBHOOK_EVENTS,
+        "categories": {
+            "rfp": ["rfp.created", "rfp.updated", "rfp.deleted", "rfp.processed"],
+            "requirement": ["requirement.extracted"],
+            "draft": ["draft.started", "draft.completed", "draft.feedback_received"],
+            "team": ["team.member_added", "team.member_removed"],
+            "library": ["library.item_added", "library.item_updated"],
+        }
+    }
+
+
+@app.post("/api/teams/{team_id}/webhooks")
+async def create_webhook(
+    team_id: str,
+    name: str = Form(...),
+    url: str = Form(...),
+    events: str = Form(""),  # Comma-separated event types
+    secret: str = Form(None),
+    authorization: str = Header(None),
+):
+    """Create a webhook subscription for a team"""
+    # Validate user
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    # Validate URL
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "URL must start with http:// or https://")
+
+    # Parse events
+    event_list = [e.strip() for e in events.split(",") if e.strip()] if events else []
+
+    # Validate events
+    for event in event_list:
+        if event not in WEBHOOK_EVENTS:
+            raise HTTPException(400, f"Invalid event type: {event}")
+
+    # Generate secret if not provided
+    if not secret:
+        secret = secrets.token_hex(32)
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        # Create webhook
+        webhook = WebhookModel(
+            id=generate_id(),
+            team_id=team_id,
+            user_id=user_id,
+            name=name,
+            url=url,
+            secret=secret,
+            events=event_list if event_list else None,  # None means all events
+            is_active=True,
+        )
+        session.add(webhook)
+        await session.flush()
+
+        # Log activity
+        await log_activity(
+            team_id=team_id,
+            user_id=user_id,
+            action="create",
+            resource_type="webhook",
+            resource_id=webhook.id,
+            details={"name": name, "url": url, "events": event_list}
+        )
+
+        return {
+            "id": webhook.id,
+            "name": webhook.name,
+            "url": webhook.url,
+            "events": webhook.events or WEBHOOK_EVENTS,
+            "secret": secret,  # Only shown once!
+            "is_active": webhook.is_active,
+            "message": "Store the secret securely - it will not be shown again!"
+        }
+
+
+@app.get("/api/teams/{team_id}/webhooks")
+async def list_webhooks(team_id: str):
+    """List all webhooks for a team"""
+    async with get_db_session() as session:
+        if session is None:
+            return {"webhooks": []}
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(WebhookModel)
+            .where(WebhookModel.team_id == team_id)
+            .order_by(WebhookModel.created_at.desc())
+        )
+        webhooks = result.scalars().all()
+
+        return {
+            "webhooks": [w.to_dict() for w in webhooks]
+        }
+
+
+@app.get("/api/teams/{team_id}/webhooks/{webhook_id}")
+async def get_webhook(team_id: str, webhook_id: str):
+    """Get webhook details"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(WebhookModel)
+            .where(
+                WebhookModel.id == webhook_id,
+                WebhookModel.team_id == team_id
+            )
+        )
+        webhook = result.scalar_one_or_none()
+
+        if not webhook:
+            raise HTTPException(404, "Webhook not found")
+
+        return webhook.to_dict()
+
+
+@app.put("/api/teams/{team_id}/webhooks/{webhook_id}")
+async def update_webhook(
+    team_id: str,
+    webhook_id: str,
+    name: str = Form(None),
+    url: str = Form(None),
+    events: str = Form(None),
+    is_active: bool = Form(None),
+    authorization: str = Header(None),
+):
+    """Update a webhook"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(WebhookModel)
+            .where(
+                WebhookModel.id == webhook_id,
+                WebhookModel.team_id == team_id
+            )
+        )
+        webhook = result.scalar_one_or_none()
+
+        if not webhook:
+            raise HTTPException(404, "Webhook not found")
+
+        # Update fields
+        if name is not None:
+            webhook.name = name
+        if url is not None:
+            if not url.startswith(("http://", "https://")):
+                raise HTTPException(400, "URL must start with http:// or https://")
+            webhook.url = url
+        if events is not None:
+            event_list = [e.strip() for e in events.split(",") if e.strip()]
+            for event in event_list:
+                if event not in WEBHOOK_EVENTS:
+                    raise HTTPException(400, f"Invalid event type: {event}")
+            webhook.events = event_list if event_list else None
+        if is_active is not None:
+            webhook.is_active = is_active
+
+        await session.flush()
+
+        return webhook.to_dict()
+
+
+@app.delete("/api/teams/{team_id}/webhooks/{webhook_id}")
+async def delete_webhook(
+    team_id: str,
+    webhook_id: str,
+    authorization: str = Header(None),
+):
+    """Delete a webhook"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select, delete
+
+        # Get webhook for logging
+        result = await session.execute(
+            select(WebhookModel)
+            .where(
+                WebhookModel.id == webhook_id,
+                WebhookModel.team_id == team_id
+            )
+        )
+        webhook = result.scalar_one_or_none()
+
+        if not webhook:
+            raise HTTPException(404, "Webhook not found")
+
+        webhook_name = webhook.name
+
+        # Delete
+        await session.execute(
+            delete(WebhookModel).where(WebhookModel.id == webhook_id)
+        )
+        await session.flush()
+
+        # Log activity
+        await log_activity(
+            team_id=team_id,
+            user_id=user_id,
+            action="delete",
+            resource_type="webhook",
+            resource_id=webhook_id,
+            details={"name": webhook_name}
+        )
+
+        return {"success": True, "message": f"Webhook '{webhook_name}' deleted"}
+
+
+@app.get("/api/teams/{team_id}/webhooks/{webhook_id}/deliveries")
+async def list_webhook_deliveries(
+    team_id: str,
+    webhook_id: str,
+    page: int = 1,
+    page_size: int = 20,
+):
+    """List recent webhook deliveries"""
+    offset, limit = get_pagination_params(page, page_size)
+
+    async with get_db_session() as session:
+        if session is None:
+            return paginate([], page, limit, 0).model_dump()
+
+        from sqlalchemy import select, func
+
+        # Verify webhook exists and belongs to team
+        result = await session.execute(
+            select(WebhookModel)
+            .where(
+                WebhookModel.id == webhook_id,
+                WebhookModel.team_id == team_id
+            )
+        )
+        webhook = result.scalar_one_or_none()
+        if not webhook:
+            raise HTTPException(404, "Webhook not found")
+
+        # Get total count
+        count_result = await session.execute(
+            select(func.count()).select_from(WebhookDeliveryModel)
+            .where(WebhookDeliveryModel.webhook_id == webhook_id)
+        )
+        total = count_result.scalar() or 0
+
+        # Get deliveries
+        result = await session.execute(
+            select(WebhookDeliveryModel)
+            .where(WebhookDeliveryModel.webhook_id == webhook_id)
+            .order_by(WebhookDeliveryModel.delivered_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        deliveries = result.scalars().all()
+
+        return paginate([d.to_dict() for d in deliveries], page, limit, total).model_dump()
+
+
+@app.post("/api/teams/{team_id}/webhooks/{webhook_id}/test")
+async def test_webhook(
+    team_id: str,
+    webhook_id: str,
+    authorization: str = Header(None),
+):
+    """Send a test event to a webhook"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(WebhookModel)
+            .where(
+                WebhookModel.id == webhook_id,
+                WebhookModel.team_id == team_id
+            )
+        )
+        webhook = result.scalar_one_or_none()
+
+        if not webhook:
+            raise HTTPException(404, "Webhook not found")
+
+        # Send test event
+        test_payload = {
+            "test": True,
+            "message": "This is a test webhook delivery from PropelAI",
+            "webhook_id": webhook_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+
+        await deliver_webhook(webhook_id, "test.ping", test_payload)
+
+        return {
+            "success": True,
+            "message": "Test webhook sent. Check the deliveries endpoint for results."
+        }
 
 
 # ============== TEAM INVITATIONS ==============
