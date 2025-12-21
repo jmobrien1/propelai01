@@ -15,3 +15,5 @@ openpyxl>=3.0.10
 # Utils
 httpx>=0.24.0
 PyJWT>=2.8.0  # v4.1: JWT token authentication
+pyotp>=2.9.0  # v4.1: TOTP-based two-factor authentication
+qrcode>=7.4.0  # v4.1: QR code generation for 2FA setup

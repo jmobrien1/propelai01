@@ -711,15 +711,52 @@
                     }
 
                     const data = await response.json();
+
+                    // Check if 2FA is required
+                    if (data.requires_2fa) {
+                        return { requires_2fa: true, user_id: data.user_id };
+                    }
+
                     setCurrentUser(data.user);
                     // Store both user and token
                     localStorage.setItem('propelai_user', JSON.stringify(data.user));
                     localStorage.setItem('propelai_token', data.token);
                     setShowAuthModal(false);
-                    return true;
+                    return { success: true };
                 } catch (e) {
-                    setError(e.message);
-                    return false;
+                    throw e;
+                }
+            };
+
+            const handle2FAVerify = async (userId, code) => {
+                try {
+                    const formData = new FormData();
+                    formData.append('user_id', userId);
+                    formData.append('code', code);
+
+                    const response = await fetch('/api/auth/2fa/verify', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(getErrorMessage(error, 'Invalid 2FA code'));
+                    }
+
+                    const data = await response.json();
+                    setCurrentUser(data.user);
+                    localStorage.setItem('propelai_user', JSON.stringify(data.user));
+                    localStorage.setItem('propelai_token', data.token);
+                    setShowAuthModal(false);
+
+                    if (data.backup_code_used) {
+                        alert(`Backup code used. You have ${data.backup_codes_remaining} backup codes remaining.`);
+                    }
+
+                    return { success: true };
+                } catch (e) {
+                    throw e;
                 }
             };
 
@@ -1072,6 +1109,7 @@
                             onClose={() => setShowAuthModal(false)}
                             onLogin={handleLogin}
                             onRegister={handleRegister}
+                            on2FAVerify={handle2FAVerify}
                         />
                     )}
 
@@ -1103,8 +1141,81 @@
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
             const [success, setSuccess] = useState('');
+            // 2FA state
+            const [twoFASetup, setTwoFASetup] = useState(null); // { secret, provisioning_uri }
+            const [twoFACode, setTwoFACode] = useState('');
+            const [backupCodes, setBackupCodes] = useState([]);
+            const [disablePassword, setDisablePassword] = useState('');
 
             const getAuthToken = () => localStorage.getItem('propelai_token');
+
+            // 2FA functions
+            const startTwoFASetup = async () => {
+                setError('');
+                setLoading(true);
+                try {
+                    const response = await fetch('/api/auth/2fa/setup', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.detail || 'Failed to start 2FA setup');
+                    setTwoFASetup({ secret: data.secret, provisioning_uri: data.provisioning_uri });
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const verifyTwoFASetup = async () => {
+                setError('');
+                setLoading(true);
+                try {
+                    const formData = new FormData();
+                    formData.append('code', twoFACode);
+                    const response = await fetch('/api/auth/2fa/verify-setup', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}` },
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.detail || 'Failed to verify code');
+                    setBackupCodes(data.backup_codes);
+                    setTwoFASetup(null);
+                    setTwoFACode('');
+                    // Update user state to show 2FA is enabled
+                    onUpdate({ ...user, totp_enabled: true });
+                    setSuccess('Two-factor authentication enabled! Save your backup codes.');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const disableTwoFA = async () => {
+                setError('');
+                setLoading(true);
+                try {
+                    const formData = new FormData();
+                    formData.append('password', disablePassword);
+                    const response = await fetch('/api/auth/2fa/disable', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}` },
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.detail || 'Failed to disable 2FA');
+                    onUpdate({ ...user, totp_enabled: false });
+                    setDisablePassword('');
+                    setSuccess('Two-factor authentication disabled');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
 
             const handleUpdateProfile = async (e) => {
                 e.preventDefault();
@@ -1333,6 +1444,136 @@
                                     {loading ? 'Changing Password...' : 'Change Password'}
                                 </button>
                             </form>
+
+                            {/* Two-Factor Authentication Section */}
+                            <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--border-color)' }}>
+                                <h4 style={{ marginBottom: 12, fontSize: 14, fontWeight: 500 }}>
+                                    <Icon name="Shield" style={{ width: 16, height: 16, marginRight: 8, verticalAlign: 'middle' }} />
+                                    Two-Factor Authentication
+                                </h4>
+
+                                {backupCodes.length > 0 && (
+                                    <div style={{
+                                        background: 'rgba(34, 197, 94, 0.1)',
+                                        border: '1px solid var(--accent-green)',
+                                        borderRadius: 8,
+                                        padding: 16,
+                                        marginBottom: 16
+                                    }}>
+                                        <p style={{ fontWeight: 500, marginBottom: 8 }}>Backup Codes (save these!)</p>
+                                        <div style={{ fontFamily: 'monospace', fontSize: 13, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4 }}>
+                                            {backupCodes.map((code, i) => (
+                                                <span key={i}>{code}</span>
+                                            ))}
+                                        </div>
+                                        <button
+                                            className="btn"
+                                            style={{ marginTop: 12, fontSize: 12 }}
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(backupCodes.join('\n'));
+                                                alert('Backup codes copied to clipboard');
+                                            }}
+                                        >
+                                            Copy Codes
+                                        </button>
+                                    </div>
+                                )}
+
+                                {!user.totp_enabled && !twoFASetup && (
+                                    <div>
+                                        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                            Add an extra layer of security by requiring a code from your authenticator app.
+                                        </p>
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={startTwoFASetup}
+                                            disabled={loading}
+                                        >
+                                            {loading ? 'Setting up...' : 'Enable Two-Factor Authentication'}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {twoFASetup && (
+                                    <div style={{ background: 'var(--bg-tertiary)', padding: 16, borderRadius: 8 }}>
+                                        <p style={{ fontSize: 13, marginBottom: 12 }}>
+                                            1. Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
+                                        </p>
+                                        <div style={{
+                                            background: 'white',
+                                            padding: 16,
+                                            borderRadius: 8,
+                                            display: 'inline-block',
+                                            marginBottom: 12
+                                        }}>
+                                            <img
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(twoFASetup.provisioning_uri)}`}
+                                                alt="QR Code"
+                                                style={{ display: 'block' }}
+                                            />
+                                        </div>
+                                        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                            Or enter this code manually: <code style={{ fontFamily: 'monospace' }}>{twoFASetup.secret}</code>
+                                        </p>
+                                        <p style={{ fontSize: 13, marginBottom: 8 }}>
+                                            2. Enter the 6-digit code from your app:
+                                        </p>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={twoFACode}
+                                                onChange={e => setTwoFACode(e.target.value)}
+                                                placeholder="000000"
+                                                maxLength={6}
+                                                style={{ fontFamily: 'monospace', letterSpacing: 4, textAlign: 'center', width: 120 }}
+                                            />
+                                            <button
+                                                className="btn btn-primary"
+                                                onClick={verifyTwoFASetup}
+                                                disabled={loading || twoFACode.length < 6}
+                                            >
+                                                {loading ? 'Verifying...' : 'Verify & Enable'}
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                onClick={() => { setTwoFASetup(null); setTwoFACode(''); }}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {user.totp_enabled && !twoFASetup && (
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                            <span className="badge badge-green">Enabled</span>
+                                            <span style={{ fontSize: 13 }}>Two-factor authentication is active</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                                            <div style={{ flex: 1 }}>
+                                                <label style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>Enter password to disable</label>
+                                                <input
+                                                    type="password"
+                                                    className="form-input"
+                                                    value={disablePassword}
+                                                    onChange={e => setDisablePassword(e.target.value)}
+                                                    placeholder="Your password"
+                                                />
+                                            </div>
+                                            <button
+                                                className="btn"
+                                                style={{ color: 'var(--accent-red)' }}
+                                                onClick={disableTwoFA}
+                                                disabled={loading || !disablePassword}
+                                            >
+                                                {loading ? 'Disabling...' : 'Disable 2FA'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -1340,7 +1581,7 @@
         }
 
         // Auth Modal Component
-        function AuthModal({ mode, setMode, onClose, onLogin, onRegister }) {
+        function AuthModal({ mode, setMode, onClose, onLogin, onRegister, on2FAVerify }) {
             const [name, setName] = useState('');
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
@@ -1349,6 +1590,9 @@
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
             const [success, setSuccess] = useState('');
+            // 2FA state
+            const [pending2FAUserId, setPending2FAUserId] = useState('');
+            const [twoFactorCode, setTwoFactorCode] = useState('');
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -1372,9 +1616,20 @@
                         setError('Registration failed. Email may already be in use.');
                     }
                 } else if (mode === 'login') {
-                    const result = await onLogin(email, password);
-                    if (!result) {
-                        setError('Invalid email or password');
+                    try {
+                        const result = await onLogin(email, password);
+                        if (result.requires_2fa) {
+                            setPending2FAUserId(result.user_id);
+                            setMode('2fa');
+                        }
+                    } catch (err) {
+                        setError(err.message || 'Invalid email or password');
+                    }
+                } else if (mode === '2fa') {
+                    try {
+                        await on2FAVerify(pending2FAUserId, twoFactorCode);
+                    } catch (err) {
+                        setError(err.message || 'Invalid verification code');
                     }
                 } else if (mode === 'forgot') {
                     // Request password reset
@@ -1443,6 +1698,7 @@
                     case 'register': return 'Create Account';
                     case 'forgot': return 'Forgot Password';
                     case 'reset': return 'Reset Password';
+                    case '2fa': return 'Two-Factor Authentication';
                     default: return 'Sign In';
                 }
             };
@@ -1453,6 +1709,7 @@
                     case 'register': return 'Get started with PropelAI';
                     case 'forgot': return 'Enter your email to receive a reset link';
                     case 'reset': return 'Enter your new password';
+                    case '2fa': return 'Enter the code from your authenticator app';
                     default: return '';
                 }
             };
@@ -1566,6 +1823,26 @@
                                 </div>
                             )}
 
+                            {mode === '2fa' && (
+                                <div style={{ marginBottom: 16 }}>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Authentication Code</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Enter 6-digit code or backup code"
+                                        value={twoFactorCode}
+                                        onChange={e => setTwoFactorCode(e.target.value)}
+                                        autoComplete="one-time-code"
+                                        pattern="[0-9A-Za-z]*"
+                                        required
+                                        style={{ fontFamily: 'monospace', letterSpacing: 2, textAlign: 'center', fontSize: 18 }}
+                                    />
+                                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                                        Enter the 6-digit code from your authenticator app, or use a backup code.
+                                    </p>
+                                </div>
+                            )}
+
                             <button
                                 type="submit"
                                 className="btn btn-primary"
@@ -1576,6 +1853,7 @@
                                     mode === 'login' ? 'Sign In' :
                                     mode === 'register' ? 'Create Account' :
                                     mode === 'forgot' ? 'Send Reset Link' :
+                                    mode === '2fa' ? 'Verify' :
                                     'Reset Password'
                                 )}
                             </button>

@@ -3845,7 +3845,7 @@ async def login_user(
     email: str = Form(...),
     password: str = Form(...),
 ):
-    """Login user and return JWT token"""
+    """Login user and return JWT token (or 2FA challenge if enabled)"""
     # Rate limit: 5 attempts per minute
     await check_rate_limit(request, "login")
 
@@ -3863,6 +3863,16 @@ async def login_user(
         if not user or not verify_password(password, user.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
+        # Check if 2FA is enabled
+        if user.totp_enabled:
+            # Return 2FA challenge instead of logging in directly
+            return {
+                "success": True,
+                "requires_2fa": True,
+                "user_id": user.id,
+                "message": "Please enter your 2FA code",
+            }
+
         user.last_login = datetime.utcnow()
         await session.flush()
 
@@ -3871,6 +3881,7 @@ async def login_user(
 
         return {
             "success": True,
+            "requires_2fa": False,
             "user": user.to_dict(),
             "token": token,
             "token_type": "bearer",
@@ -4167,6 +4178,269 @@ async def reset_password(
             "user": user.to_dict(),
             "token": new_token,
             "token_type": "bearer",
+        }
+
+
+# ============== TWO-FACTOR AUTHENTICATION ==============
+
+# Try to import pyotp for TOTP
+try:
+    import pyotp
+    import base64
+    TOTP_AVAILABLE = True
+except ImportError:
+    TOTP_AVAILABLE = False
+    pyotp = None
+
+
+def generate_backup_codes(count: int = 8) -> list:
+    """Generate a list of backup codes for 2FA recovery"""
+    return [secrets.token_hex(4).upper() for _ in range(count)]
+
+
+@app.post("/api/auth/2fa/setup")
+async def setup_2fa(
+    authorization: str = Header(None),
+):
+    """Begin 2FA setup - generates TOTP secret and returns QR code data"""
+    if not TOTP_AVAILABLE:
+        raise HTTPException(500, "2FA is not available (pyotp not installed)")
+
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+        user_email = payload.get("email")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        if user.totp_enabled:
+            raise HTTPException(400, "2FA is already enabled. Disable it first to reconfigure.")
+
+        # Generate new TOTP secret
+        secret = pyotp.random_base32()
+
+        # Store secret (not enabled yet - requires verification)
+        user.totp_secret = secret
+        await session.flush()
+
+        # Generate provisioning URI for QR code
+        totp = pyotp.TOTP(secret)
+        provisioning_uri = totp.provisioning_uri(
+            name=user_email,
+            issuer_name="PropelAI"
+        )
+
+        return {
+            "success": True,
+            "secret": secret,  # User can manually enter this in their app
+            "provisioning_uri": provisioning_uri,  # For QR code generation
+            "message": "Scan the QR code with your authenticator app, then verify with a code",
+        }
+
+
+@app.post("/api/auth/2fa/verify-setup")
+async def verify_2fa_setup(
+    code: str = Form(...),
+    authorization: str = Header(None),
+):
+    """Verify 2FA setup with first code and enable 2FA"""
+    if not TOTP_AVAILABLE:
+        raise HTTPException(500, "2FA is not available")
+
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        if not user.totp_secret:
+            raise HTTPException(400, "2FA setup not started. Call /api/auth/2fa/setup first.")
+
+        if user.totp_enabled:
+            raise HTTPException(400, "2FA is already enabled")
+
+        # Verify the code
+        totp = pyotp.TOTP(user.totp_secret)
+        if not totp.verify(code, valid_window=1):
+            raise HTTPException(400, "Invalid verification code")
+
+        # Generate backup codes
+        backup_codes = generate_backup_codes()
+
+        # Enable 2FA
+        user.totp_enabled = True
+        user.totp_backup_codes = backup_codes
+        await session.flush()
+
+        return {
+            "success": True,
+            "message": "Two-factor authentication enabled successfully",
+            "backup_codes": backup_codes,  # Show only once!
+            "warning": "Save these backup codes in a secure location. They will not be shown again.",
+        }
+
+
+@app.post("/api/auth/2fa/disable")
+async def disable_2fa(
+    password: str = Form(...),
+    authorization: str = Header(None),
+):
+    """Disable 2FA (requires password confirmation)"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        if not user.totp_enabled:
+            raise HTTPException(400, "2FA is not enabled")
+
+        # Verify password
+        if not verify_password(password, user.password_hash):
+            raise HTTPException(400, "Invalid password")
+
+        # Disable 2FA
+        user.totp_enabled = False
+        user.totp_secret = None
+        user.totp_backup_codes = []
+        await session.flush()
+
+        return {
+            "success": True,
+            "message": "Two-factor authentication disabled",
+        }
+
+
+@app.post("/api/auth/2fa/verify")
+async def verify_2fa_code(
+    user_id: str = Form(...),
+    code: str = Form(...),
+):
+    """Verify 2FA code during login (called after password verification)"""
+    if not TOTP_AVAILABLE:
+        raise HTTPException(500, "2FA is not available")
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(500, "Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        if not user.totp_enabled:
+            raise HTTPException(400, "2FA is not enabled for this user")
+
+        # First, check if it's a backup code
+        backup_codes = user.totp_backup_codes or []
+        code_upper = code.upper().replace("-", "").replace(" ", "")
+
+        if code_upper in backup_codes:
+            # Use and remove backup code
+            backup_codes.remove(code_upper)
+            user.totp_backup_codes = backup_codes
+            user.last_login = datetime.utcnow()
+            await session.flush()
+
+            # Generate JWT token
+            token = create_jwt_token(user.id, user.email, user.name)
+
+            return {
+                "success": True,
+                "user": user.to_dict(),
+                "token": token,
+                "token_type": "bearer",
+                "expires_in": JWT_EXPIRY_HOURS * 3600,
+                "backup_code_used": True,
+                "backup_codes_remaining": len(backup_codes),
+            }
+
+        # Check TOTP code
+        totp = pyotp.TOTP(user.totp_secret)
+        if not totp.verify(code, valid_window=1):
+            raise HTTPException(400, "Invalid verification code")
+
+        user.last_login = datetime.utcnow()
+        await session.flush()
+
+        # Generate JWT token
+        token = create_jwt_token(user.id, user.email, user.name)
+
+        return {
+            "success": True,
+            "user": user.to_dict(),
+            "token": token,
+            "token_type": "bearer",
+            "expires_in": JWT_EXPIRY_HOURS * 3600,
         }
 
 

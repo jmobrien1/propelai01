@@ -193,6 +193,26 @@ A winning proposal ensures:
 - Forgot Password: 3 attempts per 5 minutes
 - General API: 100 requests per minute
 
+### Two-Factor Authentication (2FA)
+**Goal:** Add TOTP-based two-factor authentication for enhanced security.
+
+**Implementation** (`api/main.py`, `api/database.py`):
+- TOTP (Time-based One-Time Password) using pyotp library
+- Backup codes for account recovery
+- QR code generation for authenticator app setup
+
+**API Endpoints:**
+- `POST /api/auth/2fa/setup` - Generate TOTP secret and provisioning URI
+- `POST /api/auth/2fa/verify-setup` - Verify first code and enable 2FA
+- `POST /api/auth/2fa/disable` - Disable 2FA (requires password)
+- `POST /api/auth/2fa/verify` - Verify 2FA code during login
+
+**UI Components** (`web/index.html`):
+- 2FA setup wizard in ProfileModal Security tab
+- QR code display for authenticator app scanning
+- Backup codes display with copy functionality
+- 2FA challenge during login flow in AuthModal
+
 ## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation

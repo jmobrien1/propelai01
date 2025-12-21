@@ -235,6 +235,11 @@ class UserModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Two-Factor Authentication
+    totp_secret = Column(String(100), nullable=True)  # TOTP secret key
+    totp_enabled = Column(Boolean, default=False)
+    totp_backup_codes = Column(JSONB, default=list)  # Backup codes for recovery
+
     # Relationships
     team_memberships = relationship("TeamMembershipModel", back_populates="user", cascade="all, delete-orphan")
 
@@ -245,6 +250,7 @@ class UserModel(Base):
             "name": self.name,
             "avatar_url": self.avatar_url,
             "is_active": self.is_active,
+            "totp_enabled": self.totp_enabled or False,
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
