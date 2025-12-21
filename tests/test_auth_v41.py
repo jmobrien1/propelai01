@@ -496,6 +496,236 @@ class TestIntegration:
         assert JWT_EXPIRY_HOURS > 0
 
 
+# ============== Password Validation Tests ==============
+
+class TestPasswordValidation:
+    """Tests for password strength validation"""
+
+    def test_password_too_short(self):
+        """Test that short passwords are rejected"""
+        from api.main import validate_password_strength
+
+        is_valid, error = validate_password_strength("Short1")
+        assert is_valid is False
+        assert "8 characters" in error
+
+    def test_password_no_uppercase(self):
+        """Test that passwords without uppercase are rejected"""
+        from api.main import validate_password_strength
+
+        is_valid, error = validate_password_strength("lowercase123")
+        assert is_valid is False
+        assert "uppercase" in error.lower()
+
+    def test_password_no_lowercase(self):
+        """Test that passwords without lowercase are rejected"""
+        from api.main import validate_password_strength
+
+        is_valid, error = validate_password_strength("UPPERCASE123")
+        assert is_valid is False
+        assert "lowercase" in error.lower()
+
+    def test_password_no_digit(self):
+        """Test that passwords without digits are rejected"""
+        from api.main import validate_password_strength
+
+        is_valid, error = validate_password_strength("NoDigitsHere")
+        assert is_valid is False
+        assert "number" in error.lower()
+
+    def test_password_valid(self):
+        """Test that valid passwords pass validation"""
+        from api.main import validate_password_strength
+
+        is_valid, error = validate_password_strength("ValidPass123")
+        assert is_valid is True
+        assert error == ""
+
+
+# ============== Input Sanitization Tests ==============
+
+class TestInputSanitization:
+    """Tests for input sanitization functions"""
+
+    def test_sanitize_html_removes_script_tags(self):
+        """Test that script tags are removed"""
+        from api.main import sanitize_html
+
+        dirty = '<script>alert("XSS")</script>Hello'
+        clean = sanitize_html(dirty)
+        assert "<script" not in clean.lower()
+        assert "Hello" in clean
+
+    def test_sanitize_html_removes_event_handlers(self):
+        """Test that event handlers are removed"""
+        from api.main import sanitize_html
+
+        dirty = '<img src="x" onerror="alert(1)">'
+        clean = sanitize_html(dirty)
+        assert "onerror" not in clean.lower()
+
+    def test_sanitize_html_removes_javascript_urls(self):
+        """Test that javascript: URLs are removed"""
+        from api.main import sanitize_html
+
+        dirty = '<a href="javascript:alert(1)">Click</a>'
+        clean = sanitize_html(dirty)
+        assert "javascript:" not in clean.lower()
+
+    def test_sanitize_html_removes_style_tags(self):
+        """Test that style tags are removed"""
+        from api.main import sanitize_html
+
+        dirty = '<style>body{display:none}</style>Content'
+        clean = sanitize_html(dirty)
+        assert "<style" not in clean.lower()
+        assert "Content" in clean
+
+    def test_sanitize_html_removes_iframe(self):
+        """Test that iframe tags are removed"""
+        from api.main import sanitize_html
+
+        dirty = '<iframe src="http://evil.com"></iframe>Safe'
+        clean = sanitize_html(dirty)
+        assert "<iframe" not in clean.lower()
+        assert "Safe" in clean
+
+    def test_sanitize_html_preserves_safe_content(self):
+        """Test that safe content is preserved"""
+        from api.main import sanitize_html
+
+        safe = "This is normal text with <b>bold</b> formatting"
+        clean = sanitize_html(safe)
+        assert "normal text" in clean
+        assert "<b>bold</b>" in clean
+
+    def test_sanitize_filename_removes_path(self):
+        """Test that path components are removed from filename"""
+        from api.main import sanitize_filename
+
+        dirty = "../../../etc/passwd"
+        clean = sanitize_filename(dirty)
+        assert ".." not in clean
+        assert "/" not in clean
+        assert "passwd" in clean
+
+    def test_sanitize_filename_removes_null_bytes(self):
+        """Test that null bytes are removed from filename"""
+        from api.main import sanitize_filename
+
+        dirty = "file\x00.txt"
+        clean = sanitize_filename(dirty)
+        assert "\x00" not in clean
+        assert "file" in clean
+
+    def test_sanitize_filename_replaces_special_chars(self):
+        """Test that special characters are replaced"""
+        from api.main import sanitize_filename
+
+        dirty = 'file<name>.txt'
+        clean = sanitize_filename(dirty)
+        assert "<" not in clean
+        assert ">" not in clean
+
+    def test_sanitize_filename_limits_length(self):
+        """Test that long filenames are truncated"""
+        from api.main import sanitize_filename
+
+        dirty = "a" * 300 + ".txt"
+        clean = sanitize_filename(dirty)
+        assert len(clean) <= 255
+
+
+# ============== Email Verification Tests ==============
+
+class TestEmailVerification:
+    """Tests for email verification functionality"""
+
+    def test_email_verification_template(self):
+        """Test email verification template generation"""
+        from api.email_service import EmailTemplate
+
+        subject, html, text = EmailTemplate.email_verification(
+            user_name="John Doe",
+            verification_url="https://example.com/verify?token=abc123"
+        )
+
+        assert "Verify" in subject
+        assert "John Doe" in html
+        assert "John Doe" in text
+        assert "https://example.com/verify?token=abc123" in html
+        assert "https://example.com/verify?token=abc123" in text
+        assert "24 hours" in html  # Expiration warning
+
+
+# ============== Health Check Tests ==============
+
+class TestHealthChecks:
+    """Tests for health check endpoints"""
+
+    @pytest.fixture
+    def test_client(self):
+        """Create a test client for the FastAPI app"""
+        from fastapi.testclient import TestClient
+        from api.main import app
+        return TestClient(app)
+
+    def test_health_endpoint(self, test_client):
+        """Test main health check endpoint"""
+        response = test_client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert "version" in data
+        assert "components" in data
+
+    def test_liveness_probe(self, test_client):
+        """Test Kubernetes liveness probe"""
+        response = test_client.get("/api/health/live")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "alive"
+        assert "timestamp" in data
+
+    def test_metrics_endpoint(self, test_client):
+        """Test metrics endpoint"""
+        response = test_client.get("/api/metrics")
+        assert response.status_code == 200
+        data = response.json()
+        assert "timestamp" in data
+        assert "rfps" in data
+
+
+# ============== Logging Tests ==============
+
+class TestLogging:
+    """Tests for structured logging"""
+
+    def test_json_formatter(self):
+        """Test JSON log formatter"""
+        from api.main import JSONFormatter
+        import logging
+
+        formatter = JSONFormatter()
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="Test message",
+            args=(),
+            exc_info=None
+        )
+
+        output = formatter.format(record)
+        data = json.loads(output)
+
+        assert data["level"] == "INFO"
+        assert data["message"] == "Test message"
+        assert data["logger"] == "test"
+        assert "timestamp" in data
+
+
 # ============== Async Test Runner ==============
 
 if __name__ == "__main__":

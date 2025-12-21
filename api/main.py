@@ -25,6 +25,8 @@ import shutil
 import tempfile
 import time
 import asyncio
+import logging
+import re
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +36,132 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+
+# ============== Structured Logging ==============
+
+class JSONFormatter(logging.Formatter):
+    """JSON log formatter for structured logging in production"""
+
+    def format(self, record):
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+        }
+
+        # Add exception info if present
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+
+        # Add extra fields
+        if hasattr(record, "request_id"):
+            log_data["request_id"] = record.request_id
+        if hasattr(record, "user_id"):
+            log_data["user_id"] = record.user_id
+        if hasattr(record, "endpoint"):
+            log_data["endpoint"] = record.endpoint
+        if hasattr(record, "method"):
+            log_data["method"] = record.method
+        if hasattr(record, "status_code"):
+            log_data["status_code"] = record.status_code
+        if hasattr(record, "duration_ms"):
+            log_data["duration_ms"] = record.duration_ms
+
+        return json.dumps(log_data)
+
+
+def setup_logging():
+    """Configure logging based on environment"""
+    log_format = os.environ.get("LOG_FORMAT", "text")  # "json" or "text"
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    # Get root logger
+    logger = logging.getLogger("propelai")
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
+
+    # Remove existing handlers
+    logger.handlers = []
+
+    # Create console handler
+    handler = logging.StreamHandler()
+
+    if log_format == "json":
+        handler.setFormatter(JSONFormatter())
+    else:
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        ))
+
+    logger.addHandler(handler)
+    return logger
+
+
+# Initialize logger
+logger = setup_logging()
+
+
+# ============== Input Sanitization ==============
+
+def sanitize_html(text: str) -> str:
+    """
+    Remove potentially dangerous HTML/script content from user input.
+    Used to prevent XSS attacks when displaying user-generated content.
+    """
+    if not text:
+        return text
+
+    # Remove script tags and their content
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+
+    # Remove event handlers (onclick, onerror, etc.)
+    text = re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s+on\w+\s*=\s*\S+', '', text, flags=re.IGNORECASE)
+
+    # Remove javascript: URLs
+    text = re.sub(r'javascript\s*:', '', text, flags=re.IGNORECASE)
+
+    # Remove data: URLs that could contain scripts
+    text = re.sub(r'data\s*:\s*text/html', '', text, flags=re.IGNORECASE)
+
+    # Remove style tags (can be used for CSS injection)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.IGNORECASE | re.DOTALL)
+
+    # Remove iframe, embed, object tags
+    text = re.sub(r'<(iframe|embed|object)[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'<(iframe|embed|object)[^>]*/>', '', text, flags=re.IGNORECASE)
+
+    return text.strip()
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal and other attacks.
+    """
+    if not filename:
+        return "unnamed_file"
+
+    # Remove path components
+    filename = os.path.basename(filename)
+
+    # Remove null bytes
+    filename = filename.replace('\x00', '')
+
+    # Replace problematic characters
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+
+    # Limit length
+    if len(filename) > 255:
+        name, ext = os.path.splitext(filename)
+        filename = name[:255 - len(ext)] + ext
+
+    # Ensure it's not empty
+    if not filename or filename in ('.', '..'):
+        filename = "unnamed_file"
+
+    return filename
+
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -4529,6 +4657,188 @@ async def change_password(
         return {
             "success": True,
             "message": "Password changed successfully",
+        }
+
+
+@app.get("/api/users/me/export")
+async def export_user_data(
+    authorization: str = Header(None),
+):
+    """
+    Export all user data (GDPR compliance).
+    Returns a JSON file with all data associated with the user.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        # Get user data
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Build export data
+        export_data = {
+            "export_date": datetime.utcnow().isoformat() + "Z",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "avatar_url": user.avatar_url,
+                "is_active": user.is_active,
+                "email_verified": user.email_verified,
+                "totp_enabled": user.totp_enabled,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+                "last_login": user.last_login.isoformat() if user.last_login else None,
+            },
+            "team_memberships": [],
+            "sessions": [],
+            "activity": [],
+        }
+
+        # Get team memberships
+        result = await session.execute(
+            select(TeamMembershipModel).where(TeamMembershipModel.user_id == user_id)
+        )
+        memberships = result.scalars().all()
+
+        for membership in memberships:
+            # Get team info
+            team_result = await session.execute(
+                select(TeamModel).where(TeamModel.id == membership.team_id)
+            )
+            team = team_result.scalar_one_or_none()
+
+            export_data["team_memberships"].append({
+                "team_id": membership.team_id,
+                "team_name": team.name if team else "Unknown",
+                "role": membership.role,
+                "joined_at": membership.created_at.isoformat() if membership.created_at else None,
+            })
+
+        # Get sessions
+        result = await session.execute(
+            select(UserSessionModel).where(UserSessionModel.user_id == user_id)
+        )
+        sessions = result.scalars().all()
+
+        for sess in sessions:
+            export_data["sessions"].append({
+                "id": sess.id,
+                "device_info": sess.device_info,
+                "ip_address": sess.ip_address,
+                "is_active": sess.revoked_at is None and datetime.utcnow() < sess.expires_at,
+                "created_at": sess.created_at.isoformat() if sess.created_at else None,
+                "last_active": sess.last_active.isoformat() if sess.last_active else None,
+            })
+
+        # Get activity logs where user was the actor
+        result = await session.execute(
+            select(ActivityLogModel)
+            .where(ActivityLogModel.user_id == user_id)
+            .order_by(ActivityLogModel.created_at.desc())
+            .limit(100)
+        )
+        activities = result.scalars().all()
+
+        for activity in activities:
+            export_data["activity"].append({
+                "action": activity.action,
+                "resource_type": activity.resource_type,
+                "resource_id": activity.resource_id,
+                "details": activity.details,
+                "created_at": activity.created_at.isoformat() if activity.created_at else None,
+            })
+
+        # Return as downloadable JSON file
+        return Response(
+            content=json.dumps(export_data, indent=2),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="propelai_export_{user_id}_{datetime.utcnow().strftime("%Y%m%d")}.json"'
+            }
+        )
+
+
+@app.delete("/api/users/me")
+async def delete_user_account(
+    authorization: str = Header(None),
+    password: str = Form(...),
+):
+    """
+    Delete user account and all associated data (GDPR compliance).
+    This action is irreversible.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select, delete
+
+        # Get user
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Verify password
+        if not verify_password(password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Incorrect password")
+
+        # Delete all user sessions
+        await session.execute(
+            delete(UserSessionModel).where(UserSessionModel.user_id == user_id)
+        )
+
+        # Delete team memberships (teams themselves are not deleted)
+        await session.execute(
+            delete(TeamMembershipModel).where(TeamMembershipModel.user_id == user_id)
+        )
+
+        # Delete the user (cascades to related data)
+        await session.delete(user)
+        await session.flush()
+
+        logger.info(f"User account deleted: {user_id}")
+
+        return {
+            "success": True,
+            "message": "Account deleted successfully. All your data has been removed.",
         }
 
 
