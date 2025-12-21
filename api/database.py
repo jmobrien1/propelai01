@@ -244,6 +244,11 @@ class UserModel(Base):
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)  # NULL = not locked
 
+    # Email Verification
+    email_verified = Column(Boolean, default=False)
+    email_verification_token = Column(String(100), nullable=True)
+    email_verification_sent_at = Column(DateTime, nullable=True)
+
     # Relationships
     team_memberships = relationship("TeamMembershipModel", back_populates="user", cascade="all, delete-orphan")
 
@@ -254,6 +259,7 @@ class UserModel(Base):
             "name": self.name,
             "avatar_url": self.avatar_url,
             "is_active": self.is_active,
+            "email_verified": self.email_verified or False,
             "totp_enabled": self.totp_enabled or False,
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

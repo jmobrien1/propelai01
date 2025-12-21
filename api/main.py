@@ -527,6 +527,46 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 
+# Request ID Middleware for tracing
+import contextvars
+
+# Context variable to store request ID
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
+
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Add unique request ID to all requests for tracing and logging"""
+
+    async def dispatch(self, request, call_next):
+        # Check for existing request ID in header (from load balancer/gateway)
+        request_id = request.headers.get("X-Request-ID") or secrets.token_hex(8)
+
+        # Store in context variable for use in logging
+        request_id_var.set(request_id)
+
+        # Add request ID to request state for easy access
+        request.state.request_id = request_id
+
+        # Log the incoming request
+        print(f"[{request_id}] {request.method} {request.url.path}")
+
+        # Process the request
+        response = await call_next(request)
+
+        # Add request ID to response headers
+        response.headers["X-Request-ID"] = request_id
+
+        return response
+
+
+def get_request_id() -> str:
+    """Get the current request ID from context"""
+    return request_id_var.get()
+
+
+app.add_middleware(RequestIDMiddleware)
+
+
 # ============== Startup Event ==============
 
 @app.on_event("startup")
@@ -599,7 +639,124 @@ async def health_check():
             "drafting_workflow": "ready" if DRAFTING_WORKFLOW_AVAILABLE else "not available",
             "langgraph": "available" if LANGGRAPH_AVAILABLE else "not installed",
             "vector_store": "ready" if VECTOR_STORE_AVAILABLE else "not available",
+        },
+        "services": {
+            "redis": "connected" if REDIS_AVAILABLE else "not configured",
+            "email": "configured" if EMAIL_SERVICE_AVAILABLE else "console only",
         }
+    }
+
+
+@app.get("/api/health/live")
+async def liveness_probe():
+    """
+    Kubernetes liveness probe.
+    Returns 200 if the application is running.
+    Used to determine if the container should be restarted.
+    """
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/api/health/ready")
+async def readiness_probe():
+    """
+    Kubernetes readiness probe.
+    Returns 200 if the application is ready to receive traffic.
+    Checks critical dependencies like database connectivity.
+    """
+    checks = {
+        "database": False,
+        "storage": False,
+    }
+    errors = []
+
+    # Check database connectivity
+    try:
+        async with get_db_session() as session:
+            if session is not None:
+                from sqlalchemy import text
+                await session.execute(text("SELECT 1"))
+                checks["database"] = True
+            else:
+                errors.append("Database session not available")
+    except Exception as e:
+        errors.append(f"Database error: {str(e)}")
+
+    # Check storage directory
+    if UPLOAD_DIR.exists() and os.access(UPLOAD_DIR, os.W_OK):
+        checks["storage"] = True
+    else:
+        errors.append("Upload directory not writable")
+
+    # Determine overall status
+    is_ready = all(checks.values())
+
+    if is_ready:
+        return {
+            "status": "ready",
+            "timestamp": datetime.now().isoformat(),
+            "checks": checks,
+        }
+    else:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not ready",
+                "timestamp": datetime.now().isoformat(),
+                "checks": checks,
+                "errors": errors,
+            }
+        )
+
+
+@app.get("/api/metrics")
+async def metrics():
+    """
+    Basic metrics endpoint for monitoring.
+    Returns counts and statistics about the application.
+    """
+    # Count RFPs
+    rfp_count = len(store.rfps)
+
+    # Count users and teams (if database available)
+    user_count = 0
+    team_count = 0
+    session_count = 0
+
+    try:
+        async with get_db_session() as session:
+            if session is not None:
+                from sqlalchemy import select, func
+
+                # Count users
+                result = await session.execute(
+                    select(func.count()).select_from(UserModel)
+                )
+                user_count = result.scalar() or 0
+
+                # Count teams
+                result = await session.execute(
+                    select(func.count()).select_from(TeamModel)
+                )
+                team_count = result.scalar() or 0
+
+                # Count active sessions
+                result = await session.execute(
+                    select(func.count()).select_from(UserSessionModel)
+                    .where(UserSessionModel.revoked_at == None)
+                    .where(UserSessionModel.expires_at > datetime.utcnow())
+                )
+                session_count = result.scalar() or 0
+    except Exception:
+        pass
+
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "rfps": rfp_count,
+        "users": user_count,
+        "teams": team_count,
+        "active_sessions": session_count,
+        "uptime_seconds": int((datetime.now() - datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()),
     }
 
 
@@ -3934,6 +4091,42 @@ def require_role(required_role: str, team_id: str = None):
     return decorator
 
 
+# Password strength requirements
+MIN_PASSWORD_LENGTH = 8
+REQUIRE_UPPERCASE = True
+REQUIRE_LOWERCASE = True
+REQUIRE_DIGIT = True
+REQUIRE_SPECIAL = False  # Optional for now
+
+
+def validate_password_strength(password: str) -> tuple[bool, str]:
+    """
+    Validate password meets strength requirements.
+    Returns (is_valid, error_message).
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return False, f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
+
+    if REQUIRE_UPPERCASE and not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter"
+
+    if REQUIRE_LOWERCASE and not any(c.islower() for c in password):
+        return False, "Password must contain at least one lowercase letter"
+
+    if REQUIRE_DIGIT and not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one number"
+
+    if REQUIRE_SPECIAL and not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+        return False, "Password must contain at least one special character"
+
+    return True, ""
+
+
+# Email verification configuration
+EMAIL_VERIFICATION_EXPIRY_HOURS = 24
+REQUIRE_EMAIL_VERIFICATION = os.environ.get("REQUIRE_EMAIL_VERIFICATION", "false").lower() == "true"
+
+
 @app.post("/api/auth/register")
 async def register_user(
     request: Request,
@@ -3944,6 +4137,11 @@ async def register_user(
     """Register a new user"""
     # Rate limit: 3 registrations per minute
     await check_rate_limit(request, "register")
+
+    # Validate password strength
+    is_valid, error_msg = validate_password_strength(password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
 
     async with get_db_session() as session:
         if session is None:
@@ -3959,26 +4157,158 @@ async def register_user(
             raise HTTPException(status_code=400, detail="Email already registered")
 
         user_id = generate_id()
+        verification_token = secrets.token_urlsafe(32)
+
         user = UserModel(
             id=user_id,
             email=email,
             name=name,
             password_hash=hash_password(password),
+            email_verified=not REQUIRE_EMAIL_VERIFICATION,  # Auto-verify if not required
+            email_verification_token=verification_token if REQUIRE_EMAIL_VERIFICATION else None,
+            email_verification_sent_at=datetime.utcnow() if REQUIRE_EMAIL_VERIFICATION else None,
         )
         session.add(user)
         await session.flush()
 
+        # Send verification email if required
+        email_sent = False
+        if REQUIRE_EMAIL_VERIFICATION and EMAIL_SERVICE_AVAILABLE and email_service:
+            email_sent = await email_service.send_email_verification(
+                to_email=email,
+                verification_token=verification_token,
+                user_name=name
+            )
+
         # Generate JWT token for immediate login after registration
         token = create_jwt_token(user.id, user.email, user.name)
+        token_expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
 
-        return {
+        # Create session record
+        await create_session(
+            user_id=user.id,
+            token=token,
+            request=request,
+            expires_at=token_expiry
+        )
+
+        response = {
             "success": True,
             "user": user.to_dict(),
             "token": token,
             "token_type": "bearer",
             "expires_in": JWT_EXPIRY_HOURS * 3600,
             "message": "Registration successful",
+            "email_verification_required": REQUIRE_EMAIL_VERIFICATION,
         }
+
+        if REQUIRE_EMAIL_VERIFICATION:
+            response["email_sent"] = email_sent
+            if not email_sent:
+                response["verification_token"] = verification_token
+                response["note"] = "Email not configured - token provided directly"
+
+        return response
+
+
+@app.post("/api/auth/verify-email")
+async def verify_email(
+    token: str = Form(...),
+):
+    """Verify email address using verification token"""
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.email_verification_token == token)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid verification token")
+
+        if user.email_verified:
+            return {"success": True, "message": "Email already verified"}
+
+        # Check if token expired
+        if user.email_verification_sent_at:
+            expiry = user.email_verification_sent_at + timedelta(hours=EMAIL_VERIFICATION_EXPIRY_HOURS)
+            if datetime.utcnow() > expiry:
+                raise HTTPException(status_code=400, detail="Verification token has expired. Please request a new one.")
+
+        # Mark email as verified
+        user.email_verified = True
+        user.email_verification_token = None
+        await session.flush()
+
+        return {"success": True, "message": "Email verified successfully"}
+
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification_email(
+    request: Request,
+    authorization: str = Header(None),
+):
+    """Resend email verification email"""
+    if not authorization:
+        raise HTTPException(401, "Authorization required")
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "Invalid authorization format")
+
+    try:
+        payload = verify_jwt_token(parts[1])
+        user_id = payload.get("sub")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    async with get_db_session() as session:
+        if session is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        if user.email_verified:
+            return {"success": True, "message": "Email already verified"}
+
+        # Generate new token
+        verification_token = secrets.token_urlsafe(32)
+        user.email_verification_token = verification_token
+        user.email_verification_sent_at = datetime.utcnow()
+        await session.flush()
+
+        # Send verification email
+        email_sent = False
+        if EMAIL_SERVICE_AVAILABLE and email_service:
+            email_sent = await email_service.send_email_verification(
+                to_email=user.email,
+                verification_token=verification_token,
+                user_name=user.name
+            )
+
+        response = {
+            "success": True,
+            "message": "Verification email sent",
+            "email_sent": email_sent,
+        }
+
+        if not email_sent:
+            response["verification_token"] = verification_token
+            response["note"] = "Email not configured - token provided directly"
+
+        return response
 
 
 # Account lockout configuration

@@ -317,6 +317,69 @@ PropelAI - Autonomous Proposal Operating System
 
         return subject, html_body, text_body
 
+    @staticmethod
+    def email_verification(user_name: str, verification_url: str) -> tuple[str, str, str]:
+        """Returns (subject, html_body, text_body) for email verification"""
+        subject = "Verify Your PropelAI Email Address"
+
+        html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+        .header h1 {{ color: white; margin: 0; font-size: 24px; }}
+        .content {{ background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }}
+        .button {{ display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; margin: 20px 0; }}
+        .button:hover {{ background: #5a6fd6; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+        .warning {{ background: #fff3cd; border: 1px solid #ffc107; padding: 10px; border-radius: 4px; margin-top: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✉️ Verify Your Email</h1>
+        </div>
+        <div class="content">
+            <p>Hi {user_name},</p>
+            <p>Thanks for signing up for PropelAI! Please verify your email address by clicking the button below:</p>
+            <p style="text-align: center;">
+                <a href="{verification_url}" class="button">Verify Email Address</a>
+            </p>
+            <p>Or copy and paste this link into your browser:</p>
+            <p style="word-break: break-all; color: #667eea;">{verification_url}</p>
+            <div class="warning">
+                ⚠️ This link will expire in 24 hours. If you didn't create an account, please ignore this email.
+            </div>
+        </div>
+        <div class="footer">
+            <p>PropelAI - Autonomous Proposal Operating System</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        text_body = f"""
+Hi {user_name},
+
+Thanks for signing up for PropelAI! Please verify your email address by clicking this link:
+
+{verification_url}
+
+This link will expire in 24 hours.
+
+If you didn't create an account, please ignore this email.
+
+--
+PropelAI - Autonomous Proposal Operating System
+"""
+
+        return subject, html_body, text_body
+
 
 # ============== Email Providers ==============
 
@@ -554,6 +617,17 @@ class EmailService:
         """Send welcome email to new users"""
         login_url = f"{self.config.base_url}/"
         subject, html_body, text_body = EmailTemplate.welcome(user_name, login_url)
+        return await self.send_email(to_email, subject, html_body, text_body)
+
+    async def send_email_verification(
+        self,
+        to_email: str,
+        verification_token: str,
+        user_name: str
+    ) -> bool:
+        """Send email verification email"""
+        verification_url = f"{self.config.base_url}/?verify_email={verification_token}"
+        subject, html_body, text_body = EmailTemplate.email_verification(user_name, verification_url)
         return await self.send_email(to_email, subject, html_body, text_body)
 
 

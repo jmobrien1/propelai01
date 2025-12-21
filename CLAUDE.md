@@ -304,6 +304,53 @@ A winning proposal ensures:
 - `ENABLE_HSTS=true` - Enable Strict-Transport-Security
 - `ENABLE_CSP=true` - Enable Content-Security-Policy
 
+### Email Verification
+**Goal:** Verify new user email addresses before granting full access.
+
+**Implementation** (`api/main.py`, `api/database.py`):
+- Optional email verification on registration
+- 24-hour token expiration
+- Resend verification email endpoint
+
+**UserModel Fields:**
+- `email_verified`: Boolean verification status
+- `email_verification_token`: Secure token for verification
+- `email_verification_sent_at`: Timestamp for expiration
+
+**API Endpoints:**
+- `POST /api/auth/verify-email` - Verify email with token
+- `POST /api/auth/resend-verification` - Resend verification email
+
+**Configuration:**
+- `REQUIRE_EMAIL_VERIFICATION=true` - Enable email verification requirement
+
+### Password Strength Validation
+**Goal:** Enforce strong passwords to improve security.
+
+**Requirements:**
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+
+### Health Check Endpoints
+**Goal:** Provide endpoints for monitoring and Kubernetes deployments.
+
+**Endpoints:**
+- `GET /api/health` - Comprehensive health status with component info
+- `GET /api/health/live` - Kubernetes liveness probe (is app running?)
+- `GET /api/health/ready` - Kubernetes readiness probe (is app ready for traffic?)
+- `GET /api/metrics` - Basic metrics (user count, team count, etc.)
+
+### Request ID Tracing
+**Goal:** Enable request tracing for debugging and logging.
+
+**Implementation** (`api/main.py`):
+- RequestIDMiddleware adds unique ID to each request
+- Preserves X-Request-ID header from load balancers
+- Returns X-Request-ID in response headers
+- Logs requests with their ID for correlation
+
 ## 9. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation
