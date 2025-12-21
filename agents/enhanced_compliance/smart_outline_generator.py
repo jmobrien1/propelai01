@@ -143,6 +143,95 @@ class SmartOutlineGenerator:
             r"(?:more|most|equally|less)\s+important",
             r"descending\s+order\s+of\s+importance",
         ]
+
+        # Volume-specific section templates
+        self.volume_templates = {
+            VolumeType.TECHNICAL: [
+                ("SEC-TECH-1", "Executive Summary", "High-level summary of technical approach and key differentiators"),
+                ("SEC-TECH-2", "Technical Approach", "Detailed methodology and solution architecture"),
+                ("SEC-TECH-3", "Understanding of Requirements", "Demonstration of RFP comprehension"),
+                ("SEC-TECH-4", "Work Plan", "Project schedule, milestones, and deliverables"),
+                ("SEC-TECH-5", "Quality Assurance", "Quality control processes and metrics"),
+            ],
+            VolumeType.MANAGEMENT: [
+                ("SEC-MGMT-1", "Management Approach", "Overall management philosophy and structure"),
+                ("SEC-MGMT-2", "Organizational Structure", "Team organization and reporting relationships"),
+                ("SEC-MGMT-3", "Staffing Plan", "Personnel allocation and resource management"),
+                ("SEC-MGMT-4", "Risk Management", "Risk identification, mitigation, and contingency planning"),
+                ("SEC-MGMT-5", "Communication Plan", "Stakeholder communication and reporting"),
+            ],
+            VolumeType.PAST_PERFORMANCE: [
+                ("SEC-PP-1", "Recent & Relevant Projects", "Projects demonstrating similar scope, size, and complexity"),
+                ("SEC-PP-2", "Performance Questionnaires", "Client reference information and CPARS ratings"),
+                ("SEC-PP-3", "Lessons Learned", "How past experience informs this effort"),
+                ("SEC-PP-4", "Corporate Experience Summary", "Overview of organizational capabilities"),
+            ],
+            VolumeType.COST_PRICE: [
+                ("SEC-COST-1", "Pricing Assumptions", "Basis of estimate and pricing rationale"),
+                ("SEC-COST-2", "CLIN Structure", "Contract line item breakdown and pricing"),
+                ("SEC-COST-3", "Labor Categories & Rates", "Labor rate justification and basis"),
+                ("SEC-COST-4", "Other Direct Costs", "ODCs, travel, materials, and subcontracts"),
+                ("SEC-COST-5", "Cost Narrative", "Supporting narrative for price reasonableness"),
+            ],
+            VolumeType.STAFFING: [
+                ("SEC-STAFF-1", "Key Personnel", "Resumes and qualifications of key staff"),
+                ("SEC-STAFF-2", "Organizational Chart", "Team structure and roles"),
+                ("SEC-STAFF-3", "Labor Mix", "Labor category distribution and rationale"),
+                ("SEC-STAFF-4", "Succession Planning", "Contingency for key personnel changes"),
+            ],
+            VolumeType.SMALL_BUSINESS: [
+                ("SEC-SB-1", "Small Business Subcontracting Plan", "Goals and commitments by category"),
+                ("SEC-SB-2", "Subcontractor Identification", "Named small business partners"),
+                ("SEC-SB-3", "Good Faith Efforts", "Outreach and mentoring activities"),
+            ],
+            VolumeType.EXPERIENCE: [
+                ("SEC-EXP-1", "Corporate Experience", "Relevant organizational experience"),
+                ("SEC-EXP-2", "Contract References", "Prior contracts and performance history"),
+                ("SEC-EXP-3", "Capabilities Matrix", "Mapping of capabilities to requirements"),
+            ],
+            VolumeType.OTHER: [
+                ("SEC-OTH-1", "Overview", "Section overview and approach"),
+                ("SEC-OTH-2", "Response Content", "Detailed response to requirements"),
+            ],
+        }
+
+    def get_volume_sections(self, volume_type: VolumeType) -> List[ProposalSection]:
+        """
+        Get appropriate sections for a volume based on its type.
+
+        This ensures each volume gets structurally appropriate sections
+        rather than generic technical sections applied to all volumes.
+
+        Args:
+            volume_type: The type of volume (Technical, Cost, Past Performance, etc.)
+
+        Returns:
+            List of ProposalSection objects appropriate for this volume type
+        """
+        template = self.volume_templates.get(volume_type, self.volume_templates[VolumeType.OTHER])
+
+        sections = []
+        for sec_id, sec_name, sec_desc in template:
+            section = ProposalSection(
+                id=sec_id,
+                name=sec_name,
+                requirements=[sec_desc]  # Use description as guidance
+            )
+            sections.append(section)
+
+        return sections
+
+    def _apply_volume_sections(self, volumes: List[ProposalVolume]):
+        """
+        Apply appropriate section templates to each volume based on its type.
+
+        This fixes the "Templating Loop Bug" where all volumes received
+        identical generic sections regardless of their purpose.
+        """
+        for volume in volumes:
+            # Only apply template if volume has no sections already
+            if not volume.sections:
+                volume.sections = self.get_volume_sections(volume.volume_type)
     
     def generate_from_compliance_matrix(
         self,
@@ -183,7 +272,11 @@ class SmartOutlineGenerator:
         if not volumes:
             volumes = self._create_default_volumes(rfp_format, section_m_requirements)
             warnings.append("No explicit volumes found - using default structure")
-        
+
+        # Apply volume-specific section templates
+        # This ensures Cost volumes get cost sections, PP volumes get PP sections, etc.
+        self._apply_volume_sections(volumes)
+
         # Extract evaluation factors
         eval_factors = self._extract_eval_factors(section_m_requirements)
         

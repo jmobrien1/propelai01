@@ -179,11 +179,11 @@ class BundleDetector:
             if doc_type == DocumentType.MAIN_SOLICITATION and not main_assigned:
                 bundle.main_document = filepath
                 main_assigned = True
-                # Try to extract solicitation number
+                # Try to extract solicitation number from filename first
                 sol_num = self._extract_solicitation_number(filename)
                 if sol_num:
                     bundle.solicitation_number = sol_num
-                    
+
             elif doc_type == DocumentType.STATEMENT_OF_WORK and not sow_assigned:
                 bundle.sow_document = filepath
                 sow_assigned = True
@@ -209,8 +209,82 @@ class BundleDetector:
         
         # Sort amendments by number
         bundle.amendments = self._sort_amendments(bundle.amendments)
-        
+
+        # If solicitation number is still UNKNOWN, try to extract from document content
+        if bundle.solicitation_number == "UNKNOWN":
+            sol_num = self._extract_solicitation_from_documents(bundle)
+            if sol_num:
+                bundle.solicitation_number = sol_num
+
         return bundle
+
+    def _extract_solicitation_from_documents(self, bundle: RFPBundle) -> Optional[str]:
+        """
+        Try to extract solicitation number from document content.
+
+        Reads the first 500 characters of the main document and any attachments
+        to find explicit "Solicitation Number:" patterns.
+        """
+        # Priority order: main document, then attachments
+        documents_to_check = []
+
+        if bundle.main_document:
+            documents_to_check.append(bundle.main_document)
+
+        # Also check attachments (solicitation number often in attachment headers)
+        for att_path in bundle.attachments.values():
+            documents_to_check.append(att_path)
+
+        for doc_path in documents_to_check:
+            try:
+                content = self._read_document_header(doc_path)
+                if content:
+                    sol_num = self.extract_solicitation_from_content(content)
+                    if sol_num and sol_num != "UNKNOWN":
+                        return sol_num
+            except Exception:
+                continue
+
+        return None
+
+    def _read_document_header(self, filepath: str, max_chars: int = 1000) -> Optional[str]:
+        """Read the first portion of a document for metadata extraction."""
+        ext = os.path.splitext(filepath)[1].lower()
+
+        try:
+            if ext == '.txt':
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.read(max_chars)
+
+            elif ext == '.pdf':
+                # Try pypdf first
+                try:
+                    from pypdf import PdfReader
+                    reader = PdfReader(filepath)
+                    if reader.pages:
+                        text = reader.pages[0].extract_text() or ""
+                        return text[:max_chars]
+                except ImportError:
+                    pass
+
+            elif ext in ['.docx', '.doc']:
+                # Try python-docx
+                try:
+                    from docx import Document
+                    doc = Document(filepath)
+                    text_parts = []
+                    for para in doc.paragraphs[:10]:  # First 10 paragraphs
+                        text_parts.append(para.text)
+                        if sum(len(t) for t in text_parts) > max_chars:
+                            break
+                    return "\n".join(text_parts)[:max_chars]
+                except ImportError:
+                    pass
+
+        except Exception:
+            pass
+
+        return None
     
     def detect_from_folder(self, folder_path: str) -> RFPBundle:
         """
@@ -279,18 +353,67 @@ class BundleDetector:
         nih_match = re.search(r"75N\d{11}", text)
         if nih_match:
             return nih_match.group()
-        
+
         # DoD Navy format: N0017826R30020003
         navy_match = re.search(r"N\d{5}\d{2}[RQ]\d+", text)
         if navy_match:
             return navy_match.group()
-        
+
+        # Air Force format: FA8806-XX-X-XXXX
+        af_match = re.search(r"FA\d{4}[-]?\d{2}[-]?[A-Z][-]?\d{4}", text, re.IGNORECASE)
+        if af_match:
+            return af_match.group().upper()
+
+        # Army format: W911NF-XX-X-XXXX
+        army_match = re.search(r"W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4}", text, re.IGNORECASE)
+        if army_match:
+            return army_match.group().upper()
+
+        # GSA format: GS-XXX-XXXX or 47QXXX-XX-X-XXXX
+        gsa_match = re.search(r"(?:GS[-]?[A-Z0-9]{2,5}[-]?\d{4}|47Q[A-Z]{2,4}[-]?\d{2}[-]?[A-Z][-]?\d{4})", text, re.IGNORECASE)
+        if gsa_match:
+            return gsa_match.group().upper()
+
         # Generic format
         generic_match = re.search(r"(?:RFP|SOL)[-_]?(\S+)", text, re.IGNORECASE)
         if generic_match:
             return generic_match.group(1)
-        
+
         return None
+
+    def extract_solicitation_from_content(self, content: str, max_chars: int = 500) -> Optional[str]:
+        """
+        Extract solicitation number from document content header.
+
+        Searches the first `max_chars` characters of the document for
+        explicit "Solicitation Number:" patterns and common formats.
+
+        Args:
+            content: Full document text content
+            max_chars: How many characters from the start to search (default 500)
+
+        Returns:
+            Extracted solicitation number or None
+        """
+        # Only search the header portion
+        header_text = content[:max_chars]
+
+        # Look for explicit "Solicitation Number:" or "Solicitation No:" patterns
+        explicit_patterns = [
+            r"Solicitation\s*(?:Number|No\.?)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"Solicitation[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"RFP\s*(?:Number|No\.?|#)?[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"Contract\s*(?:Number|No\.?)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"Reference\s*(?:Number|No\.?)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+        ]
+
+        for pattern in explicit_patterns:
+            match = re.search(pattern, header_text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+
+        # Fall back to format-based extraction
+        return self._extract_solicitation_number(header_text)
     
     def _extract_research_outline_id(self, filename: str) -> str:
         """Extract Research Outline ID (e.g., 'RO-I', 'RO-III')"""
