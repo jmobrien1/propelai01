@@ -271,7 +271,12 @@ class UserModel(Base):
     email_verification_sent_at = Column(DateTime, nullable=True)
 
     # Relationships
-    team_memberships = relationship("TeamMembershipModel", back_populates="user", cascade="all, delete-orphan")
+    team_memberships = relationship(
+        "TeamMembershipModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="[TeamMembershipModel.user_id]"
+    )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
