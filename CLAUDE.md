@@ -522,7 +522,129 @@ A winning proposal ensures:
 - Structured JSON logging integration
 - Indexed by action type for efficient queries
 
-## 9. Reference Documents
+## 9. v4.2 Infrastructure Improvements
+
+### Security Hardening
+**Critical security fixes for production deployment:**
+
+1. **Password Hashing (bcrypt)**
+   - Replaced SHA256 with bcrypt via passlib
+   - Backward-compatible with legacy hashes during migration
+   - Location: `api/main.py:hash_password()`, `verify_password()`
+
+2. **JWT Secret Validation**
+   - Fails loudly in production if `JWT_SECRET` not set
+   - Development warning when using default secret
+   - Environment: `PROPELAI_ENV=production` triggers validation
+
+3. **CORS Configuration**
+   - Environment-based origin control via `CORS_ORIGINS`
+   - Wildcard disables credentials for security
+   - Example: `CORS_ORIGINS=https://app.propelai.com,https://propelai.com`
+
+### Infrastructure Files
+**New deployment and development artifacts:**
+
+- **Dockerfile** - Multi-stage production build with security best practices
+- **alembic.ini** - Database migration configuration
+- **migrations/** - Alembic migrations directory with initial schema
+- **.dockerignore** - Optimized Docker build context
+
+### Database Migrations (Alembic)
+**Version-controlled schema evolution:**
+
+```bash
+# Apply migrations
+make db-upgrade
+# or: alembic upgrade head
+
+# Create new migration
+make db-migrate
+# or: alembic revision --autogenerate -m "Description"
+
+# Rollback
+make db-downgrade
+# or: alembic downgrade -1
+```
+
+### Modular Architecture (In Progress)
+**New module structure for maintainability:**
+
+```
+api/
+├── main.py            # FastAPI app entry point
+├── config.py          # Centralized configuration
+├── database.py        # SQLAlchemy models
+├── middleware/        # HTTP middleware
+│   ├── security.py    # Security headers
+│   ├── versioning.py  # API version headers
+│   └── tracing.py     # Request ID tracing
+├── routers/           # API route modules (planned)
+│   ├── auth.py        # Authentication endpoints
+│   ├── rfp.py         # RFP management
+│   ├── teams.py       # Team workspaces
+│   ├── library.py     # Company Library
+│   └── webhooks.py    # Webhook management
+└── schemas/           # Pydantic models (planned)
+```
+
+### Graceful Shutdown
+**Proper resource cleanup on shutdown:**
+
+- Cancels background tasks (rate limiter cleanup)
+- Closes database connection pool
+- Closes Redis connection
+- Logs shutdown progress
+
+### OpenAPI Documentation
+**Enhanced API documentation at `/docs`:**
+
+- Organized endpoints by tags (Health, Authentication, RFP, etc.)
+- Detailed endpoint descriptions
+- Authentication instructions
+- Rate limiting documentation
+
+### Performance Optimizations
+**N+1 Query Prevention:**
+
+- Eager loading with `selectinload` for RFP relationships
+- Configurable relationship loading in `list_all()`
+- Optimized database queries
+
+## 10. Environment Variables Reference
+
+### Required in Production
+```bash
+JWT_SECRET=<32+ character secret>
+DATABASE_URL=postgresql://user:pass@host:5432/propelai
+PROPELAI_ENV=production
+```
+
+### Recommended in Production
+```bash
+CORS_ORIGINS=https://yourdomain.com
+ENABLE_HSTS=true
+ENABLE_CSP=true
+REDIS_URL=redis://localhost:6379
+```
+
+### Optional Configuration
+```bash
+# Email
+EMAIL_PROVIDER=smtp|sendgrid|console
+EMAIL_FROM=noreply@propelai.com
+SMTP_HOST=smtp.example.com
+SENDGRID_API_KEY=SG.xxx
+
+# Features
+REQUIRE_EMAIL_VERIFICATION=true
+
+# LLM APIs
+OPENAI_API_KEY=sk-xxx
+ANTHROPIC_API_KEY=sk-ant-xxx
+```
+
+## 11. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation
 - `HANDOFF_DOCUMENT.md`: Legacy v2.9 documentation (Shipley methodology)

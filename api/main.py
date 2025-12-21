@@ -37,6 +37,15 @@ from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+# Password hashing with bcrypt (secure)
+try:
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    BCRYPT_AVAILABLE = True
+except ImportError:
+    BCRYPT_AVAILABLE = False
+    pwd_context = None
+
 
 # ============== Structured Logging ==============
 
@@ -820,19 +829,118 @@ if BEST_PRACTICES_AVAILABLE:
 
 # ============== FastAPI App ==============
 
+# OpenAPI Tags for documentation organization
+OPENAPI_TAGS = [
+    {
+        "name": "Health",
+        "description": "Health checks and monitoring endpoints",
+    },
+    {
+        "name": "Authentication",
+        "description": "User authentication, registration, and session management",
+    },
+    {
+        "name": "Users",
+        "description": "User profile management",
+    },
+    {
+        "name": "Teams",
+        "description": "Team workspaces and member management",
+    },
+    {
+        "name": "RFP",
+        "description": "RFP document upload, processing, and management",
+    },
+    {
+        "name": "Requirements",
+        "description": "Requirements extraction and tracking",
+    },
+    {
+        "name": "Strategy",
+        "description": "Win themes, competitive analysis, and Iron Triangle strategy",
+    },
+    {
+        "name": "Drafting",
+        "description": "AI-powered proposal drafting workflow",
+    },
+    {
+        "name": "Library",
+        "description": "Company Library with vector search capabilities",
+    },
+    {
+        "name": "Webhooks",
+        "description": "Webhook management for event notifications",
+    },
+    {
+        "name": "Admin",
+        "description": "Administrative operations and bulk actions",
+    },
+]
+
 app = FastAPI(
     title="PropelAI API",
-    description="RFP Intelligence Platform - Extract requirements, track amendments, generate compliance matrices. v4.0 adds Trust Gate source traceability.",
-    version="4.0.0"
+    description="""
+# PropelAI - Autonomous Proposal Operating System
+
+PropelAI is an AI-powered RFP intelligence platform that helps organizations win more proposals through:
+
+- **Trust Gate**: Source traceability with visual overlays proving extraction accuracy
+- **Iron Triangle**: Strategic analysis linking Section L, M, and C requirements
+- **Drafting Agent**: AI-powered proposal generation using Feature-Benefit-Proof framework
+- **Vector Search**: Semantic search across your Company Library
+
+## Authentication
+
+Most endpoints require authentication via JWT Bearer token. Obtain a token by:
+1. Register: `POST /api/auth/register`
+2. Login: `POST /api/auth/login`
+3. Include token in header: `Authorization: Bearer <token>`
+
+## Rate Limiting
+
+Authentication endpoints are rate-limited to prevent abuse:
+- Login: 5 attempts per minute
+- Register: 3 attempts per minute
+- Forgot Password: 3 attempts per 5 minutes
+- General API: 100 requests per minute
+
+## Versioning
+
+API version is returned in the `X-API-Version` response header.
+Current version: **4.1.0**
+    """,
+    version="4.1.0",
+    openapi_tags=OPENAPI_TAGS,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    contact={
+        "name": "PropelAI Support",
+        "url": "https://github.com/propelai/propelai",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
 )
 
-# CORS - allow all origins for development
+# CORS Configuration - Use environment variable in production
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
+if CORS_ORIGINS == "*":
+    # Development mode - allow all origins (with warning)
+    _cors_origins = ["*"]
+    _cors_credentials = False  # Cannot use credentials with wildcard origin
+else:
+    # Production mode - restrict to specified origins
+    _cors_origins = [origin.strip() for origin in CORS_ORIGINS.split(",")]
+    _cors_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-API-Version"],
 )
 
 
@@ -975,19 +1083,83 @@ app.add_middleware(APIVersionMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 
-# ============== Startup Event ==============
+# ============== Startup/Shutdown Events ==============
+
+# Background task for rate limiter cleanup
+_rate_limiter_cleanup_task: Optional[asyncio.Task] = None
+_shutdown_event = asyncio.Event()
+
+
+async def _rate_limiter_cleanup_loop():
+    """Background task to periodically clean up old rate limiter entries"""
+    while not _shutdown_event.is_set():
+        try:
+            await asyncio.sleep(300)  # Run every 5 minutes
+            await rate_limiter.cleanup_old_entries(max_age_seconds=3600)
+            logger.debug("Rate limiter cleanup completed")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Rate limiter cleanup error: {e}")
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on startup"""
-    print("[Startup] PropelAI v4.1 starting...")
-    print(f"[Startup] Upload directory: {UPLOAD_DIR}")
-    print(f"[Startup] Database available: {DATABASE_AVAILABLE and is_db_available()}")
+    """Initialize database and background tasks on startup"""
+    global _rate_limiter_cleanup_task
+
+    logger.info("[Startup] PropelAI v4.1 starting...")
+    logger.info(f"[Startup] Environment: {PROPELAI_ENV}")
+    logger.info(f"[Startup] Upload directory: {UPLOAD_DIR}")
+    logger.info(f"[Startup] Database available: {DATABASE_AVAILABLE and is_db_available()}")
+    logger.info(f"[Startup] Bcrypt available: {BCRYPT_AVAILABLE}")
 
     # Initialize database and load existing RFPs
     await store.init_database()
 
-    print("[Startup] Ready to serve requests")
+    # Start rate limiter cleanup background task
+    _rate_limiter_cleanup_task = asyncio.create_task(_rate_limiter_cleanup_loop())
+
+    logger.info("[Startup] Ready to serve requests")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Graceful shutdown - cleanup resources"""
+    global _rate_limiter_cleanup_task
+
+    logger.info("[Shutdown] PropelAI shutting down...")
+
+    # Signal shutdown to background tasks
+    _shutdown_event.set()
+
+    # Cancel rate limiter cleanup task
+    if _rate_limiter_cleanup_task:
+        _rate_limiter_cleanup_task.cancel()
+        try:
+            await _rate_limiter_cleanup_task
+        except asyncio.CancelledError:
+            pass
+
+    # Close database connections
+    if DATABASE_AVAILABLE:
+        try:
+            from api.database import async_engine
+            if async_engine:
+                await async_engine.dispose()
+                logger.info("[Shutdown] Database connections closed")
+        except Exception as e:
+            logger.error(f"[Shutdown] Error closing database: {e}")
+
+    # Close Redis connection if available
+    if REDIS_AVAILABLE and redis_client:
+        try:
+            await redis_client.close()
+            logger.info("[Shutdown] Redis connection closed")
+        except Exception as e:
+            logger.error(f"[Shutdown] Error closing Redis: {e}")
+
+    logger.info("[Shutdown] Cleanup complete")
 
 
 # ============== Root Route (Web UI) ==============
@@ -1059,9 +1231,16 @@ async def get_version():
 
 # ============== Health Check ==============
 
-@app.get("/api/health")
+@app.get("/api/health", tags=["Health"])
 async def health_check():
-    """Health check endpoint"""
+    """
+    Comprehensive health check endpoint.
+
+    Returns detailed status of all system components including:
+    - Storage configuration and database connectivity
+    - AI/ML component availability (Trust Gate, Strategy Agent, Drafting)
+    - External services (Redis, Email)
+    """
     # v4.1: Check storage type
     storage_type = "persistent" if PERSISTENT_DATA_DIR.exists() else "temporary"
 
@@ -1097,22 +1276,24 @@ async def health_check():
     }
 
 
-@app.get("/api/health/live")
+@app.get("/api/health/live", tags=["Health"])
 async def liveness_probe():
     """
     Kubernetes liveness probe.
+
     Returns 200 if the application is running.
-    Used to determine if the container should be restarted.
+    Used by Kubernetes to determine if the container should be restarted.
     """
     return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
 
-@app.get("/api/health/ready")
+@app.get("/api/health/ready", tags=["Health"])
 async def readiness_probe():
     """
     Kubernetes readiness probe.
+
     Returns 200 if the application is ready to receive traffic.
-    Checks critical dependencies like database connectivity.
+    Checks critical dependencies like database connectivity and storage access.
     """
     checks = {
         "database": False,
@@ -4847,7 +5028,25 @@ except ImportError:
     jwt = None
 
 # JWT Configuration
-JWT_SECRET = os.environ.get("JWT_SECRET", "propelai-dev-secret-change-in-production")
+_jwt_secret_env = os.environ.get("JWT_SECRET")
+PROPELAI_ENV = os.environ.get("PROPELAI_ENV", "development")
+
+# Fail loudly in production if JWT_SECRET is not set
+if PROPELAI_ENV == "production" and not _jwt_secret_env:
+    raise RuntimeError(
+        "CRITICAL: JWT_SECRET environment variable must be set in production. "
+        "Generate a secure secret with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+
+# Warn in development if using default secret
+if not _jwt_secret_env:
+    import warnings
+    warnings.warn(
+        "Using default JWT_SECRET for development. Set JWT_SECRET env var for production.",
+        UserWarning
+    )
+
+JWT_SECRET = _jwt_secret_env or "propelai-dev-secret-change-in-production"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24 * 7  # 7 days
 
@@ -4858,13 +5057,27 @@ def generate_id() -> str:
 
 
 def hash_password(password: str) -> str:
-    """Simple password hashing (use bcrypt in production)"""
+    """Hash password using bcrypt (production-grade security)"""
+    if BCRYPT_AVAILABLE and pwd_context:
+        return pwd_context.hash(password)
+    # Fallback to SHA256 only if bcrypt unavailable (NOT recommended for production)
+    import hashlib
+    logger.warning("Using SHA256 fallback for password hashing - install passlib[bcrypt] for production")
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify password against hash"""
-    return hash_password(password) == password_hash
+    """Verify password against hash using bcrypt"""
+    if BCRYPT_AVAILABLE and pwd_context:
+        try:
+            return pwd_context.verify(password, password_hash)
+        except Exception:
+            # Handle legacy SHA256 hashes during migration
+            import hashlib
+            return hashlib.sha256(password.encode()).hexdigest() == password_hash
+    # Fallback for SHA256
+    import hashlib
+    return hashlib.sha256(password.encode()).hexdigest() == password_hash
 
 
 def create_jwt_token(user_id: str, email: str, name: str) -> str:
@@ -5150,14 +5363,19 @@ EMAIL_VERIFICATION_EXPIRY_HOURS = 24
 REQUIRE_EMAIL_VERIFICATION = os.environ.get("REQUIRE_EMAIL_VERIFICATION", "false").lower() == "true"
 
 
-@app.post("/api/auth/register")
+@app.post("/api/auth/register", tags=["Authentication"])
 async def register_user(
     request: Request,
     email: str = Form(...),
     name: str = Form(...),
     password: str = Form(...),
 ):
-    """Register a new user"""
+    """
+    Register a new user account.
+
+    Creates a new user with email, name, and password. Returns a JWT token
+    for immediate authentication. Rate limited to 3 registrations per minute.
+    """
     # Rate limit: 3 registrations per minute
     await check_rate_limit(request, "register")
 
@@ -5339,13 +5557,19 @@ ACCOUNT_LOCKOUT_THRESHOLD = 5  # Lock after 5 failed attempts
 ACCOUNT_LOCKOUT_DURATION_MINUTES = 15  # Lock for 15 minutes
 
 
-@app.post("/api/auth/login")
+@app.post("/api/auth/login", tags=["Authentication"])
 async def login_user(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
 ):
-    """Login user and return JWT token (or 2FA challenge if enabled)"""
+    """
+    Login user and return JWT token.
+
+    Authenticates with email and password. If 2FA is enabled, returns a
+    challenge requiring TOTP verification. Rate limited to 5 attempts per minute.
+    Account locks after 5 failed attempts for 15 minutes.
+    """
     # Rate limit: 5 attempts per minute
     await check_rate_limit(request, "login")
 

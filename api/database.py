@@ -23,10 +23,10 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import (
     Column, String, Text, Integer, Float, Boolean, DateTime, JSON,
-    ForeignKey, create_engine, Index
+    ForeignKey, create_engine, Index, select
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, selectinload, joinedload
 from sqlalchemy.dialects.postgresql import JSONB
 
 # Database URL from environment (Render provides this automatically)
@@ -919,17 +919,29 @@ class DatabaseStore:
             await session.delete(rfp)
             return True
 
-    async def list_all(self) -> List[Dict]:
-        """List all RFPs"""
-        from sqlalchemy import select
+    async def list_all(self, include_relationships: bool = True) -> List[Dict]:
+        """
+        List all RFPs with optional eager loading of relationships.
 
+        Args:
+            include_relationships: If True, eagerly load requirements and amendments
+                                   to avoid N+1 query issues. Set to False for
+                                   listing only RFP metadata without relationships.
+        """
         async with get_db_session() as session:
             if session is None:
                 return []
 
-            result = await session.execute(
-                select(RFPModel).order_by(RFPModel.created_at.desc())
-            )
+            query = select(RFPModel).order_by(RFPModel.created_at.desc())
+
+            # Eager load relationships to avoid N+1 queries
+            if include_relationships:
+                query = query.options(
+                    selectinload(RFPModel.requirements),
+                    selectinload(RFPModel.amendments)
+                )
+
+            result = await session.execute(query)
             rfps = result.scalars().all()
             return [rfp.to_dict() for rfp in rfps]
 
