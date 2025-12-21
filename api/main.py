@@ -1144,9 +1144,10 @@ async def shutdown_event():
     # Close database connections
     if DATABASE_AVAILABLE:
         try:
-            from api.database import async_engine
-            if async_engine:
-                await async_engine.dispose()
+            from api.database import _get_engine
+            engine = _get_engine()
+            if engine:
+                await engine.dispose()
                 logger.info("[Shutdown] Database connections closed")
         except Exception as e:
             logger.error(f"[Shutdown] Error closing database: {e}")
