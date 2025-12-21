@@ -247,7 +247,7 @@ class BundleDetector:
 
         return None
 
-    def _read_document_header(self, filepath: str, max_chars: int = 1000) -> Optional[str]:
+    def _read_document_header(self, filepath: str, max_chars: int = 2000) -> Optional[str]:
         """Read the first portion of a document for metadata extraction."""
         ext = os.path.splitext(filepath)[1].lower()
 
@@ -381,7 +381,7 @@ class BundleDetector:
 
         return None
 
-    def extract_solicitation_from_content(self, content: str, max_chars: int = 500) -> Optional[str]:
+    def extract_solicitation_from_content(self, content: str, max_chars: int = 2000) -> Optional[str]:
         """
         Extract solicitation number from document content header.
 
@@ -390,7 +390,7 @@ class BundleDetector:
 
         Args:
             content: Full document text content
-            max_chars: How many characters from the start to search (default 500)
+            max_chars: How many characters from the start to search (default 2000)
 
         Returns:
             Extracted solicitation number or None
@@ -398,19 +398,32 @@ class BundleDetector:
         # Only search the header portion
         header_text = content[:max_chars]
 
-        # Look for explicit "Solicitation Number:" or "Solicitation No:" patterns
+        # Look for explicit solicitation number patterns (comprehensive list)
         explicit_patterns = [
-            r"Solicitation\s*(?:Number|No\.?)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            # Standard patterns
+            r"Solicitation\s*(?:Number|No\.?|#)[:\s]+([A-Z0-9][-A-Z0-9]+)",
             r"Solicitation[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            # RFP/RFQ patterns
             r"RFP\s*(?:Number|No\.?|#)?[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"RFQ\s*(?:Number|No\.?|#)?[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"RFI\s*(?:Number|No\.?|#)?[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            # Contract/Reference patterns
             r"Contract\s*(?:Number|No\.?)[:\s]+([A-Z0-9][-A-Z0-9]+)",
             r"Reference\s*(?:Number|No\.?)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"Award\s*(?:Number|No\.?)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            # SF1449 block patterns
+            r"(?:Block\s*)?2\.\s*(?:Contract|Solicitation)\s*(?:Number|No\.?)[:\s]*([A-Z0-9][-A-Z0-9]+)",
+            # Inline patterns (commonly found in document headers)
+            r"(?:Sol|Solicitation)\s*#\s*([A-Z0-9][-A-Z0-9]+)",
         ]
 
         for pattern in explicit_patterns:
             match = re.search(pattern, header_text, re.IGNORECASE)
             if match:
-                return match.group(1).strip()
+                result = match.group(1).strip()
+                # Validate it looks like a real solicitation number (at least 5 chars)
+                if len(result) >= 5:
+                    return result
 
         # Fall back to format-based extraction
         return self._extract_solicitation_number(header_text)

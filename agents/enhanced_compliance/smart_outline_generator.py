@@ -76,7 +76,7 @@ class SubmissionInfo:
     email: Optional[str] = None
 
 
-@dataclass 
+@dataclass
 class EvaluationFactor:
     """An evaluation factor from Section M"""
     id: str
@@ -85,6 +85,38 @@ class EvaluationFactor:
     importance: Optional[str] = None
     criteria: List[str] = field(default_factory=list)
     rating_scale: Optional[str] = None
+
+
+@dataclass
+class P0Constraint:
+    """
+    A pass/fail compliance gate (P0 = Priority Zero = Must Pass).
+
+    These are "kill switch" requirements where failure to comply
+    results in a non-responsive proposal determination.
+    """
+    id: str
+    requirement: str
+    section: str  # L, M, or C
+    consequence: str = "Non-responsive if not met"
+    verification: str = "TBD"
+
+
+@dataclass
+class WinTheme:
+    """
+    A win theme represents a competitive discriminator mapped to RFP factors.
+
+    Per the tech spec: "What we have that they don't" + "How this helps the client"
+
+    Win themes are the foundation of a compelling proposal - they answer
+    "Why should the government choose us over competitors?"
+    """
+    id: str
+    discriminator: str  # What makes us unique
+    benefit_statement: str  # How this helps the client
+    proof_points: List[str] = field(default_factory=list)  # Evidence from Company Library
+    mapped_factors: List[str] = field(default_factory=list)  # Section M factor IDs this addresses
 
 
 @dataclass
@@ -97,6 +129,8 @@ class ProposalOutline:
     submission_info: SubmissionInfo
     warnings: List[str] = field(default_factory=list)
     total_pages: Optional[int] = None
+    p0_constraints: List[P0Constraint] = field(default_factory=list)
+    win_themes: List[WinTheme] = field(default_factory=list)
 
 
 # ============== Smart Outline Generator ==============
@@ -238,19 +272,22 @@ class SmartOutlineGenerator:
         section_l_requirements: List[Dict],
         section_m_requirements: List[Dict],
         technical_requirements: List[Dict],
-        stats: Dict
+        stats: Dict,
+        company_library_data: Optional[Dict] = None
     ) -> ProposalOutline:
         """
         Generate proposal outline from compliance matrix data.
-        
+
         Args:
             section_l_requirements: Extracted Section L requirements
             section_m_requirements: Extracted Section M/evaluation requirements
             technical_requirements: Extracted technical/SOW requirements
             stats: Extraction statistics
-            
+            company_library_data: Optional Company Library profile data containing
+                differentiators, capabilities, and past performance for win theme generation
+
         Returns:
-            ProposalOutline with volumes, eval factors, format requirements
+            ProposalOutline with volumes, eval factors, format requirements, and win themes
         """
         warnings = []
         
@@ -319,7 +356,23 @@ class SmartOutlineGenerator:
         
         # Calculate total pages
         total_pages = sum(v.page_limit or 0 for v in volumes) or None
-        
+
+        # Extract P0 Constraints (pass/fail compliance gates)
+        p0_constraints = self._extract_p0_constraints(
+            section_l_requirements,
+            section_m_requirements,
+            technical_requirements
+        )
+
+        # Generate Win Themes from Company Library differentiators
+        win_themes = self._generate_win_themes(
+            eval_factors,
+            company_library_data
+        )
+
+        if not win_themes and company_library_data:
+            warnings.append("No differentiators found in Company Library for win theme generation")
+
         return ProposalOutline(
             rfp_format=rfp_format,
             volumes=volumes,
@@ -327,7 +380,9 @@ class SmartOutlineGenerator:
             format_requirements=format_req,
             submission_info=submission,
             warnings=warnings,
-            total_pages=total_pages
+            total_pages=total_pages,
+            p0_constraints=p0_constraints,
+            win_themes=win_themes
         )
     
     def _detect_rfp_format(
@@ -710,7 +765,235 @@ class SmartOutlineGenerator:
                 elif any(kw in factor_name_lower for kw in ["price", "cost"]):
                     if volume.volume_type == VolumeType.COST_PRICE:
                         volume.eval_factors.append(factor.name)
-    
+
+    def _extract_p0_constraints(
+        self,
+        section_l: List[Dict],
+        section_m: List[Dict],
+        technical: List[Dict]
+    ) -> List[P0Constraint]:
+        """
+        Extract P0 (Priority Zero) pass/fail compliance constraints.
+
+        These are "kill switch" requirements that result in a non-responsive
+        determination if not met. Identified by pass/fail language patterns.
+        """
+        constraints = []
+        constraint_id = 1
+
+        # Patterns that indicate pass/fail requirements
+        pass_fail_patterns = [
+            r"shall\s+(?:be|include|provide|submit|demonstrate|have)",
+            r"must\s+(?:be|include|provide|submit|demonstrate|have)",
+            r"required\s+to\s+(?:be|include|provide|submit)",
+            r"mandatory\s+(?:requirement|submission|inclusion)",
+            r"failure\s+to\s+(?:comply|meet|provide|submit)\s+(?:will|shall)\s+result",
+            r"non[-\s]?responsive\s+if",
+            r"proposals?\s+(?:will|shall)\s+(?:be\s+)?(?:rejected|disqualified)",
+            r"minimum\s+(?:requirement|qualification|standard)",
+            r"go[-/]no[-]?go",
+            r"pass[-/]fail",
+        ]
+
+        # Combine all patterns into one compiled regex
+        combined_pattern = re.compile(
+            "|".join(pass_fail_patterns),
+            re.IGNORECASE
+        )
+
+        # Process all requirement sources
+        all_requirements = [
+            (section_l, "L"),
+            (section_m, "M"),
+            (technical, "C"),
+        ]
+
+        for requirements, section_code in all_requirements:
+            for req in requirements:
+                req_text = req.get("text", "") or req.get("full_text", "") or ""
+
+                # Check if this looks like a pass/fail requirement
+                if combined_pattern.search(req_text):
+                    # Determine consequence based on language
+                    consequence = "Non-responsive if not met"
+                    if "reject" in req_text.lower():
+                        consequence = "Proposal will be rejected"
+                    elif "disqualif" in req_text.lower():
+                        consequence = "Offeror will be disqualified"
+
+                    # Create constraint
+                    constraint = P0Constraint(
+                        id=f"P0-{constraint_id:03d}",
+                        requirement=req_text[:500],  # Truncate long requirements
+                        section=section_code,
+                        consequence=consequence,
+                        verification="Compliance review required"
+                    )
+                    constraints.append(constraint)
+                    constraint_id += 1
+
+        return constraints
+
+    def _generate_win_themes(
+        self,
+        eval_factors: List[EvaluationFactor],
+        company_library_data: Optional[Dict]
+    ) -> List[WinTheme]:
+        """
+        Generate win themes by mapping Company Library differentiators to evaluation factors.
+
+        Win themes answer the question: "Why should the government choose us?"
+        They connect our unique strengths (differentiators) to what the government
+        values (evaluation factors).
+
+        Args:
+            eval_factors: Extracted evaluation factors from Section M
+            company_library_data: Company Library profile data with differentiators
+
+        Returns:
+            List of WinTheme objects mapped to evaluation factors
+        """
+        win_themes = []
+
+        if not company_library_data:
+            return win_themes
+
+        # Extract differentiators from Company Library data
+        differentiators = company_library_data.get("differentiators", [])
+
+        # Also extract capabilities as potential win themes
+        capabilities = company_library_data.get("capabilities", [])
+
+        # Build a list of factor keywords for matching
+        factor_keywords = {}
+        for ef in eval_factors:
+            factor_name_lower = ef.name.lower()
+            keywords = []
+
+            # Extract keywords from factor names
+            if "technical" in factor_name_lower:
+                keywords.extend(["technical", "approach", "solution", "methodology", "innovation"])
+            if "management" in factor_name_lower or "program" in factor_name_lower:
+                keywords.extend(["management", "program", "project", "leadership", "governance"])
+            if "experience" in factor_name_lower or "past performance" in factor_name_lower:
+                keywords.extend(["experience", "past performance", "track record", "proven", "success"])
+            if "personnel" in factor_name_lower or "staff" in factor_name_lower:
+                keywords.extend(["personnel", "staff", "team", "expertise", "qualifications"])
+            if "cost" in factor_name_lower or "price" in factor_name_lower:
+                keywords.extend(["cost", "price", "value", "efficiency", "savings"])
+
+            factor_keywords[ef.id] = keywords
+
+        theme_id = 1
+
+        # Process differentiators
+        for diff in differentiators:
+            diff_title = diff.get("title", "") or diff.get("name", "")
+            diff_desc = diff.get("description", "")
+            diff_evidence = diff.get("evidence", [])
+
+            if not diff_title:
+                continue
+
+            # Create benefit statement from description or generate generic one
+            if diff_desc:
+                benefit = self._extract_benefit_statement(diff_desc)
+            else:
+                benefit = f"Enables superior performance through {diff_title.lower()}"
+
+            # Map to evaluation factors
+            mapped_factors = self._map_to_factors(
+                diff_title + " " + diff_desc,
+                factor_keywords
+            )
+
+            # Create win theme
+            theme = WinTheme(
+                id=f"WT-{theme_id:03d}",
+                discriminator=diff_title[:200],
+                benefit_statement=benefit[:300],
+                proof_points=diff_evidence[:5] if isinstance(diff_evidence, list) else [],
+                mapped_factors=mapped_factors
+            )
+            win_themes.append(theme)
+            theme_id += 1
+
+        # If no differentiators, use top capabilities as win themes
+        if not win_themes and capabilities:
+            for cap in capabilities[:5]:  # Limit to top 5
+                cap_name = cap.get("name", "")
+                cap_desc = cap.get("description", "")
+
+                if not cap_name:
+                    continue
+
+                benefit = self._extract_benefit_statement(cap_desc) if cap_desc else f"Delivers value through {cap_name.lower()}"
+
+                mapped_factors = self._map_to_factors(
+                    cap_name + " " + cap_desc,
+                    factor_keywords
+                )
+
+                theme = WinTheme(
+                    id=f"WT-{theme_id:03d}",
+                    discriminator=cap_name[:200],
+                    benefit_statement=benefit[:300],
+                    proof_points=[],
+                    mapped_factors=mapped_factors
+                )
+                win_themes.append(theme)
+                theme_id += 1
+
+        return win_themes
+
+    def _extract_benefit_statement(self, description: str) -> str:
+        """
+        Extract or generate a benefit statement from a description.
+
+        Looks for phrases indicating benefits (reduces, improves, enables, etc.)
+        or generates a generic benefit statement.
+        """
+        # Patterns for benefit language
+        benefit_patterns = [
+            r"(?:which|that)\s+(enables?|improves?|reduces?|delivers?|provides?|ensures?)[^.]+",
+            r"(?:resulting in|leading to)\s+([^.]+)",
+            r"(improves?|reduces?|enables?|ensures?|delivers?)\s+[^.]+",
+        ]
+
+        for pattern in benefit_patterns:
+            match = re.search(pattern, description, re.IGNORECASE)
+            if match:
+                benefit = match.group(0).strip()
+                # Capitalize first letter
+                return benefit[0].upper() + benefit[1:]
+
+        # Fallback: use first sentence or first 100 chars
+        first_sentence = re.split(r'[.!?]', description)[0].strip()
+        if len(first_sentence) > 20:
+            return first_sentence[:200]
+
+        return description[:200] if description else "Provides competitive advantage"
+
+    def _map_to_factors(
+        self,
+        text: str,
+        factor_keywords: Dict[str, List[str]]
+    ) -> List[str]:
+        """
+        Map text content to evaluation factors based on keyword matching.
+
+        Returns list of factor IDs that the text is relevant to.
+        """
+        text_lower = text.lower()
+        matched_factors = []
+
+        for factor_id, keywords in factor_keywords.items():
+            match_count = sum(1 for kw in keywords if kw in text_lower)
+            if match_count >= 1:
+                matched_factors.append(factor_id)
+
+        return matched_factors
+
     def _extract_format_requirements(self, section_l: List[Dict]) -> FormatRequirements:
         """Extract format requirements from Section L"""
         
@@ -875,5 +1158,25 @@ class SmartOutlineGenerator:
                 "method": outline.submission_info.method or "Not Specified",
                 "email": outline.submission_info.email
             },
-            "warnings": outline.warnings
+            "warnings": outline.warnings,
+            "p0_constraints": [
+                {
+                    "id": p0.id,
+                    "requirement": p0.requirement,
+                    "section": p0.section,
+                    "consequence": p0.consequence,
+                    "verification": p0.verification
+                }
+                for p0 in outline.p0_constraints
+            ],
+            "win_themes": [
+                {
+                    "id": wt.id,
+                    "discriminator": wt.discriminator,
+                    "benefit_statement": wt.benefit_statement,
+                    "proof_points": wt.proof_points,
+                    "mapped_factors": wt.mapped_factors
+                }
+                for wt in outline.win_themes
+            ]
         }
