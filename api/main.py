@@ -5101,25 +5101,39 @@ def generate_id() -> str:
 
 def hash_password(password: str) -> str:
     """Hash password using bcrypt (production-grade security)"""
-    if BCRYPT_AVAILABLE and pwd_context:
-        return pwd_context.hash(password)
-    # Fallback to SHA256 only if bcrypt unavailable (NOT recommended for production)
     import hashlib
+    import base64
+
+    if BCRYPT_AVAILABLE and pwd_context:
+        # Pre-hash with SHA256 to handle bcrypt's 72-byte limit
+        # This is a common pattern used by many secure applications
+        password_sha = hashlib.sha256(password.encode('utf-8')).digest()
+        password_b64 = base64.b64encode(password_sha).decode('ascii')
+        return pwd_context.hash(password_b64)
+    # Fallback to SHA256 only if bcrypt unavailable (NOT recommended for production)
     logger.warning("Using SHA256 fallback for password hashing - install passlib[bcrypt] for production")
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     """Verify password against hash using bcrypt"""
+    import hashlib
+    import base64
+
     if BCRYPT_AVAILABLE and pwd_context:
         try:
-            return pwd_context.verify(password, password_hash)
+            # Pre-hash with SHA256 to match our hashing approach
+            password_sha = hashlib.sha256(password.encode('utf-8')).digest()
+            password_b64 = base64.b64encode(password_sha).decode('ascii')
+            return pwd_context.verify(password_b64, password_hash)
         except Exception:
             # Handle legacy SHA256 hashes during migration
-            import hashlib
-            return hashlib.sha256(password.encode()).hexdigest() == password_hash
+            # Also try direct bcrypt verify for old passwords
+            try:
+                return pwd_context.verify(password, password_hash)
+            except Exception:
+                return hashlib.sha256(password.encode()).hexdigest() == password_hash
     # Fallback for SHA256
-    import hashlib
     return hashlib.sha256(password.encode()).hexdigest() == password_hash
 
 
