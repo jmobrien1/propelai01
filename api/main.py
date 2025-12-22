@@ -5104,11 +5104,15 @@ def hash_password(password: str) -> str:
     import hashlib
     import base64
 
+    # Debug: Log password length to verify fix is deployed
+    print(f"[AUTH] hash_password called, password length: {len(password)} bytes")
+
     if BCRYPT_AVAILABLE and pwd_context:
         # Pre-hash with SHA256 to handle bcrypt's 72-byte limit
         # This is a common pattern used by many secure applications
         password_sha = hashlib.sha256(password.encode('utf-8')).digest()
         password_b64 = base64.b64encode(password_sha).decode('ascii')
+        print(f"[AUTH] Pre-hashed to {len(password_b64)} chars, calling bcrypt")
         return pwd_context.hash(password_b64)
     # Fallback to SHA256 only if bcrypt unavailable (NOT recommended for production)
     logger.warning("Using SHA256 fallback for password hashing - install passlib[bcrypt] for production")
