@@ -37,14 +37,14 @@ from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-# Password hashing with bcrypt (secure)
+# Password hashing with bcrypt (secure) - using bcrypt directly instead of passlib
+# passlib has compatibility issues with Python 3.13
 try:
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    import bcrypt
     BCRYPT_AVAILABLE = True
 except ImportError:
     BCRYPT_AVAILABLE = False
-    pwd_context = None
+    bcrypt = None
 
 
 # ============== Structured Logging ==============
@@ -5102,41 +5102,36 @@ def generate_id() -> str:
 def hash_password(password: str) -> str:
     """Hash password using bcrypt (production-grade security)"""
     import hashlib
-    import base64
 
     # Debug: Log password length to verify fix is deployed
     print(f"[AUTH] hash_password called, password length: {len(password)} bytes")
 
-    if BCRYPT_AVAILABLE and pwd_context:
+    if BCRYPT_AVAILABLE and bcrypt:
         # Pre-hash with SHA256 to handle bcrypt's 72-byte limit
-        # This is a common pattern used by many secure applications
-        password_sha = hashlib.sha256(password.encode('utf-8')).digest()
-        password_b64 = base64.b64encode(password_sha).decode('ascii')
-        print(f"[AUTH] Pre-hashed to {len(password_b64)} chars, calling bcrypt")
-        return pwd_context.hash(password_b64)
+        # SHA256 produces 32 bytes, well under the 72-byte limit
+        password_bytes = hashlib.sha256(password.encode('utf-8')).digest()
+        print(f"[AUTH] Pre-hashed to {len(password_bytes)} bytes, calling bcrypt")
+        # bcrypt wants bytes, not string
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(password_bytes, salt)
+        return hashed.decode('utf-8')
     # Fallback to SHA256 only if bcrypt unavailable (NOT recommended for production)
-    logger.warning("Using SHA256 fallback for password hashing - install passlib[bcrypt] for production")
+    logger.warning("Using SHA256 fallback for password hashing - install bcrypt for production")
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     """Verify password against hash using bcrypt"""
     import hashlib
-    import base64
 
-    if BCRYPT_AVAILABLE and pwd_context:
+    if BCRYPT_AVAILABLE and bcrypt:
         try:
             # Pre-hash with SHA256 to match our hashing approach
-            password_sha = hashlib.sha256(password.encode('utf-8')).digest()
-            password_b64 = base64.b64encode(password_sha).decode('ascii')
-            return pwd_context.verify(password_b64, password_hash)
+            password_bytes = hashlib.sha256(password.encode('utf-8')).digest()
+            return bcrypt.checkpw(password_bytes, password_hash.encode('utf-8'))
         except Exception:
             # Handle legacy SHA256 hashes during migration
-            # Also try direct bcrypt verify for old passwords
-            try:
-                return pwd_context.verify(password, password_hash)
-            except Exception:
-                return hashlib.sha256(password.encode()).hexdigest() == password_hash
+            return hashlib.sha256(password.encode()).hexdigest() == password_hash
     # Fallback for SHA256
     return hashlib.sha256(password.encode()).hexdigest() == password_hash
 
