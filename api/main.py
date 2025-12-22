@@ -5496,12 +5496,13 @@ async def register_user(
             token = create_jwt_token(user.id, user.email, user.name)
             token_expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
 
-            # Create session record
+            # Create session record (pass session to use same transaction)
             await create_session(
                 user_id=user.id,
                 token=token,
                 request=request,
-                expires_at=token_expiry
+                expires_at=token_expiry,
+                db_session=session
             )
 
             print(f"[AUTH] Registration complete for {email}")
@@ -7967,13 +7968,19 @@ async def create_session(
     user_id: str,
     token: str,
     request: Request,
-    expires_at: datetime
+    expires_at: datetime,
+    db_session=None
 ) -> Optional[str]:
-    """Create a new session record for a user"""
-    async with get_db_session() as session:
-        if session is None:
-            return None
+    """Create a new session record for a user
 
+    Args:
+        user_id: The user's ID
+        token: JWT token to hash and store
+        request: FastAPI request for device info
+        expires_at: Token expiration time
+        db_session: Optional existing database session (for transaction reuse)
+    """
+    async def _create(session):
         # Hash the token for storage
         token_hash = hashlib.sha256(token.encode()).hexdigest()
 
@@ -7990,6 +7997,15 @@ async def create_session(
         session.add(session_record)
         await session.flush()
         return session_record.id
+
+    # Use provided session or create new one
+    if db_session is not None:
+        return await _create(db_session)
+    else:
+        async with get_db_session() as session:
+            if session is None:
+                return None
+            return await _create(session)
 
 
 async def update_session_activity(token: str) -> None:
