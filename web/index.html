@@ -2354,7 +2354,7 @@
                 <div className="animate-in">
                     <div className="page-header">
                         <h2>Upload RFP Documents</h2>
-                        <p>Only the Technical Requirements (SOW/PWS) is required. Add other documents for better proposal structure guidance.</p>
+                        <p>Only the Technical Requirements (Statement of Work) is required. Add other documents for better proposal structure guidance.</p>
                     </div>
 
                     <div className="guided-upload-grid">
@@ -2451,6 +2451,49 @@
                         })}
                     </div>
 
+                    {/* Process Button - Moved UP for visibility (UX audit fix) */}
+                    <div style={{
+                        marginTop: 24,
+                        marginBottom: 24,
+                        padding: 20,
+                        background: 'var(--bg-tertiary)',
+                        borderRadius: 12,
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        gap: 16,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        justifyContent: 'space-between'
+                    }}>
+                        <div>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                {getTotalFiles() > 0
+                                    ? `Ready to process ${getTotalFiles()} document${getTotalFiles() > 1 ? 's' : ''}`
+                                    : 'Upload documents to get started'
+                                }
+                            </div>
+                            {!hasRequiredFiles() && getTotalFiles() > 0 && (
+                                <span style={{ fontSize: 12, color: 'var(--accent-amber)' }}>
+                                    Tip: Add a Technical Requirements document (SOW/PWS) for best results
+                                </span>
+                            )}
+                            {getTotalFiles() === 0 && (
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                    Click any card above to upload your RFP documents
+                                </span>
+                            )}
+                        </div>
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleProcess}
+                            disabled={!apiConnected || getTotalFiles() === 0}
+                            style={{ minWidth: 180 }}
+                        >
+                            <Icon name="Zap" />
+                            {getTotalFiles() > 0 ? 'Extract Requirements' : 'Upload First'}
+                        </button>
+                    </div>
+
                     {/* Skip Documents Warning */}
                     <div className="skip-docs-section">
                         <div className="skip-docs-title">
@@ -2512,26 +2555,6 @@
                                 <li key={i}>{tip}</li>
                             ))}
                         </ul>
-                    </div>
-
-                    {/* Process Button */}
-                    <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button
-                            className="btn btn-primary"
-                            onClick={handleProcess}
-                            disabled={!apiConnected || getTotalFiles() === 0}
-                        >
-                            <Icon name="Zap" />
-                            {getTotalFiles() > 0
-                                ? `Process ${getTotalFiles()} Document${getTotalFiles() > 1 ? 's' : ''}`
-                                : 'Upload documents to continue'
-                            }
-                        </button>
-                        {!hasRequiredFiles() && getTotalFiles() > 0 && (
-                            <span style={{ fontSize: 12, color: 'var(--accent-amber)' }}>
-                                ⚠️ Missing required document (Technical Requirements / SOW / PWS)
-                            </span>
-                        )}
                     </div>
                 </div>
             );

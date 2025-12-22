@@ -80,8 +80,8 @@ UPLOAD_SLOTS: List[DocumentSlot] = [
     DocumentSlot(
         id="sow",
         doc_type=DocumentType.SOW,
-        title="Technical Requirements (SOW/PWS)",
-        description="What the contractor must DO - the actual work requirements",
+        title="Technical Requirements",
+        description="Statement of Work (SOW) or Performance Work Statement (PWS) - the actual work requirements",
         help_text="""This is the MOST IMPORTANT document for requirements extraction.
 
 It describes ALL the work the contractor must perform:
@@ -227,8 +227,8 @@ upload them in order for best results.""",
     DocumentSlot(
         id="solicitation",
         doc_type=DocumentType.SOLICITATION,
-        title="Cover Document / SF1449",
-        description="Administrative info: solicitation number, dates, contacts",
+        title="Cover Document (Standard Form 1449)",
+        description="Administrative info: solicitation number, due dates, contracting officer contacts",
         help_text="""The administrative cover document for the RFP.
 
 TYPICALLY INCLUDES:

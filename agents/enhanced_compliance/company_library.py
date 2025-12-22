@@ -798,10 +798,67 @@ class CompanyLibrary:
                         )
                         self.documents[doc.id] = doc
                     
-                    # Restore profile
+                    # Restore profile (including capabilities, differentiators, etc.)
                     profile_data = data.get("profile", {})
                     self.profile.company_name = profile_data.get("company_name", "")
+                    self.profile.tagline = profile_data.get("tagline", "")
                     self.profile.executive_summary = profile_data.get("executive_summary", "")
+
+                    # Restore capabilities
+                    for cap_data in profile_data.get("capabilities", []):
+                        cap = Capability(
+                            id=cap_data.get("id", ""),
+                            name=cap_data.get("name", ""),
+                            description=cap_data.get("description", ""),
+                            category=cap_data.get("category", ""),
+                            keywords=cap_data.get("keywords", []),
+                        )
+                        self.profile.capabilities.append(cap)
+
+                    # Restore differentiators
+                    for diff_data in profile_data.get("differentiators", []):
+                        diff = Differentiator(
+                            id=diff_data.get("id", ""),
+                            title=diff_data.get("title", ""),
+                            description=diff_data.get("description", ""),
+                            evidence=diff_data.get("evidence", []),
+                        )
+                        self.profile.differentiators.append(diff)
+
+                    # Restore past performance
+                    for pp_data in profile_data.get("past_performance", []):
+                        pp = PastPerformance(
+                            id=pp_data.get("id", ""),
+                            project_name=pp_data.get("project_name", ""),
+                            client=pp_data.get("client", ""),
+                            agency=pp_data.get("agency", ""),
+                            contract_value=pp_data.get("contract_value", ""),
+                            period=pp_data.get("period", ""),
+                            description=pp_data.get("description", ""),
+                            outcomes=pp_data.get("outcomes", []),
+                            keywords=pp_data.get("keywords", []),
+                        )
+                        self.profile.past_performance.append(pp)
+
+                    # Restore key personnel
+                    for kp_data in profile_data.get("key_personnel", []):
+                        kp = KeyPersonnel(
+                            id=kp_data.get("id", ""),
+                            name=kp_data.get("name", ""),
+                            title=kp_data.get("title", ""),
+                            summary=kp_data.get("summary", ""),
+                            education=kp_data.get("education", []),
+                            certifications=kp_data.get("certifications", []),
+                            skills=kp_data.get("skills", []),
+                            years_experience=kp_data.get("years_experience", 0),
+                        )
+                        self.profile.key_personnel.append(kp)
+
+                    # Restore other profile fields
+                    self.profile.certifications = profile_data.get("certifications", [])
+                    self.profile.contract_vehicles = profile_data.get("contract_vehicles", [])
+                    self.profile.naics_codes = profile_data.get("naics_codes", [])
+                    self.profile.keywords = profile_data.get("keywords", [])
             except Exception as e:
                 print(f"Error loading library: {e}")
     
