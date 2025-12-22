@@ -4541,13 +4541,34 @@ async def export_annotated_outline(rfp_id: str):
     else:
         rfp_title = rfp_name or f"Proposal Response to {solicitation_number}"
 
+    # v4.2: Get company profile for metadata injection
+    company_profile = None
+    company_name = "[Your Company Name]"
+    if COMPANY_LIBRARY_AVAILABLE and company_library:
+        try:
+            company_profile = company_library.get_profile()
+            # Use company name from library if available
+            if company_profile.get("company_name"):
+                company_name = company_profile["company_name"]
+            # Add company profile to outline for exporter
+            outline["company_profile"] = {
+                "name": company_profile.get("company_name", ""),
+                "executive_summary": company_profile.get("executive_summary", ""),
+                "certifications": company_profile.get("certifications", []),
+                "contract_vehicles": company_profile.get("contract_vehicles", []),
+                "naics_codes": company_profile.get("naics_codes", []),
+            }
+            print(f"[DEBUG] Company profile injected: {company_name}")
+        except Exception as e:
+            print(f"[WARN] Could not fetch Company Library for export: {e}")
+
     config = AnnotatedOutlineConfig(
         rfp_title=rfp_title,
         solicitation_number=solicitation_number,
         due_date=outline.get("submission", {}).get("due_date", "TBD"),
         submission_method=outline.get("submission", {}).get("method", "Not Specified"),
         total_pages=outline.get("total_pages"),
-        company_name="[Your Company Name]"
+        company_name=company_name
     )
     
     try:
