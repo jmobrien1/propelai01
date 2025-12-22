@@ -1,0 +1,271 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\fswiss\fcharset0 Helvetica-Bold;\f2\fswiss\fcharset0 Helvetica;
+\f3\fswiss\fcharset0 Helvetica-Oblique;\f4\fmodern\fcharset0 Courier-Bold;\f5\fmodern\fcharset0 Courier;
+}
+{\colortbl;\red255\green255\blue255;\red36\green36\blue36;\red255\green255\blue255;\red30\green31\blue33;
+\red183\green187\blue184;}
+{\*\expandedcolortbl;;\cssrgb\c18824\c18824\c18824;\cssrgb\c100000\c100000\c100000;\cssrgb\c15686\c16471\c17255;
+\cssrgb\c76863\c78039\c77255;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs44 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 PropelAI Development Plan: Phase 2 & 3 Implementation\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b\fs32 \cf2 \cb3 1. Project Context & Objectives
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b\fs28 \cf2 \cb3 Goal:
+\f2\b0  Transform PropelAI from a passive RFP parser into an active, trusted proposal operating system. The immediate focus is moving from "Structural Integrity" (Phase 1) to "Trust & Strategy" (Phases 2 & 3).\cb1 \
+
+\f1\b \cb3 Current State:
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Completed:
+\f2\b0  RFP "shredding" (Sections L, M, C), Compliance Matrix generation, Smart Outline generation (fixing the templating loop bug), and basic Company Library indexing.\cb1 \
+\cb3 \'95 
+\f1\b Problem:
+\f2\b0  Users do not trust the AI's extraction accuracy (the "Trust Gap") and the system lacks deep integration between the user's uploaded library and the active proposal draft.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Target Architecture:
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Backend:
+\f2\b0  Python/FastAPI.\cb1 \
+\cb3 \'95 
+\f1\b Orchestration:
+\f2\b0  LangGraph for stateful agent workflows.\cb1 \
+\cb3 \'95 
+\f1\b Data:
+\f2\b0  SQLite (for persistence), Vector Store (for RAG).\cb1 \
+\cb3 \'95 
+\f1\b Frontend:
+\f2\b0  React (Single File/CDN).\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\f1\b\fs32 \cf2 2. Phase 2: The "Trust Gate" (Compliance Accuracy & Traceability)
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\i\fs28 \cf2 \cb3 Objective: Prove 100% extraction accuracy to the user before allowing drafting.
+\f2\i0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 2.1. Accuracy Audit Module (
+\f4 \cf4 \cb5 \strokec4 accuracy_audit.py
+\f1 \cf2 \cb3 \strokec2 )
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Purpose:
+\f2\b0  Mathematically validate extraction performance against ground truth.\cb1 \
+\cb3 \'95 
+\f1\b Key Classes:
+\f2\b0 \cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f5 \cf4 \cb5 \strokec4 AccuracyAuditor
+\f2 \cf2 \cb3 \strokec2 : Compares extracted requirement counts against manual counts.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f5 \cf4 \cb5 \strokec4 ConflictDetector
+\f2 \cf2 \cb3 \strokec2 : Analyzes extracted constraints (e.g., page limits) for logical conflicts (e.g., "Page Limit: 10" vs "Section A needs 5 pages, Section B needs 8 pages").\cb1 \
+\cb3 \'95 
+\f1\b Output:
+\f2\b0  A "Trust Score" report flagging potential missing requirements or "UNK" (Unknown Section) items.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 2.2. Section Inference Engine (
+\f4 \cf4 \cb5 \strokec4 section_inference.py
+\f1 \cf2 \cb3 \strokec2 )
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Purpose:
+\f2\b0  Fix the "43% UNK" problem where requirements extracted from non-standard RFPs lack section context.\cb1 \
+\cb3 \'95 
+\f1\b Logic:
+\f2\b0  Implement a fallback classification logic when Regex fails:\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Filename Inference:
+\f2\b0  If filename contains "SOW" or "PWS" -> Map to Section C.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Keyword Proximity:
+\f2\b0  If text contains "Evaluation Factor" -> Map to Section M.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Page Position:
+\f2\b0  If requirement is in the last 20% of the document -> Probable Section M.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 2.3. Source Traceability (
+\f4 \cf4 \cb5 \strokec4 source_traceability.py
+\f1 \cf2 \cb3 \strokec2 )
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Purpose:
+\f2\b0  Create the "Digital Thread" linking extracted text back to the PDF source.\cb1 \
+\cb3 \'95 
+\f1\b Data Model Updates:
+\f2\b0  Extend 
+\f5 \cf4 \cb5 \strokec4 RequirementNode
+\f2 \cf2 \cb3 \strokec2  to include:\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f5 \cf4 \cb5 \strokec4 source_page_index
+\f2 \cf2 \cb3 \strokec2 : Integer.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f5 \cf4 \cb5 \strokec4 char_start_index
+\f2 \cf2 \cb3 \strokec2  / 
+\f5 \cf4 \cb5 \strokec4 char_end_index
+\f2 \cf2 \cb3 \strokec2 : Integers for exact text highlighting.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f5 \cf4 \cb5 \strokec4 bounding_box
+\f2 \cf2 \cb3 \strokec2 : [x, y, w, h] coordinates for frontend rendering.\cb1 \
+\cb3 \'95 
+\f1\b UI Requirement:
+\f2\b0  Prepare the backend to serve these coordinates so the frontend can render a "View Source" overlay.\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\f1\b\fs32 \cf2 3. Phase 3: Strategic Content Injection (Active RAG)
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\i\fs28 \cf2 \cb3 Objective: Move from generic templates to company-specific, strategic outlines.
+\f2\i0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 3.1. Company Library Integration (
+\f4 \cf4 \cb5 \strokec4 company_library.py
+\f1 \cf2 \cb3 \strokec2 )
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Current Status:
+\f2\b0  Passive storage.\cb1 \
+\cb3 \'95 
+\f1\b Upgrade Requirement:
+\f2\b0  Implement "Active Injection."\cb1 \
+\cb3 \'95 
+\f1\b Logic:
+\f2\b0 \cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Entity Extraction:
+\f2\b0  Auto-extract 
+\f5 \cf4 \cb5 \strokec4 Legal Name
+\f2 \cf2 \cb3 \strokec2 , 
+\f5 \cf4 \cb5 \strokec4 UEI
+\f2 \cf2 \cb3 \strokec2 , 
+\f5 \cf4 \cb5 \strokec4 CAGE
+\f2 \cf2 \cb3 \strokec2 , and 
+\f5 \cf4 \cb5 \strokec4 Certifications
+\f2 \cf2 \cb3 \strokec2  from uploaded profiles to auto-fill Standard Forms (SF-1449).\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Discriminator Indexing:
+\f2\b0  Tag uploaded content (Past Performance, Capabilities) with semantic vectors.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 3.2. Contextual Outline Enrichment
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Purpose:
+\f2\b0  Populate the Annotated Outline with specific Win Themes and Proof Points rather than generic placeholders.\cb1 \
+\cb3 \'95 
+\f1\b Logic:
+\f2\b0  Modify 
+\f5 \cf4 \cb5 \strokec4 smart_outline_generator.py
+\f2 \cf2 \cb3 \strokec2  to run a semantic search against the Company Library for each outline section.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f3\i Input:
+\f2\i0  Section Title (e.g., "Transition Plan") + Section C Requirement.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f3\i Query:
+\f2\i0  "Transition Plan approaches and success stories."\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f3\i Output:
+\f2\i0  Inject specific "Win Theme" suggestions into the outline's 
+\f5 \cf4 \cb5 \strokec4 [Green Text]
+\f2 \cf2 \cb3 \strokec2  placeholders.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 3.3. "Iron Triangle" Mapping Agent
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Purpose:
+\f2\b0  Ensure the outline reflects the scoring criteria, not just the instructions.\cb1 \
+\cb3 \'95 
+\f1\b Logic:
+\f2\b0 \cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  Map 
+\f1\b Section M (Evaluation Factors)
+\f2\b0  to 
+\f1\b Section L (Instructions)
+\f2\b0 .\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  If Section M prioritizes "Speed of Transition," the Outline Generator must inject a "Transition Speed" subheading into the relevant Section L volume, even if Section L doesn't explicitly ask for it.\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\f1\b\fs32 \cf2 4. Technical Implementation Steps for Claude
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b\fs28 \cf2 \cb3 Step 1: Validate & Test
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 Run the extraction on 
+\f5 \cf4 \cb5 \strokec4 USCA25Q0053.pdf
+\f2 \cf2 \cb3 \strokec2  and 
+\f5 \cf4 \cb5 \strokec4 0123RFP...docx
+\f2 \cf2 \cb3 \strokec2 .\cb1 \
+\cb3 \'95 Verify that 
+\f5 \cf4 \cb5 \strokec4 solicitation_number
+\f2 \cf2 \cb3 \strokec2  and 
+\f5 \cf4 \cb5 \strokec4 due_date
+\f2 \cf2 \cb3 \strokec2  are correctly extracted (fixing the Metadata bug).\cb1 \
+\cb3 \'95 Verify that Volume 2, 3, and 4 have distinct, correct templates (fixing the Templating Loop bug).\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Step 2: Build the Auditor
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 Create 
+\f5 \cf4 \cb5 \strokec4 agents/enhanced_compliance/accuracy_audit.py
+\f2 \cf2 \cb3 \strokec2 .\cb1 \
+\cb3 \'95 Implement the 
+\f5 \cf4 \cb5 \strokec4 audit_extraction()
+\f2 \cf2 \cb3 \strokec2  function to flag "UNK" sections and potential page count conflicts.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Step 3: Connect Library to Outline
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 Modify 
+\f5 \cf4 \cb5 \strokec4 smart_outline_generator.py
+\f2 \cf2 \cb3 \strokec2 .\cb1 \
+\cb3 \'95 Import 
+\f5 \cf4 \cb5 \strokec4 CompanyLibrary
+\f2 \cf2 \cb3 \strokec2 .\cb1 \
+\cb3 \'95 In the 
+\f5 \cf4 \cb5 \strokec4 _render_section
+\f2 \cf2 \cb3 \strokec2  method, replace static strings (
+\f5 \cf4 \cb5 \strokec4 "[Enter discriminator...]"
+\f2 \cf2 \cb3 \strokec2 ) with dynamic lookups: 
+\f5 \cf4 \cb5 \strokec4 library.find_relevant_proof_points(section_text)
+\f2 \cf2 \cb3 \strokec2 .\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Step 4: Persistence
+\f2\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 Implement 
+\f5 \cf4 \cb5 \strokec4 persistence.py
+\f2 \cf2 \cb3 \strokec2  using SQLite.\cb1 \
+\cb3 \'95 Ensure that uploaded Company Library documents and extracted Compliance Matrices persist across server restarts (crucial for the LangGraph stateful architecture).\cb1 \
+}
