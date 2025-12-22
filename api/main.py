@@ -467,12 +467,13 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # v4.1: Database configuration
 try:
-    from api.database import init_db, is_db_available, db_store, DatabaseStore
+    from api.database import init_db, is_db_available, db_store, DatabaseStore, get_db_session
     DATABASE_AVAILABLE = True
 except ImportError:
     DATABASE_AVAILABLE = False
     is_db_available = lambda: False
     db_store = None
+    get_db_session = None
     print("[DB] Database module not available")
 
 
