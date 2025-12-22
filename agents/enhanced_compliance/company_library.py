@@ -555,10 +555,52 @@ class CompanyLibraryParser:
         
         # Deduplicate partnerships
         data["partnerships"] = list(set(data["partnerships"]))
-        
+
         # Extract keywords from entire text
         data["keywords"] = self._extract_keywords(text)
-        
+
+        # FALLBACK: If no capabilities found via markdown patterns, use plain text extraction
+        if not data["capabilities"] and not data["offerings"]:
+            cap_id = 0
+            # Method 1: Extract from section titles that look like capabilities
+            for section in sections:
+                title = section.get("title", "").strip()
+                content = section.get("content", "")
+                # Skip very short or generic titles
+                if len(title) > 5 and title.lower() not in ["introduction", "overview", "summary", "conclusion"]:
+                    cap_id += 1
+                    cap = {
+                        "id": f"CAP-{cap_id:03d}",
+                        "name": title[:100],
+                        "description": content[:500] if content else title,
+                        "category": "General",
+                    }
+                    data["capabilities"].append(cap)
+
+            # Method 2: Extract bullet points from all sections
+            all_text = text
+            bullet_lines = re.findall(r"^[\s]*[-•●○]\s*(.+)$", all_text, re.MULTILINE)
+            for line in bullet_lines[:20]:  # Limit to first 20
+                line = line.strip()
+                if len(line) > 15 and len(line) < 200:  # Reasonable length for a capability
+                    cap_id += 1
+                    cap = {
+                        "id": f"CAP-{cap_id:03d}",
+                        "name": line[:100],
+                        "description": line,
+                        "category": "Extracted",
+                    }
+                    data["capabilities"].append(cap)
+
+        # If still no differentiators, create from capabilities keywords
+        if not data["differentiators"] and data["capabilities"]:
+            # Just create one generic differentiator from the document
+            data["differentiators"].append({
+                "id": "DIFF-001",
+                "title": "Company Capabilities",
+                "description": f"This document describes {len(data['capabilities'])} capabilities.",
+            })
+
         return data
     
     def _extract_past_performance_data(self, text: str, sections: List[Dict]) -> Dict:
@@ -596,7 +638,37 @@ class CompanyLibraryParser:
                 project["outcomes"] = [o.strip() for o in outcomes]
                 
                 data["projects"].append(project)
-        
+
+        # FALLBACK: If no projects found, create at least one from the document content
+        if not data["projects"] and sections:
+            project_id = 0
+            for section in sections:
+                title = section.get("title", "").strip()
+                content = section.get("content", "")
+                # Skip very short or generic titles
+                if len(title) > 5 and title.lower() not in ["introduction", "overview", "summary", "conclusion"]:
+                    project_id += 1
+                    project = {
+                        "id": f"PP-{project_id:03d}",
+                        "name": title[:100],
+                        "description": content[:1000] if content else title,
+                        "client": "",
+                        "outcomes": [],
+                    }
+                    data["projects"].append(project)
+                    if project_id >= 5:  # Limit fallback projects
+                        break
+
+            # If still no projects, create one from the whole document
+            if not data["projects"] and len(text) > 100:
+                data["projects"].append({
+                    "id": "PP-001",
+                    "name": "Past Performance Summary",
+                    "description": text[:1000],
+                    "client": "",
+                    "outcomes": [],
+                })
+
         data["keywords"] = self._extract_keywords(text)
         return data
     
@@ -645,7 +717,35 @@ class CompanyLibraryParser:
             elif "skill" in title_lower:
                 skill_entries = re.findall(r"[-•*,]\s*([^,\n•*-]+)", content)
                 data["skills"] = [s.strip() for s in skill_entries if len(s.strip()) > 2]
-        
+
+        # FALLBACK: If no name found, try to extract from first line
+        if not data["name"]:
+            lines = text.split("\n")
+            for line in lines[:5]:
+                line = line.strip()
+                # Look for a name-like line (2-4 words, no numbers/special chars)
+                if line and len(line.split()) >= 2 and len(line.split()) <= 5:
+                    if re.match(r"^[A-Za-z\s\.\-\']+$", line) and len(line) > 5:
+                        data["name"] = line
+                        break
+
+        # FALLBACK: If no summary found, use first paragraph
+        if not data["summary"] and len(text) > 100:
+            paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) > 50]
+            if paragraphs:
+                data["summary"] = paragraphs[0][:500]
+
+        # FALLBACK: Extract skills from common patterns
+        if not data["skills"]:
+            # Look for skill keywords throughout the document
+            skill_patterns = re.findall(
+                r"(?:proficient|experienced|skilled|expertise|knowledge)[^\n]*(?:in|with)\s+([^\n.]+)",
+                text, re.I
+            )
+            for pattern in skill_patterns:
+                skills = [s.strip() for s in re.split(r"[,;]|and", pattern) if len(s.strip()) > 2]
+                data["skills"].extend(skills[:10])
+
         return data
     
     def _extract_technical_approach_data(self, text: str, sections: List[Dict]) -> Dict:
