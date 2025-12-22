@@ -3551,6 +3551,55 @@ async def get_page_image(doc_id: str, page_num: int, dpi: int = 150):
         raise HTTPException(status_code=500, detail=f"Error rendering page: {str(e)}")
 
 
+@app.get("/api/rfp/{rfp_id}/source-pdf")
+async def get_source_pdf(rfp_id: str):
+    """
+    v4.0 Trust Gate: Get the source PDF file for viewing.
+
+    Returns the original PDF file that was uploaded with the RFP,
+    allowing the frontend PDF viewer to display it with overlays.
+
+    Args:
+        rfp_id: RFP identifier
+
+    Returns:
+        PDF file as binary response
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Find the first PDF file
+    pdf_path = None
+    for fp in rfp.get("file_paths", []):
+        if fp.lower().endswith(".pdf") and os.path.exists(fp):
+            pdf_path = fp
+            break
+
+    if not pdf_path:
+        raise HTTPException(
+            status_code=404,
+            detail="No PDF source document found for this RFP"
+        )
+
+    try:
+        # Read and return the PDF file
+        with open(pdf_path, "rb") as f:
+            pdf_content = f.read()
+
+        filename = os.path.basename(pdf_path)
+        return Response(
+            content=pdf_content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "Content-Length": str(len(pdf_content))
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading PDF: {str(e)}")
+
+
 @app.post("/api/rfp/{rfp_id}/highlight")
 async def get_requirement_highlight(rfp_id: str, requirement_text: str = Form(...)):
     """
@@ -4893,6 +4942,83 @@ async def vector_search_library(
             for r in results
         ],
         "search_type": "vector",
+        "top_k": top_k,
+    }
+
+
+@app.get("/api/library/hybrid-search")
+async def hybrid_search_library(
+    query: str,
+    top_k: int = 10,
+    types: Optional[str] = None,
+    alpha: float = 0.5,
+):
+    """
+    v4.1: Hybrid search combining vector similarity with keyword matching.
+
+    Uses Reciprocal Rank Fusion (RRF) to combine:
+    1. Vector similarity search (semantic understanding)
+    2. PostgreSQL full-text search (keyword matching)
+
+    Args:
+        query: Natural language search query
+        top_k: Number of results to return (default: 10)
+        types: Optional filter for content types (comma-separated)
+        alpha: Weight for vector search (0-1). Higher = more semantic.
+               0.5 = equal weight (default).
+
+    Returns:
+        List of search results with combined scores and ranking metadata
+    """
+    if not VECTOR_STORE_AVAILABLE:
+        # Fall back to keyword search
+        if COMPANY_LIBRARY_AVAILABLE:
+            results = company_library.search(query)
+            return {
+                "query": query,
+                "results": results,
+                "search_type": "keyword",
+                "message": "Hybrid search not available, using keyword search"
+            }
+        raise HTTPException(
+            status_code=501,
+            detail="Hybrid search not available. Configure DATABASE_URL."
+        )
+
+    store = await get_vector_store()
+
+    # Parse type filter
+    include_types = None
+    if types:
+        include_types = [t.strip() for t in types.split(",")]
+
+    # Clamp alpha to valid range
+    alpha = max(0.0, min(1.0, alpha))
+
+    results = await store.hybrid_search(
+        query=query,
+        top_k=top_k,
+        include_types=include_types,
+        alpha=alpha
+    )
+
+    return {
+        "query": query,
+        "results": [
+            {
+                "id": r.id,
+                "type": r.content_type,
+                "name": r.name,
+                "description": r.description,
+                "similarity": round(r.similarity_score, 4),
+                "vector_rank": r.metadata.get("vector_rank"),
+                "keyword_rank": r.metadata.get("keyword_rank"),
+                "rrf_score": round(r.metadata.get("rrf_score", 0), 6),
+            }
+            for r in results
+        ],
+        "search_type": "hybrid",
+        "alpha": alpha,
         "top_k": top_k,
     }
 

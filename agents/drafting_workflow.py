@@ -44,6 +44,14 @@ except ImportError:
     END = "END"
     MemorySaver = None
 
+# PostgreSQL checkpointer for workflow persistence
+try:
+    from langgraph.checkpoint.postgres import PostgresSaver
+    POSTGRES_CHECKPOINTER_AVAILABLE = True
+except ImportError:
+    POSTGRES_CHECKPOINTER_AVAILABLE = False
+    PostgresSaver = None
+
 # Import F-B-P models from drafting agent
 try:
     from .drafting_agent import (
@@ -521,27 +529,40 @@ def human_review_node(state: DraftingState) -> DraftingState:
     """
     Human Review Node: Checkpoint for human feedback.
 
-    This node is an interrupt point where the workflow pauses
-    and waits for human input before continuing.
+    This node processes human feedback that was provided when the workflow
+    was resumed. The workflow pauses BEFORE this node (via interrupt_before)
+    and resumes with human feedback in the state.
+
+    Workflow:
+    1. Graph pauses before this node (interrupt_before=["human_review"])
+    2. Human reviews draft via API/UI
+    3. Human submits feedback via resume_workflow()
+    4. This node processes the feedback and sets approved status
     """
     state["current_node"] = "human_review"
 
-    # In a real implementation, this would:
-    # 1. Persist the current state
-    # 2. Notify the user that review is needed
-    # 3. Wait for feedback via API or UI
+    # Check if human feedback was provided (via resume_workflow)
+    human_feedback = state.get("human_feedback")
 
-    # For now, we auto-approve if quality is high enough
-    quality_scores = state.get("quality_scores", {})
-    overall = quality_scores.get("overall", 0)
+    if human_feedback:
+        # Parse feedback to determine action
+        feedback_lower = human_feedback.lower().strip()
 
-    if overall >= 0.75:
-        state["approved"] = True
-        state["human_feedback"] = "Auto-approved: quality score above threshold"
+        if feedback_lower in ("approved", "approve", "lgtm", "ok", "accept", "good"):
+            state["approved"] = True
+        elif feedback_lower.startswith("reject"):
+            # Rejection with optional reason
+            state["approved"] = False
+        else:
+            # Any other feedback is considered revision request
+            state["approved"] = False
     else:
-        # In production, this would pause for human input
+        # No feedback yet - workflow should have paused before reaching here
+        # If we got here without feedback, it's likely running without interrupt
+        # Log warning and don't approve
+        print("Warning: human_review_node reached without feedback. "
+              "Ensure interrupt_before_human_review=True in build_drafting_graph()")
         state["approved"] = False
-        state["human_feedback"] = None
 
     return state
 
@@ -634,12 +655,73 @@ def route_after_human_review(state: DraftingState) -> Literal["revise", "end"]:
 
 
 # ============================================================================
+# Checkpointer Factory
+# ============================================================================
+
+def get_checkpointer(connection_string: Optional[str] = None):
+    """
+    Get a checkpointer for workflow state persistence.
+
+    Priority:
+    1. PostgreSQL (if connection string provided and available)
+    2. MemorySaver (in-memory fallback)
+
+    Args:
+        connection_string: PostgreSQL connection string (optional)
+
+    Returns:
+        A checkpointer instance for LangGraph
+    """
+    # Try PostgreSQL first
+    if connection_string and POSTGRES_CHECKPOINTER_AVAILABLE:
+        try:
+            # Get connection string from environment if not provided
+            conn_str = connection_string or os.environ.get("DATABASE_URL")
+            if conn_str:
+                # PostgresSaver expects a connection pool
+                checkpointer = PostgresSaver.from_conn_string(conn_str)
+                print("Using PostgreSQL checkpointer for workflow persistence")
+                return checkpointer
+        except Exception as e:
+            print(f"PostgreSQL checkpointer failed, falling back to memory: {e}")
+
+    # Fallback to memory
+    if MemorySaver:
+        print("Using in-memory checkpointer (state will not persist across restarts)")
+        return MemorySaver()
+
+    return None
+
+
+# Global checkpointer instance (lazy initialization)
+_checkpointer = None
+
+
+def get_or_create_checkpointer() -> Optional[Any]:
+    """Get or create the global checkpointer instance."""
+    global _checkpointer
+    if _checkpointer is None:
+        db_url = os.environ.get("DATABASE_URL")
+        _checkpointer = get_checkpointer(db_url)
+    return _checkpointer
+
+
+# ============================================================================
 # Graph Builder
 # ============================================================================
 
-def build_drafting_graph() -> Optional["StateGraph"]:
+def build_drafting_graph(
+    checkpointer: Optional[Any] = None,
+    interrupt_before_human_review: bool = True
+) -> Optional["StateGraph"]:
     """
     Build the LangGraph drafting workflow.
+
+    Args:
+        checkpointer: Optional checkpointer for state persistence.
+                     If None, uses get_or_create_checkpointer().
+        interrupt_before_human_review: If True, workflow pauses at human_review
+                                       for actual human input (proper HITL).
 
     Returns:
         StateGraph configured for proposal drafting, or None if LangGraph unavailable
@@ -691,8 +773,21 @@ def build_drafting_graph() -> Optional["StateGraph"]:
     # Revise always goes back to quality check
     builder.add_edge("revise", "quality_check")
 
-    # Compile the graph
-    return builder.compile()
+    # Get checkpointer
+    if checkpointer is None:
+        checkpointer = get_or_create_checkpointer()
+
+    # Compile with checkpointer and optional interrupt
+    compile_kwargs = {}
+    if checkpointer:
+        compile_kwargs["checkpointer"] = checkpointer
+
+    # Enable HITL: interrupt BEFORE human_review so the workflow pauses
+    # and waits for actual human input
+    if interrupt_before_human_review:
+        compile_kwargs["interrupt_before"] = ["human_review"]
+
+    return builder.compile(**compile_kwargs)
 
 
 # ============================================================================
@@ -856,6 +951,153 @@ Our approach leverages proven methodologies and experienced personnel to deliver
 
 
 # ============================================================================
+# Workflow Management Functions
+# ============================================================================
+
+def get_workflow_status(
+    workflow_id: str,
+    graph: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Get the current status of a drafting workflow.
+
+    Args:
+        workflow_id: The workflow ID (thread_id for LangGraph)
+        graph: Optional compiled graph. If None, builds a new one.
+
+    Returns:
+        Dict with workflow status, current node, and state snapshot
+    """
+    if graph is None:
+        graph = build_drafting_graph()
+
+    if graph is None:
+        return None
+
+    try:
+        # Get current state from checkpointer
+        config = {"configurable": {"thread_id": workflow_id}}
+        state = graph.get_state(config)
+
+        if state is None or state.values is None:
+            return None
+
+        values = state.values
+        return {
+            "workflow_id": workflow_id,
+            "status": "paused" if state.next else "completed",
+            "current_node": values.get("current_node", "unknown"),
+            "next_nodes": list(state.next) if state.next else [],
+            "draft_preview": (values.get("draft_text", "")[:500] + "...")
+                            if values.get("draft_text") else None,
+            "quality_scores": values.get("quality_scores", {}),
+            "revision_count": values.get("revision_count", 0),
+            "approved": values.get("approved", False),
+            "started_at": values.get("started_at"),
+            "error": values.get("error"),
+        }
+    except Exception as e:
+        return {"workflow_id": workflow_id, "status": "error", "error": str(e)}
+
+
+def resume_workflow(
+    workflow_id: str,
+    human_feedback: str,
+    graph: Optional[Any] = None
+) -> Dict[str, Any]:
+    """
+    Resume a paused drafting workflow with human feedback.
+
+    Args:
+        workflow_id: The workflow ID (thread_id for LangGraph)
+        human_feedback: Feedback from human reviewer. Options:
+            - "approve" / "approved" / "lgtm": Accept the draft
+            - "reject: <reason>": Reject the draft
+            - Any other text: Request revision with this feedback
+
+        graph: Optional compiled graph. If None, builds a new one.
+
+    Returns:
+        Dict with updated workflow state after resuming
+
+    Example:
+        # Approve a draft
+        resume_workflow("wf-123", "approved")
+
+        # Request revision
+        resume_workflow("wf-123", "Please add more specific metrics")
+    """
+    if graph is None:
+        graph = build_drafting_graph()
+
+    if graph is None:
+        return {"error": "LangGraph not available"}
+
+    try:
+        config = {"configurable": {"thread_id": workflow_id}}
+
+        # Get current state
+        current_state = graph.get_state(config)
+        if current_state is None or current_state.values is None:
+            return {"error": f"Workflow {workflow_id} not found"}
+
+        # Check if workflow is paused
+        if not current_state.next:
+            return {"error": "Workflow is not paused", "status": "completed"}
+
+        # Update state with human feedback
+        graph.update_state(
+            config,
+            {"human_feedback": human_feedback},
+            as_node="quality_check"  # Inject as if coming from quality_check
+        )
+
+        # Resume the workflow (it will continue from the interrupt point)
+        result = None
+        for event in graph.stream(None, config):
+            result = event
+
+        # Get final state
+        final_state = graph.get_state(config)
+        if final_state and final_state.values:
+            values = final_state.values
+            return {
+                "workflow_id": workflow_id,
+                "status": "paused" if final_state.next else "completed",
+                "current_node": values.get("current_node"),
+                "approved": values.get("approved", False),
+                "draft_text": values.get("draft_text", ""),
+                "quality_scores": values.get("quality_scores", {}),
+                "revision_count": values.get("revision_count", 0),
+                "completed_at": values.get("completed_at"),
+            }
+
+        return {"workflow_id": workflow_id, "status": "unknown"}
+
+    except Exception as e:
+        return {"error": str(e), "workflow_id": workflow_id}
+
+
+def list_pending_workflows(graph: Optional[Any] = None) -> List[Dict[str, Any]]:
+    """
+    List all workflows waiting for human review.
+
+    Note: This requires a PostgreSQL checkpointer to work across restarts.
+    With MemorySaver, only workflows from the current session are visible.
+
+    Args:
+        graph: Optional compiled graph.
+
+    Returns:
+        List of workflow status dicts for paused workflows
+    """
+    # This would query the checkpoints table for paused workflows
+    # For now, return empty list as this requires database query
+    # TODO: Implement when PostgreSQL is configured
+    return []
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
@@ -871,4 +1113,12 @@ __all__ = [
     "human_review_node",
     "revise_node",
     "LANGGRAPH_AVAILABLE",
+    # Checkpointing
+    "get_checkpointer",
+    "get_or_create_checkpointer",
+    "POSTGRES_CHECKPOINTER_AVAILABLE",
+    # Workflow management
+    "get_workflow_status",
+    "resume_workflow",
+    "list_pending_workflows",
 ]

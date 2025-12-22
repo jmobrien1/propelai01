@@ -592,6 +592,326 @@ class VectorStore:
         return all_results[:top_k]
 
     # =========================================================================
+    # Hybrid Search (BM25 + Vector Fusion)
+    # =========================================================================
+
+    async def hybrid_search(
+        self,
+        query: str,
+        top_k: int = 10,
+        company_id: Optional[str] = None,
+        include_types: Optional[List[str]] = None,
+        alpha: float = 0.5,
+    ) -> List[SearchResult]:
+        """
+        Perform hybrid search combining vector similarity with keyword (BM25-like) search.
+
+        This uses Reciprocal Rank Fusion (RRF) to combine results from:
+        1. Vector similarity search (semantic understanding)
+        2. PostgreSQL full-text search (keyword matching)
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+            company_id: Optional company filter
+            include_types: List of content types to include
+            alpha: Weight for vector search (0-1). Higher = more semantic.
+                   0.5 = equal weight. Default is 0.5.
+
+        Returns:
+            Combined results with fused scores
+        """
+        types = include_types or ["capability", "past_performance", "key_personnel", "differentiator"]
+
+        # Get results from both search methods
+        vector_results = await self.search_all(
+            query=query,
+            top_k=top_k * 2,  # Get more results for fusion
+            company_id=company_id,
+            include_types=types
+        )
+
+        keyword_results = await self._keyword_search_all(
+            query=query,
+            top_k=top_k * 2,
+            company_id=company_id,
+            include_types=types
+        )
+
+        # Apply Reciprocal Rank Fusion
+        fused_results = self._reciprocal_rank_fusion(
+            vector_results=vector_results,
+            keyword_results=keyword_results,
+            alpha=alpha,
+            k=60  # RRF constant
+        )
+
+        return fused_results[:top_k]
+
+    async def _keyword_search_all(
+        self,
+        query: str,
+        top_k: int,
+        company_id: Optional[str] = None,
+        include_types: Optional[List[str]] = None,
+    ) -> List[SearchResult]:
+        """
+        Perform keyword search using PostgreSQL full-text search.
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        if not self._initialized:
+            return []
+
+        types = include_types or ["capability", "past_performance", "key_personnel", "differentiator"]
+        per_type_k = max(1, top_k // len(types))
+
+        all_results = []
+
+        # Prepare query for PostgreSQL full-text search
+        # Convert query to tsquery format
+        search_terms = query.lower().split()
+        ts_query = " & ".join(search_terms)  # AND all terms
+
+        table_configs = {
+            "capability": ("company_capabilities", "name", "description"),
+            "past_performance": ("company_past_performances", "project_name", "description"),
+            "key_personnel": ("company_key_personnel", "name", "summary"),
+            "differentiator": ("company_differentiators", "title", "description"),
+        }
+
+        for content_type in types:
+            if content_type not in table_configs:
+                continue
+
+            table, name_col, desc_col = table_configs[content_type]
+
+            try:
+                results = await self._keyword_search(
+                    table=table,
+                    query=ts_query,
+                    top_k=per_type_k,
+                    company_id=company_id,
+                    content_type=content_type,
+                    name_column=name_col,
+                    description_column=desc_col,
+                )
+                all_results.extend(results)
+            except Exception as e:
+                print(f"Keyword search failed for {content_type}: {e}")
+
+        # Sort by score
+        all_results.sort(key=lambda x: x.similarity_score, reverse=True)
+        return all_results[:top_k]
+
+    async def _keyword_search(
+        self,
+        table: str,
+        query: str,
+        top_k: int,
+        company_id: Optional[str],
+        content_type: str,
+        name_column: str,
+        description_column: str,
+    ) -> List[SearchResult]:
+        """
+        Internal keyword search using PostgreSQL full-text search.
+        """
+        params = {"query": query, "top_k": top_k}
+        where_clauses = []
+
+        if company_id:
+            where_clauses.append("company_id = :company_id")
+            params["company_id"] = company_id
+
+        where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        # Use PostgreSQL full-text search with ts_rank
+        sql = f"""
+            SELECT
+                id,
+                {name_column} as name,
+                {description_column} as description,
+                ts_rank(
+                    to_tsvector('english', COALESCE({name_column}, '') || ' ' || COALESCE({description_column}, '')),
+                    to_tsquery('english', :query)
+                ) as rank
+            FROM {table}
+            {where_sql}
+            {"AND " if where_clauses else "WHERE "}
+                to_tsvector('english', COALESCE({name_column}, '') || ' ' || COALESCE({description_column}, ''))
+                @@ to_tsquery('english', :query)
+            ORDER BY rank DESC
+            LIMIT :top_k
+        """
+
+        try:
+            async with self.session_factory() as session:
+                result = await session.execute(text(sql), params)
+                rows = result.fetchall()
+
+                return [
+                    SearchResult(
+                        id=str(row[0]),
+                        content_type=content_type,
+                        name=row[1] or "",
+                        description=(row[2] or "")[:500],
+                        similarity_score=float(row[3]) if row[3] else 0.0,
+                        metadata={"search_type": "keyword"},
+                    )
+                    for row in rows
+                ]
+        except Exception as e:
+            # If full-text search fails (e.g., invalid query), fallback to ILIKE
+            return await self._ilike_search(
+                table, query, top_k, company_id, content_type, name_column, description_column
+            )
+
+    async def _ilike_search(
+        self,
+        table: str,
+        query: str,
+        top_k: int,
+        company_id: Optional[str],
+        content_type: str,
+        name_column: str,
+        description_column: str,
+    ) -> List[SearchResult]:
+        """
+        Fallback keyword search using ILIKE when full-text search fails.
+        """
+        # Convert tsquery format back to plain words
+        words = query.replace("&", " ").split()
+
+        params = {"top_k": top_k}
+        where_clauses = []
+
+        if company_id:
+            where_clauses.append("company_id = :company_id")
+            params["company_id"] = company_id
+
+        # Build ILIKE conditions for each word
+        ilike_conditions = []
+        for i, word in enumerate(words):
+            param_name = f"word_{i}"
+            params[param_name] = f"%{word}%"
+            ilike_conditions.append(
+                f"({name_column} ILIKE :{param_name} OR {description_column} ILIKE :{param_name})"
+            )
+
+        if ilike_conditions:
+            where_clauses.append("(" + " AND ".join(ilike_conditions) + ")")
+
+        where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        sql = f"""
+            SELECT
+                id,
+                {name_column} as name,
+                {description_column} as description,
+                1.0 as rank
+            FROM {table}
+            {where_sql}
+            LIMIT :top_k
+        """
+
+        try:
+            async with self.session_factory() as session:
+                result = await session.execute(text(sql), params)
+                rows = result.fetchall()
+
+                return [
+                    SearchResult(
+                        id=str(row[0]),
+                        content_type=content_type,
+                        name=row[1] or "",
+                        description=(row[2] or "")[:500],
+                        similarity_score=float(row[3]) if row[3] else 0.0,
+                        metadata={"search_type": "ilike"},
+                    )
+                    for row in rows
+                ]
+        except Exception as e:
+            print(f"ILIKE search failed: {e}")
+            return []
+
+    def _reciprocal_rank_fusion(
+        self,
+        vector_results: List[SearchResult],
+        keyword_results: List[SearchResult],
+        alpha: float = 0.5,
+        k: int = 60,
+    ) -> List[SearchResult]:
+        """
+        Combine results using Reciprocal Rank Fusion (RRF).
+
+        RRF score = alpha * 1/(k + rank_vector) + (1-alpha) * 1/(k + rank_keyword)
+
+        Args:
+            vector_results: Results from vector similarity search
+            keyword_results: Results from keyword search
+            alpha: Weight for vector results (0-1)
+            k: RRF constant (typically 60)
+
+        Returns:
+            Fused results sorted by combined score
+        """
+        # Create maps for quick lookup
+        vector_ranks = {r.id: idx + 1 for idx, r in enumerate(vector_results)}
+        keyword_ranks = {r.id: idx + 1 for idx, r in enumerate(keyword_results)}
+
+        # Get all unique result IDs
+        all_ids = set(vector_ranks.keys()) | set(keyword_ranks.keys())
+
+        # Create result map for getting full result objects
+        result_map = {}
+        for r in vector_results + keyword_results:
+            if r.id not in result_map:
+                result_map[r.id] = r
+
+        # Calculate RRF scores
+        fused_scores = {}
+        for result_id in all_ids:
+            # Get ranks (use large number if not in results)
+            v_rank = vector_ranks.get(result_id, 1000)
+            k_rank = keyword_ranks.get(result_id, 1000)
+
+            # Calculate RRF score
+            rrf_score = alpha * (1 / (k + v_rank)) + (1 - alpha) * (1 / (k + k_rank))
+            fused_scores[result_id] = rrf_score
+
+        # Sort by fused score
+        sorted_ids = sorted(fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True)
+
+        # Build result list
+        fused_results = []
+        for result_id in sorted_ids:
+            result = result_map[result_id]
+            # Update similarity score to be the fused score (normalized to 0-1)
+            max_score = max(fused_scores.values()) if fused_scores else 1.0
+            normalized_score = fused_scores[result_id] / max_score if max_score > 0 else 0.0
+
+            fused_results.append(
+                SearchResult(
+                    id=result.id,
+                    content_type=result.content_type,
+                    name=result.name,
+                    description=result.description,
+                    similarity_score=normalized_score,
+                    metadata={
+                        **result.metadata,
+                        "search_type": "hybrid",
+                        "vector_rank": vector_ranks.get(result_id),
+                        "keyword_rank": keyword_ranks.get(result_id),
+                        "rrf_score": fused_scores[result_id],
+                    },
+                )
+            )
+
+        return fused_results
+
+    # =========================================================================
     # Internal Methods
     # =========================================================================
 

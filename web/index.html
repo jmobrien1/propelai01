@@ -17,7 +17,16 @@
     
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@0.294.0/dist/umd/lucide.min.js"></script>
-    
+
+    <!-- PDF.js for PDF viewing with overlays (Trust Gate) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Configure PDF.js worker
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+    </script>
+
     <style>
         :root {
             --bg-primary: #0a0a0f;
@@ -469,6 +478,199 @@
         
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-in { animation: fadeIn 0.3s ease forwards; }
+
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* PDF Viewer Modal (Trust Gate) */
+        .pdf-viewer-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+        }
+
+        .pdf-viewer-container {
+            width: 90vw;
+            height: 90vh;
+            max-width: 1400px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .pdf-viewer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+        }
+
+        .pdf-viewer-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pdf-viewer-header .page-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pdf-viewer-header .page-nav button {
+            padding: 6px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pdf-viewer-header .page-nav button:hover:not(:disabled) {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .pdf-viewer-header .page-nav button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pdf-viewer-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .pdf-canvas-wrapper {
+            flex: 1;
+            overflow: auto;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+
+        .pdf-page-container {
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .pdf-canvas {
+            display: block;
+        }
+
+        .pdf-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .pdf-highlight {
+            position: absolute;
+            background: rgba(79, 140, 255, 0.3);
+            border: 2px solid var(--accent-blue);
+            border-radius: 2px;
+            animation: pulse-highlight 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-highlight {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(79, 140, 255, 0.5); }
+            50% { box-shadow: 0 0 0 8px rgba(79, 140, 255, 0); }
+        }
+
+        .pdf-sidebar {
+            width: 320px;
+            background: var(--bg-card);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pdf-sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .pdf-sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .source-info-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+
+        .source-info-card label {
+            display: block;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .source-info-card .value {
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .confidence-meter {
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .confidence-meter .fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .view-source-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            background: rgba(79, 140, 255, 0.1);
+            border: 1px solid rgba(79, 140, 255, 0.3);
+            border-radius: 4px;
+            color: var(--accent-blue);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .view-source-btn:hover {
+            background: rgba(79, 140, 255, 0.2);
+            border-color: var(--accent-blue);
+        }
+
+        .view-source-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -611,6 +813,31 @@
             const [searchQuery, setSearchQuery] = useState('');
             const [filterType, setFilterType] = useState('all');
             const [filterPriority, setFilterPriority] = useState('all');
+
+            // PDF Viewer State (Trust Gate)
+            const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+            const [selectedRequirement, setSelectedRequirement] = useState(null);
+            const [sourceData, setSourceData] = useState(null);
+
+            // Handler to open PDF viewer with source data
+            const handleViewSource = async (requirement) => {
+                setSelectedRequirement(requirement);
+                setPdfViewerOpen(true);
+
+                // Fetch source coordinates from API
+                try {
+                    const response = await fetch(`/api/rfp/${currentRfpId}/requirements/${requirement.id}/source`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        setSourceData(data);
+                    } else {
+                        setSourceData(null);
+                    }
+                } catch (err) {
+                    console.error('Error fetching source data:', err);
+                    setSourceData(null);
+                }
+            };
 
             // Load user from localStorage on mount
             useEffect(() => {
@@ -1053,7 +1280,7 @@
                         )}
                         
                         {currentView === 'matrix' && stats && (
-                            <MatrixView 
+                            <MatrixView
                                 requirements={filteredRequirements}
                                 allRequirements={requirements}
                                 stats={stats}
@@ -1064,6 +1291,8 @@
                                 filterPriority={filterPriority}
                                 setFilterPriority={setFilterPriority}
                                 onExport={exportToExcel}
+                                rfpId={currentRfpId}
+                                onViewSource={handleViewSource}
                             />
                         )}
                         
@@ -1124,6 +1353,20 @@
                                 if (newToken) {
                                     localStorage.setItem('propelai_token', newToken);
                                 }
+                            }}
+                        />
+                    )}
+
+                    {/* PDF Viewer Modal (Trust Gate) */}
+                    {pdfViewerOpen && (
+                        <PDFViewerModal
+                            rfpId={currentRfpId}
+                            requirement={selectedRequirement}
+                            sourceData={sourceData}
+                            onClose={() => {
+                                setPdfViewerOpen(false);
+                                setSelectedRequirement(null);
+                                setSourceData(null);
                             }}
                         />
                     )}
@@ -2560,13 +2803,309 @@
             );
         }
 
+        // PDF Viewer Modal (Trust Gate - Source Traceability)
+        function PDFViewerModal({ rfpId, requirement, sourceData, onClose }) {
+            const canvasRef = useRef(null);
+            const [pdfDoc, setPdfDoc] = useState(null);
+            const [currentPage, setCurrentPage] = useState(1);
+            const [totalPages, setTotalPages] = useState(0);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [scale, setScale] = useState(1.5);
+            const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 });
+
+            // Load PDF document
+            useEffect(() => {
+                if (!rfpId) return;
+
+                const loadPdf = async () => {
+                    try {
+                        setLoading(true);
+                        setError(null);
+
+                        // Fetch PDF from backend
+                        const response = await fetch(`/api/rfp/${rfpId}/source-pdf`);
+                        if (!response.ok) {
+                            throw new Error('PDF not available');
+                        }
+
+                        const pdfData = await response.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                        setPdfDoc(pdf);
+                        setTotalPages(pdf.numPages);
+
+                        // Jump to the page with the requirement if we have source data
+                        if (sourceData?.page_number) {
+                            setCurrentPage(sourceData.page_number);
+                        }
+
+                        setLoading(false);
+                    } catch (err) {
+                        console.error('Error loading PDF:', err);
+                        setError(err.message || 'Failed to load PDF');
+                        setLoading(false);
+                    }
+                };
+
+                if (typeof pdfjsLib !== 'undefined') {
+                    loadPdf();
+                } else {
+                    setError('PDF.js library not loaded');
+                    setLoading(false);
+                }
+            }, [rfpId, sourceData]);
+
+            // Render current page
+            useEffect(() => {
+                if (!pdfDoc || !canvasRef.current) return;
+
+                const renderPage = async () => {
+                    try {
+                        const page = await pdfDoc.getPage(currentPage);
+                        const viewport = page.getViewport({ scale });
+
+                        const canvas = canvasRef.current;
+                        const context = canvas.getContext('2d');
+
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        setCanvasDimensions({ width: viewport.width, height: viewport.height });
+
+                        await page.render({
+                            canvasContext: context,
+                            viewport: viewport
+                        }).promise;
+                    } catch (err) {
+                        console.error('Error rendering page:', err);
+                    }
+                };
+
+                renderPage();
+            }, [pdfDoc, currentPage, scale]);
+
+            // Calculate overlay positions based on bounding box
+            const getOverlayStyle = () => {
+                if (!sourceData?.bounding_box || !canvasDimensions.width) return null;
+
+                const bbox = sourceData.bounding_box;
+                // Coordinates are normalized (0-1), convert to pixels
+                return {
+                    left: `${bbox.x0 * 100}%`,
+                    top: `${bbox.y0 * 100}%`,
+                    width: `${(bbox.x1 - bbox.x0) * 100}%`,
+                    height: `${(bbox.y1 - bbox.y0) * 100}%`
+                };
+            };
+
+            const overlayStyle = getOverlayStyle();
+            const isOnHighlightPage = sourceData?.page_number === currentPage;
+
+            return (
+                <div className="pdf-viewer-modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
+                    <div className="pdf-viewer-container">
+                        <div className="pdf-viewer-header">
+                            <h3>
+                                <Icon name="FileText" size={20} />
+                                Source Document Viewer
+                                <span style={{
+                                    fontSize: '12px',
+                                    background: 'rgba(79, 140, 255, 0.2)',
+                                    padding: '2px 8px',
+                                    borderRadius: '4px',
+                                    marginLeft: '8px'
+                                }}>
+                                    Trust Gate
+                                </span>
+                            </h3>
+
+                            <div className="page-nav">
+                                <button
+                                    onClick={() => setScale(s => Math.max(0.5, s - 0.25))}
+                                    title="Zoom out"
+                                >
+                                    <Icon name="ZoomOut" size={16} />
+                                </button>
+                                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                    {Math.round(scale * 100)}%
+                                </span>
+                                <button
+                                    onClick={() => setScale(s => Math.min(3, s + 0.25))}
+                                    title="Zoom in"
+                                >
+                                    <Icon name="ZoomIn" size={16} />
+                                </button>
+
+                                <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 8px' }} />
+
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage <= 1}
+                                >
+                                    <Icon name="ChevronLeft" size={16} />
+                                </button>
+                                <span style={{ fontSize: '13px', minWidth: '80px', textAlign: 'center' }}>
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage >= totalPages}
+                                >
+                                    <Icon name="ChevronRight" size={16} />
+                                </button>
+
+                                {sourceData?.page_number && currentPage !== sourceData.page_number && (
+                                    <button
+                                        onClick={() => setCurrentPage(sourceData.page_number)}
+                                        style={{ background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
+                                    >
+                                        Go to Source (p.{sourceData.page_number})
+                                    </button>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={onClose}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    padding: '8px'
+                                }}
+                            >
+                                <Icon name="X" size={20} />
+                            </button>
+                        </div>
+
+                        <div className="pdf-viewer-body">
+                            <div className="pdf-canvas-wrapper">
+                                {loading ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)' }}>
+                                        <div className="spinner" style={{ width: '24px', height: '24px', border: '2px solid var(--border-color)', borderTopColor: 'var(--accent-blue)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                                        Loading PDF...
+                                    </div>
+                                ) : error ? (
+                                    <div style={{ textAlign: 'center', color: 'var(--accent-red)' }}>
+                                        <Icon name="AlertCircle" size={48} style={{ marginBottom: '12px', opacity: 0.5 }} />
+                                        <div>{error}</div>
+                                        <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                                            The source PDF may not be available for this RFP.
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="pdf-page-container">
+                                        <canvas ref={canvasRef} className="pdf-canvas" />
+
+                                        {/* Highlight overlay */}
+                                        {isOnHighlightPage && overlayStyle && (
+                                            <div className="pdf-overlay" style={{ width: canvasDimensions.width, height: canvasDimensions.height }}>
+                                                <div className="pdf-highlight" style={overlayStyle} />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="pdf-sidebar">
+                                <div className="pdf-sidebar-header">
+                                    <Icon name="Info" size={16} style={{ marginRight: '8px' }} />
+                                    Source Information
+                                </div>
+                                <div className="pdf-sidebar-content">
+                                    <div className="source-info-card">
+                                        <label>Requirement ID</label>
+                                        <div className="value">{requirement?.id || 'N/A'}</div>
+                                    </div>
+
+                                    <div className="source-info-card">
+                                        <label>Requirement Text</label>
+                                        <div className="value" style={{ fontSize: '13px', lineHeight: '1.5' }}>
+                                            {requirement?.text || 'No text available'}
+                                        </div>
+                                    </div>
+
+                                    {sourceData && (
+                                        <>
+                                            <div className="source-info-card">
+                                                <label>Source Page</label>
+                                                <div className="value">Page {sourceData.page_number || 'N/A'}</div>
+                                            </div>
+
+                                            <div className="source-info-card">
+                                                <label>Extraction Confidence</label>
+                                                <div className="value" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {Math.round((sourceData.confidence || 0) * 100)}%
+                                                    <span style={{
+                                                        fontSize: '11px',
+                                                        color: sourceData.confidence >= 0.8 ? 'var(--accent-green)' :
+                                                               sourceData.confidence >= 0.5 ? 'var(--accent-amber)' : 'var(--accent-red)'
+                                                    }}>
+                                                        {sourceData.confidence >= 0.8 ? 'High' : sourceData.confidence >= 0.5 ? 'Medium' : 'Low'}
+                                                    </span>
+                                                </div>
+                                                <div className="confidence-meter">
+                                                    <div
+                                                        className="fill"
+                                                        style={{
+                                                            width: `${(sourceData.confidence || 0) * 100}%`,
+                                                            background: sourceData.confidence >= 0.8 ? 'var(--accent-green)' :
+                                                                       sourceData.confidence >= 0.5 ? 'var(--accent-amber)' : 'var(--accent-red)'
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="source-info-card">
+                                                <label>Extraction Method</label>
+                                                <div className="value">{sourceData.extraction_method || 'pdfplumber'}</div>
+                                            </div>
+
+                                            {sourceData.text_snippet && (
+                                                <div className="source-info-card">
+                                                    <label>Text Snippet</label>
+                                                    <div className="value" style={{
+                                                        fontSize: '12px',
+                                                        fontFamily: 'monospace',
+                                                        background: 'var(--bg-primary)',
+                                                        padding: '8px',
+                                                        borderRadius: '4px',
+                                                        marginTop: '4px'
+                                                    }}>
+                                                        "{sourceData.text_snippet}"
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {!sourceData && (
+                                        <div style={{
+                                            padding: '20px',
+                                            textAlign: 'center',
+                                            color: 'var(--text-muted)',
+                                            fontSize: '13px'
+                                        }}>
+                                            <Icon name="AlertCircle" size={24} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                                            <div>Source coordinates not available for this requirement.</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // Matrix View
-        function MatrixView({ 
-            requirements, allRequirements, stats, 
-            searchQuery, setSearchQuery, 
+        function MatrixView({
+            requirements, allRequirements, stats,
+            searchQuery, setSearchQuery,
             filterType, setFilterType,
             filterPriority, setFilterPriority,
-            onExport
+            onExport,
+            rfpId,
+            onViewSource
         }) {
             const uniqueTypes = [...new Set(allRequirements.map(r => r.type).filter(Boolean))];
             
@@ -2666,6 +3205,7 @@
                                         <th style={{ width: 120 }}>Type</th>
                                         <th style={{ width: 100 }}>Priority</th>
                                         <th style={{ width: 80 }}>Confidence</th>
+                                        <th style={{ width: 100 }}>Source</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2680,6 +3220,17 @@
                                                 {req.priority}
                                             </td>
                                             <td>{Math.round((req.confidence || 0) * 100)}%</td>
+                                            <td>
+                                                <button
+                                                    className="view-source-btn"
+                                                    onClick={() => onViewSource && onViewSource(req)}
+                                                    disabled={!onViewSource}
+                                                    title="View requirement in source PDF"
+                                                >
+                                                    <Icon name="FileSearch" size={14} />
+                                                    View
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
