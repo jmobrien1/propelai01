@@ -5432,80 +5432,105 @@ async def register_user(
     Creates a new user with email, name, and password. Returns a JWT token
     for immediate authentication. Rate limited to 3 registrations per minute.
     """
+    print(f"[AUTH] Register attempt for email: {email}")
+
     # Rate limit: 3 registrations per minute
     await check_rate_limit(request, "register")
 
     # Validate password strength
     is_valid, error_msg = validate_password_strength(password)
     if not is_valid:
+        print(f"[AUTH] Password validation failed: {error_msg}")
         raise HTTPException(status_code=400, detail=error_msg)
 
-    async with get_db_session() as session:
-        if session is None:
-            raise HTTPException(status_code=500, detail="Database not available")
+    try:
+        async with get_db_session() as session:
+            if session is None:
+                print("[AUTH] Database session is None")
+                raise HTTPException(status_code=500, detail="Database not available")
 
-        from sqlalchemy import select
+            from sqlalchemy import select
 
-        # Check if email exists
-        result = await session.execute(
-            select(UserModel).where(UserModel.email == email)
-        )
-        if result.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Email already registered")
+            # Check if email exists
+            print(f"[AUTH] Checking if email exists...")
+            result = await session.execute(
+                select(UserModel).where(UserModel.email == email)
+            )
+            if result.scalar_one_or_none():
+                print(f"[AUTH] Email already exists: {email}")
+                raise HTTPException(status_code=400, detail="Email already registered")
 
-        user_id = generate_id()
-        verification_token = secrets.token_urlsafe(32)
+            print(f"[AUTH] Creating new user...")
+            user_id = generate_id()
+            verification_token = secrets.token_urlsafe(32)
 
-        user = UserModel(
-            id=user_id,
-            email=email,
-            name=name,
-            password_hash=hash_password(password),
-            email_verified=not REQUIRE_EMAIL_VERIFICATION,  # Auto-verify if not required
-            email_verification_token=verification_token if REQUIRE_EMAIL_VERIFICATION else None,
-            email_verification_sent_at=datetime.utcnow() if REQUIRE_EMAIL_VERIFICATION else None,
-        )
-        session.add(user)
-        await session.flush()
+            print(f"[AUTH] Hashing password...")
+            password_hash = hash_password(password)
+            print(f"[AUTH] Password hashed successfully")
 
-        # Send verification email if required
-        email_sent = False
-        if REQUIRE_EMAIL_VERIFICATION and EMAIL_SERVICE_AVAILABLE and email_service:
-            email_sent = await email_service.send_email_verification(
-                to_email=email,
-                verification_token=verification_token,
-                user_name=name
+            user = UserModel(
+                id=user_id,
+                email=email,
+                name=name,
+                password_hash=password_hash,
+                email_verified=not REQUIRE_EMAIL_VERIFICATION,  # Auto-verify if not required
+                email_verification_token=verification_token if REQUIRE_EMAIL_VERIFICATION else None,
+                email_verification_sent_at=datetime.utcnow() if REQUIRE_EMAIL_VERIFICATION else None,
+            )
+            print(f"[AUTH] Adding user to session...")
+            session.add(user)
+            print(f"[AUTH] Flushing session...")
+            await session.flush()
+            print(f"[AUTH] User created successfully: {user_id}")
+
+            # Send verification email if required
+            email_sent = False
+            if REQUIRE_EMAIL_VERIFICATION and EMAIL_SERVICE_AVAILABLE and email_service:
+                email_sent = await email_service.send_email_verification(
+                    to_email=email,
+                    verification_token=verification_token,
+                    user_name=name
+                )
+
+            # Generate JWT token for immediate login after registration
+            token = create_jwt_token(user.id, user.email, user.name)
+            token_expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+
+            # Create session record
+            await create_session(
+                user_id=user.id,
+                token=token,
+                request=request,
+                expires_at=token_expiry
             )
 
-        # Generate JWT token for immediate login after registration
-        token = create_jwt_token(user.id, user.email, user.name)
-        token_expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+            print(f"[AUTH] Registration complete for {email}")
 
-        # Create session record
-        await create_session(
-            user_id=user.id,
-            token=token,
-            request=request,
-            expires_at=token_expiry
-        )
+            response = {
+                "success": True,
+                "user": user.to_dict(),
+                "token": token,
+                "token_type": "bearer",
+                "expires_in": JWT_EXPIRY_HOURS * 3600,
+                "message": "Registration successful",
+                "email_verification_required": REQUIRE_EMAIL_VERIFICATION,
+            }
 
-        response = {
-            "success": True,
-            "user": user.to_dict(),
-            "token": token,
-            "token_type": "bearer",
-            "expires_in": JWT_EXPIRY_HOURS * 3600,
-            "message": "Registration successful",
-            "email_verification_required": REQUIRE_EMAIL_VERIFICATION,
-        }
+            if REQUIRE_EMAIL_VERIFICATION:
+                response["email_sent"] = email_sent
+                if not email_sent:
+                    response["verification_token"] = verification_token
+                    response["note"] = "Email not configured - token provided directly"
 
-        if REQUIRE_EMAIL_VERIFICATION:
-            response["email_sent"] = email_sent
-            if not email_sent:
-                response["verification_token"] = verification_token
-                response["note"] = "Email not configured - token provided directly"
+            return response
 
-        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[AUTH] Registration error: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
 @app.post("/api/auth/verify-email")
