@@ -4367,11 +4367,20 @@ async def generate_outline(rfp_id: str):
             section_l = section_m  # GSA/BPA format has instructions in eval section
         
         # Generate outline from compliance matrix data
+        # v4.2: Include Company Library data for win theme generation
+        company_library_data = None
+        if COMPANY_LIBRARY_AVAILABLE and company_library:
+            try:
+                company_library_data = company_library.get_profile()
+            except Exception as e:
+                print(f"[WARN] Could not fetch Company Library: {e}")
+
         outline = generator.generate_from_compliance_matrix(
             section_l_requirements=section_l,
             section_m_requirements=section_m,
             technical_requirements=technical,
-            stats=stats
+            stats=stats,
+            company_library_data=company_library_data
         )
         
         # Convert to JSON
@@ -4425,16 +4434,25 @@ async def get_outline(rfp_id: str, format: str = "json"):
         
         if not section_l and section_m:
             section_l = section_m
-        
+
+        # v4.2: Include Company Library data for win theme generation
+        company_library_data = None
+        if COMPANY_LIBRARY_AVAILABLE and company_library:
+            try:
+                company_library_data = company_library.get_profile()
+            except Exception:
+                pass
+
         outline_obj = generator.generate_from_compliance_matrix(
             section_l_requirements=section_l,
             section_m_requirements=section_m,
             technical_requirements=technical,
-            stats=stats
+            stats=stats,
+            company_library_data=company_library_data
         )
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
-    
+
     return {"format": "json", "outline": outline}
 
 
@@ -4489,11 +4507,21 @@ async def export_annotated_outline(rfp_id: str):
         if section_l:
             print(f"[DEBUG] Sample section_l requirement: {section_l[0].get('text', '')[:100]}...")
 
+        # v4.2: Include Company Library data for win theme generation
+        company_library_data = None
+        if COMPANY_LIBRARY_AVAILABLE and company_library:
+            try:
+                company_library_data = company_library.get_profile()
+                print(f"[DEBUG] Company Library loaded with {len(company_library_data.get('differentiators', []))} differentiators")
+            except Exception as e:
+                print(f"[WARN] Could not fetch Company Library: {e}")
+
         outline_obj = generator.generate_from_compliance_matrix(
             section_l_requirements=section_l,
             section_m_requirements=section_m,
             technical_requirements=technical,
-            stats=stats
+            stats=stats,
+            company_library_data=company_library_data
         )
         outline = generator.to_json(outline_obj)
         store.update(rfp_id, {"outline": outline})
