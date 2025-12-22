@@ -420,6 +420,36 @@ class CompanyLibraryParser:
             elif line.startswith("# ") and "capabilities" not in line.lower():
                 data["company_name"] = line[2:].strip()
                 break
+
+        # FALLBACK: Extract company name from plain text patterns
+        if not data["company_name"]:
+            for line in lines[:10]:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Pattern: "Company Name, LLC" or "Company Name, Inc" followed by identifiers
+                # e.g., "Apex Orbit Technologies, LLC UEI: H9J2K4L5M6N7"
+                match = re.match(r"^([A-Z][A-Za-z\s]+(?:,?\s*(?:LLC|Inc|Corp|Corporation|Company|Co|Ltd|LP|LLP)))\s*(?:UEI|CAGE|DUNS|HQ|\|)", line, re.I)
+                if match:
+                    data["company_name"] = match.group(1).strip().rstrip(',')
+                    break
+
+                # Pattern: "Legal Name: Company Name"
+                match = re.match(r"(?:Legal\s*Name|Company\s*Name|Business\s*Name)[:\s]+([^\n]+)", line, re.I)
+                if match:
+                    name = match.group(1).strip()
+                    # Clean up trailing identifiers
+                    name = re.sub(r"\s*(?:UEI|CAGE|DUNS).*$", "", name, flags=re.I)
+                    if len(name) > 3:
+                        data["company_name"] = name
+                        break
+
+                # Pattern: Just "Company Name, LLC" on its own line
+                match = re.match(r"^([A-Z][A-Za-z\s]{3,50}(?:,?\s*(?:LLC|Inc|Corp|Corporation|Company|Ltd)))$", line)
+                if match:
+                    data["company_name"] = match.group(1).strip()
+                    break
         
         # Find executive summary section
         for section in sections:
@@ -783,13 +813,37 @@ class CompanyLibraryParser:
     def _extract_corporate_info_data(self, text: str, sections: List[Dict]) -> Dict:
         """Extract corporate information"""
         data = {
+            "company_name": "",
             "duns": "",
             "cage_code": "",
             "naics_codes": [],
             "certifications": [],
             "contract_vehicles": [],
         }
-        
+
+        # Extract company name from common patterns
+        lines = text.split("\n")
+        for line in lines[:20]:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Pattern: "Legal Name: Company Name, LLC"
+            match = re.match(r"(?:Legal\s*Name|Company\s*Name|Business\s*Name)[:\s]+([^\n]+)", line, re.I)
+            if match:
+                name = match.group(1).strip()
+                # Clean up trailing identifiers
+                name = re.sub(r"\s*(?:UEI|CAGE|DUNS).*$", "", name, flags=re.I)
+                if len(name) > 3:
+                    data["company_name"] = name
+                    break
+
+            # Pattern: "Doing Business As (DBA): Company Name"
+            match = re.match(r"(?:DBA|Doing\s+Business\s+As)[:\s()]+([^\n]+)", line, re.I)
+            if match and not data["company_name"]:
+                data["company_name"] = match.group(1).strip()
+                break
+
         text_upper = text.upper()
         
         # DUNS number
@@ -1056,6 +1110,9 @@ class CompanyLibrary:
             self.profile.key_personnel.append(kp)
         
         elif doc.document_type == DocumentType.CORPORATE_INFO:
+            # Company name from corporate info takes precedence if not already set
+            if data.get("company_name") and not self.profile.company_name:
+                self.profile.company_name = data["company_name"]
             if data.get("naics_codes"):
                 self.profile.naics_codes = [n["code"] for n in data["naics_codes"]]
             if data.get("certifications"):
