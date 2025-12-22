@@ -4458,16 +4458,21 @@ async def get_outline(rfp_id: str, format: str = "json"):
 
 
 @app.get("/api/rfp/{rfp_id}/outline/export")
-async def export_annotated_outline(rfp_id: str):
-    """Export annotated proposal outline as Word document."""
+async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
+    """
+    Export annotated proposal outline as Word document.
+
+    Query params:
+        regenerate: Force regeneration of outline (ignores cache)
+    """
     from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
-    
+
     if not ANNOTATED_OUTLINE_AVAILABLE:
         raise HTTPException(
             status_code=501,
             detail="Annotated outline export not available. Install Node.js and docx package."
         )
-    
+
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
@@ -4477,9 +4482,11 @@ async def export_annotated_outline(rfp_id: str):
     print(f"[DEBUG] RFP name: {rfp.get('name')}, solicitation: {rfp.get('solicitation_number')}")
     print(f"[DEBUG] Requirements count in store: {len(rfp.get('requirements', []))}")
 
-    outline = rfp.get("outline")
+    outline = rfp.get("outline") if not regenerate else None
     if outline:
         print(f"[DEBUG] Using CACHED outline (already generated)")
+    if regenerate:
+        print(f"[DEBUG] Regenerating outline (regenerate=true)")
     if not outline:
         generator = SmartOutlineGenerator()
         # v3.1 FIX: Use category field (set by extraction), not section field
