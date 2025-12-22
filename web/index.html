@@ -3317,32 +3317,74 @@
                                     No documents uploaded yet
                                 </div>
                             ) : (
-                                library?.documents?.map(doc => (
-                                    <div key={doc.id} style={{ 
-                                        padding: 16, 
-                                        borderBottom: '1px solid var(--border-color)',
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center'
-                                    }}>
-                                        <div>
-                                            <div style={{ fontWeight: 500 }}>{doc.title}</div>
-                                            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-                                                <span className={`badge badge-${doc.type === 'capabilities' ? 'blue' : doc.type === 'resume' ? 'green' : 'purple'}`}>
-                                                    {doc.type}
+                                /* Group documents by type with proper category headers */
+                                (() => {
+                                    const docTypes = {
+                                        capabilities: { label: 'Capabilities & Core Competencies', icon: '📋', color: 'blue' },
+                                        past_performance: { label: 'Past Performance', icon: '🏆', color: 'purple' },
+                                        resume: { label: 'Key Personnel', icon: '👤', color: 'green' },
+                                        corporate_info: { label: 'Corporate Information', icon: '🏢', color: 'orange' },
+                                        technical_approach: { label: 'Technical Approach', icon: '⚙️', color: 'cyan' },
+                                        other: { label: 'Other Documents', icon: '📄', color: 'gray' }
+                                    };
+
+                                    // Group documents by type
+                                    const grouped = library.documents.reduce((acc, doc) => {
+                                        const type = doc.type || 'other';
+                                        if (!acc[type]) acc[type] = [];
+                                        acc[type].push(doc);
+                                        return acc;
+                                    }, {});
+
+                                    // Display order
+                                    const typeOrder = ['capabilities', 'past_performance', 'resume', 'corporate_info', 'technical_approach', 'other'];
+
+                                    return typeOrder.filter(type => grouped[type]?.length > 0).map(type => (
+                                        <div key={type} style={{ marginBottom: 16 }}>
+                                            <div style={{
+                                                padding: '12px 16px',
+                                                background: 'var(--bg-tertiary)',
+                                                borderBottom: '1px solid var(--border-color)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8
+                                            }}>
+                                                <span>{docTypes[type]?.icon || '📄'}</span>
+                                                <span style={{ fontWeight: 600, fontSize: 14 }}>
+                                                    {docTypes[type]?.label || type}
                                                 </span>
-                                                <span style={{ marginLeft: 8 }}>{doc.filename}</span>
+                                                <span className={`badge badge-${docTypes[type]?.color || 'gray'}`} style={{ marginLeft: 'auto' }}>
+                                                    {grouped[type].length}
+                                                </span>
                                             </div>
+                                            {grouped[type].map(doc => (
+                                                <div key={doc.id} style={{
+                                                    padding: '12px 16px 12px 40px',
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}>
+                                                    <div>
+                                                        <div style={{ fontWeight: 500 }}>
+                                                            {doc.filename.replace(/^[a-z_]+lib_[a-f0-9]+_/, '')}
+                                                        </div>
+                                                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                            Uploaded {new Date(doc.parse_date).toLocaleDateString()}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        className="btn btn-sm"
+                                                        onClick={() => deleteDocument(doc.id)}
+                                                        style={{ color: 'var(--accent-red)', fontSize: 13 }}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            ))}
                                         </div>
-                                        <button 
-                                            className="btn"
-                                            onClick={() => deleteDocument(doc.id)}
-                                            style={{ color: 'var(--accent-red)' }}
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ))
+                                    ));
+                                })()
                             )}
                         </div>
                     )}
