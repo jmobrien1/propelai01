@@ -4625,8 +4625,32 @@ async def get_company_profile():
     """Get full company profile aggregated from all documents"""
     if not COMPANY_LIBRARY_AVAILABLE:
         raise HTTPException(status_code=500, detail="Company library not available")
-    
+
     return company_library.get_profile()
+
+
+@app.post("/api/library/rebuild")
+async def rebuild_library_profile():
+    """
+    Rebuild the company profile from all stored documents.
+
+    Use this to fix profile counts if documents were uploaded before
+    profile restoration was fixed, or after extraction improvements.
+    """
+    if not COMPANY_LIBRARY_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Company library not available")
+
+    profile = company_library.rebuild_profile()
+    return {
+        "success": True,
+        "message": "Profile rebuilt from stored documents",
+        "profile_summary": {
+            "capabilities_count": len(profile.get("capabilities", [])),
+            "differentiators_count": len(profile.get("differentiators", [])),
+            "past_performance_count": len(profile.get("past_performance", [])),
+            "key_personnel_count": len(profile.get("key_personnel", [])),
+        }
+    }
 
 
 @app.post("/api/library/upload")

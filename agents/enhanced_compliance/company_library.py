@@ -812,6 +812,7 @@ class CompanyLibrary:
                             description=cap_data.get("description", ""),
                             category=cap_data.get("category", ""),
                             keywords=cap_data.get("keywords", []),
+                            use_cases=cap_data.get("use_cases", []),
                         )
                         self.profile.capabilities.append(cap)
 
@@ -831,12 +832,11 @@ class CompanyLibrary:
                             id=pp_data.get("id", ""),
                             project_name=pp_data.get("project_name", ""),
                             client=pp_data.get("client", ""),
-                            agency=pp_data.get("agency", ""),
-                            contract_value=pp_data.get("contract_value", ""),
-                            period=pp_data.get("period", ""),
                             description=pp_data.get("description", ""),
+                            contract_value=pp_data.get("contract_value"),
+                            period=pp_data.get("period"),
+                            relevance=pp_data.get("relevance", []),
                             outcomes=pp_data.get("outcomes", []),
-                            keywords=pp_data.get("keywords", []),
                         )
                         self.profile.past_performance.append(pp)
 
@@ -847,10 +847,11 @@ class CompanyLibrary:
                             name=kp_data.get("name", ""),
                             title=kp_data.get("title", ""),
                             summary=kp_data.get("summary", ""),
+                            years_experience=kp_data.get("years_experience"),
                             education=kp_data.get("education", []),
                             certifications=kp_data.get("certifications", []),
                             skills=kp_data.get("skills", []),
-                            years_experience=kp_data.get("years_experience", 0),
+                            relevant_experience=kp_data.get("relevant_experience", []),
                         )
                         self.profile.key_personnel.append(kp)
 
@@ -993,7 +994,31 @@ class CompanyLibrary:
     def get_profile(self) -> Dict:
         """Get aggregated company profile"""
         return self.profile.to_dict()
-    
+
+    def rebuild_profile(self) -> Dict:
+        """
+        Rebuild the company profile by re-parsing all stored documents.
+
+        This is useful when:
+        - Documents were uploaded before profile restoration was fixed
+        - Profile data is out of sync with documents
+        - Extraction logic has been improved
+
+        Returns:
+            Updated profile dictionary
+        """
+        # Reset profile
+        self.profile = CompanyProfile()
+
+        # Re-process each document's extracted data
+        for doc in self.documents.values():
+            self._update_profile(doc)
+
+        # Save the rebuilt profile
+        self._save_library()
+
+        return self.profile.to_dict()
+
     def search(self, query: str) -> List[Dict]:
         """
         Search library for relevant content

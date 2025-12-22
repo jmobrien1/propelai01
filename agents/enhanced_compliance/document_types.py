@@ -112,30 +112,32 @@ upload all of them here.""",
         color="#2B6CB0"  # Blue
     ),
 
-    # ==== COMBINED/ALL-IN-ONE OPTION (prominently displayed) ====
+    # ==== MAIN SOLICITATION DOCUMENT ====
     DocumentSlot(
         id="combined_rfp",
         doc_type=DocumentType.COMBINED_RFP,
-        title="Complete RFP (All-in-One Document)",
-        description="Single document containing requirements, instructions, AND evaluation criteria",
-        help_text="""Many RFPs - especially from civilian agencies, GSA, and smaller
-procurements - combine EVERYTHING in one document.
+        title="Main Solicitation Document",
+        description="The primary RFP document - may contain everything or reference separate attachments",
+        help_text="""Upload the MAIN solicitation document here.
 
-USE THIS SLOT IF your RFP is a single document that includes:
-• Technical requirements (what to do)
-• Proposal instructions (how to write it)
-• Evaluation criteria (how it will be scored)
+This works for BOTH scenarios:
 
-COMMON EXAMPLES:
-• GSA Schedule RFQs and BPA task orders
-• NIH and HHS solicitations
-• State and local government RFPs
-• Small Business set-asides
-• Most RFPs under $10M
+SCENARIO 1: All-in-One RFP
+If your RFP is a single document containing requirements, instructions,
+AND evaluation criteria, upload it here and skip the other slots.
 
-If you upload here, you can skip the other slots below.""",
+SCENARIO 2: Main Document with Separate Attachments
+If your RFP references separate attachments for SOW, Section L/M, etc.,
+upload the main document here AND upload the attachments in their
+respective slots below.
+
+COMMON DOCUMENT NAMES:
+• "Solicitation" or "RFP" with section numbers
+• SF1449 with incorporated clauses
+• "Request for Proposal" or "Request for Quote"
+• Task Order Request""",
         common_names=[
-            "RFP", "Request for Proposal", "Solicitation", "Complete RFP",
+            "RFP", "Request for Proposal", "Solicitation", "Main Solicitation",
             "Full Solicitation", "Task Order Request", "RFQ", "Request for Quote"
         ],
         required=False,

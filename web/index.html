@@ -3099,7 +3099,23 @@
                     setLoading(false);
                 }
             };
-            
+
+            const rebuildProfile = async () => {
+                try {
+                    setLoading(true);
+                    const response = await fetch('/api/library/rebuild', { method: 'POST' });
+                    const result = await response.json();
+                    if (result.success) {
+                        // Reload library to get updated counts
+                        await loadLibrary();
+                    }
+                } catch (error) {
+                    console.error('Error rebuilding profile:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
             const handleFileSelect = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -3193,7 +3209,7 @@
                     </div>
                     
                     {/* Stats Cards */}
-                    <div className="stats-grid" style={{ marginBottom: 24 }}>
+                    <div className="stats-grid" style={{ marginBottom: 16 }}>
                         <div className="stat-card">
                             <div className="stat-label">Documents</div>
                             <div className="stat-value">{library?.document_count || 0}</div>
@@ -3211,7 +3227,42 @@
                             <div className="stat-value">{library?.profile_summary?.past_performance_count || 0}</div>
                         </div>
                     </div>
-                    
+
+                    {/* Rebuild Profile Notice */}
+                    {library?.document_count > 0 && (
+                        (library?.profile_summary?.capabilities_count || 0) === 0 &&
+                        (library?.profile_summary?.past_performance_count || 0) === 0 &&
+                        (library?.profile_summary?.key_personnel_count || 0) === 0
+                    ) && (
+                        <div style={{
+                            marginBottom: 16,
+                            padding: 12,
+                            background: 'rgba(251, 191, 36, 0.1)',
+                            border: '1px solid rgba(251, 191, 36, 0.3)',
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 16
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Icon name="AlertCircle" size={16} style={{ color: 'var(--accent-amber)' }} />
+                                <span style={{ fontSize: 13 }}>
+                                    Documents uploaded but profile data not extracted. Click "Refresh Profile" to re-extract.
+                                </span>
+                            </div>
+                            <button
+                                className="btn"
+                                onClick={rebuildProfile}
+                                disabled={loading}
+                                style={{ whiteSpace: 'nowrap' }}
+                            >
+                                <Icon name="RefreshCw" size={14} />
+                                {loading ? 'Refreshing...' : 'Refresh Profile'}
+                            </button>
+                        </div>
+                    )}
+
                     {/* Tabs */}
                     <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 8 }}>
                         {['overview', 'documents', 'search', 'vector-search'].map(tab => (
