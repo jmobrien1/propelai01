@@ -62,8 +62,9 @@ function generateAnnotatedOutline(data) {
         evaluationFactors = [],
         requirements = [],         // From CTM extraction
         documentStructure = null,  // From document_structure parser
-        winThemes = [],            // Optional: pre-defined win themes
-        companyName = "[Company Name]"
+        winThemes = [],            // Win themes from Company Library
+        companyName = "[Company Name]",
+        companyProfile = null      // Company profile from Company Library
     } = data;
 
     // Build the document
@@ -198,7 +199,8 @@ function generateAnnotatedOutline(data) {
                 requirements,
                 documentStructure,
                 winThemes,
-                companyName
+                companyName,
+                companyProfile
             })
         }]
     });
@@ -867,30 +869,68 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
         ));
     }
 
-    // === WIN THEMES PLACEHOLDER (GREEN) ===
+    // === WIN THEMES (GREEN) - Populated from Company Library ===
+    // Filter win themes by mapped_factors or by semantic matching to factor type
+    const allWinThemes = data.winThemes || [];
+    const sectionWinThemes = allWinThemes.filter(wt => {
+        // First check explicit factor mapping
+        if (wt.mapped_factors && wt.mapped_factors.length > 0) {
+            // Check if any mapped factor matches this section's factor
+            const factorMatches = wt.mapped_factors.some(mf => {
+                const mfLower = (mf || '').toLowerCase();
+                return mfLower.includes(factorType) ||
+                       (factorNum && mfLower.includes(factorNum.toLowerCase()));
+            });
+            if (factorMatches) return true;
+        }
+
+        // Fallback: semantic matching using factorProfiles keywords
+        if (factorType && factorProfiles[factorType]) {
+            const wtText = ((wt.discriminator || '') + ' ' + (wt.benefit_statement || '')).toLowerCase();
+            const profile = factorProfiles[factorType];
+            return profile.keywords.slice(0, 8).some(kw => wtText.includes(kw.toLowerCase()));
+        }
+
+        return false;
+    });
+
+    // Build win theme content
+    const winThemeContent = sectionWinThemes.length > 0
+        ? sectionWinThemes.map(wt => {
+            const discriminator = wt.discriminator || '';
+            const benefit = wt.benefit_statement || '';
+            return benefit
+                ? `${discriminator} → ${benefit}`
+                : discriminator;
+        })
+        : ["[Add differentiators to Company Library for auto-population]"];
+
     children.push(createAnnotationBlock(
         "WIN THEMES & DISCRIMINATORS",
-        [
-            "[Enter discriminator/strength for this section]",
-            "[Feature → Benefit → Proof structure]",
-            "[Key message that aligns with customer hot buttons]"
-        ],
+        winThemeContent,
         COLORS.WIN_THEME,
         ANNOTATION_SHADING.STRATEGY,
-        true  // isPlaceholder
+        sectionWinThemes.length === 0  // Only placeholder styling if empty
     ));
 
-    // === PROOF POINTS PLACEHOLDER (ORANGE) ===
+    // === PROOF POINTS (ORANGE) - Populated from win theme proof_points ===
+    // Gather proof points from the matched win themes
+    const proofPoints = sectionWinThemes
+        .flatMap(wt => wt.proof_points || [])
+        .filter(pp => pp && pp.trim().length > 0)
+        .slice(0, 5);  // Top 5 proof points
+
+    // Build proof point content
+    const proofPointContent = proofPoints.length > 0
+        ? proofPoints
+        : ["[Add past performance evidence to Company Library]"];
+
     children.push(createAnnotationBlock(
         "PROOF POINTS REQUIRED",
-        [
-            "[Past performance example needed]",
-            "[Quantifiable metric to include (e.g., 99.9% uptime, 40% cost reduction)]",
-            "[Certification or qualification to cite]"
-        ],
+        proofPointContent,
         COLORS.PROOF_POINT,
         ANNOTATION_SHADING.PROOF,
-        true
+        proofPoints.length === 0  // Only placeholder styling if empty
     ));
 
     // === GRAPHICS PLACEHOLDER ===
@@ -1049,15 +1089,24 @@ function createBoilerplateGuidance() {
  */
 function buildPlaceholderSection(volume, requirements, data) {
     const children = [];
-    
-    // Create generic technical sections
+    const allWinThemes = data.winThemes || [];
+
+    // Create generic technical sections with factor type mapping
     const defaultSections = [
-        { name: "Executive Summary", desc: "High-level overview demonstrating understanding and approach" },
-        { name: "Technical Approach", desc: "Detailed methodology and solution design" },
-        { name: "Management Approach", desc: "Project management, staffing, quality assurance" },
-        { name: "Past Performance", desc: "Relevant experience and references" },
-        { name: "Staffing Plan", desc: "Key personnel qualifications and org chart" }
+        { name: "Executive Summary", desc: "High-level overview demonstrating understanding and approach", factorType: "technical" },
+        { name: "Technical Approach", desc: "Detailed methodology and solution design", factorType: "technical" },
+        { name: "Management Approach", desc: "Project management, staffing, quality assurance", factorType: "management" },
+        { name: "Past Performance", desc: "Relevant experience and references", factorType: "past_performance" },
+        { name: "Staffing Plan", desc: "Key personnel qualifications and org chart", factorType: "personnel" }
     ];
+
+    // Factor profiles for semantic matching (subset for placeholder sections)
+    const factorKeywords = {
+        "technical": ["technical", "approach", "methodology", "solution", "design", "implement"],
+        "management": ["management", "project", "program", "plan", "schedule", "quality"],
+        "past_performance": ["past performance", "experience", "prior", "similar", "cpars"],
+        "personnel": ["personnel", "staff", "team", "key", "qualifications", "expertise"]
+    };
 
     defaultSections.forEach((sec, idx) => {
         children.push(new Paragraph({
@@ -1077,12 +1126,28 @@ function buildPlaceholderSection(volume, requirements, data) {
             ANNOTATION_SHADING.L,
             true
         ));
+
+        // Filter win themes for this section type
+        const sectionWinThemes = allWinThemes.filter(wt => {
+            const wtText = ((wt.discriminator || '') + ' ' + (wt.benefit_statement || '')).toLowerCase();
+            const keywords = factorKeywords[sec.factorType] || [];
+            return keywords.some(kw => wtText.includes(kw.toLowerCase()));
+        });
+
+        const winThemeContent = sectionWinThemes.length > 0
+            ? sectionWinThemes.slice(0, 3).map(wt => {
+                const discriminator = wt.discriminator || '';
+                const benefit = wt.benefit_statement || '';
+                return benefit ? `${discriminator} → ${benefit}` : discriminator;
+            })
+            : ["[Add differentiators to Company Library]"];
+
         children.push(createAnnotationBlock(
             "WIN THEMES",
-            ["[Add win themes and discriminators for this section]"],
+            winThemeContent,
             COLORS.WIN_THEME,
             ANNOTATION_SHADING.STRATEGY,
-            true
+            sectionWinThemes.length === 0
         ));
         children.push(new Paragraph({ spacing: { after: 200 } }));
     });
