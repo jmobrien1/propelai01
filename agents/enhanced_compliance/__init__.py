@@ -123,6 +123,12 @@ except ImportError as e:
     BEST_PRACTICES_AVAILABLE = False
     BestPracticesCTMExporter = export_ctm_best_practices = None
 
+# Text Utilities (typo correction, normalization)
+from .text_utils import (
+    correct_text_typos, correct_filename, normalize_document_name,
+    COMMON_TYPOS,
+)
+
 __all__ = [
     "__version__",
     # v3.0 Data Models
@@ -154,6 +160,9 @@ __all__ = [
     # Best Practices CTM
     "BestPracticesCTMExporter", "export_ctm_best_practices",
     "BEST_PRACTICES_AVAILABLE",
+    # Text Utilities
+    "correct_text_typos", "correct_filename", "normalize_document_name",
+    "COMMON_TYPOS",
     # Availability flags
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
 ]
@@ -195,3 +204,30 @@ except ImportError as e:
     SourceCoordinate = None
     PDFCoordinateExtractor = None
     get_coordinate_extractor = None
+
+# =============================================================================
+# v4.0 Trust Gate: Accuracy Auditor
+# =============================================================================
+try:
+    from .accuracy_auditor import (
+        AccuracyAuditor,
+        AuditStatus,
+        FalsePositiveReason,
+        AuditedRequirement,
+        AuditSample,
+        AuditMetrics,
+        get_accuracy_auditor,
+        audit_requirements,
+    )
+    ACCURACY_AUDITOR_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Accuracy Auditor not available: {e}")
+    ACCURACY_AUDITOR_AVAILABLE = False
+    AccuracyAuditor = None
+    AuditStatus = None
+    FalsePositiveReason = None
+    AuditedRequirement = None
+    AuditSample = None
+    AuditMetrics = None
+    get_accuracy_auditor = None
+    audit_requirements = None

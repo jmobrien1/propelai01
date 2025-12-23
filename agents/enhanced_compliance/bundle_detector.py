@@ -359,10 +359,17 @@ class BundleDetector:
         if navy_match:
             return navy_match.group()
 
-        # Air Force format: FA8806-XX-X-XXXX
-        af_match = re.search(r"FA\d{4}[-]?\d{2}[-]?[A-Z][-]?\d{4}", text, re.IGNORECASE)
-        if af_match:
-            return af_match.group().upper()
+        # Air Force formats:
+        # - FA880625RB003 (6 digits + 2 letters + 3 digits)
+        # - FA8806-25-R-B003 (with hyphens)
+        af_patterns = [
+            r"FA\d{6}[A-Z]{2}\d{3,4}",  # Modern format: FA880625RB003
+            r"FA\d{4}[-]?\d{2}[-]?[A-Z][-]?\d{4}",  # Legacy format: FA8806-25-R-0001
+        ]
+        for pattern in af_patterns:
+            af_match = re.search(pattern, text, re.IGNORECASE)
+            if af_match:
+                return af_match.group().upper()
 
         # Army format: W911NF-XX-X-XXXX
         army_match = re.search(r"W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4}", text, re.IGNORECASE)

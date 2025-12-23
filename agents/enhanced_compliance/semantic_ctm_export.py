@@ -25,9 +25,10 @@ except ImportError:
     Workbook = None  # For type hints when openpyxl not installed
 
 from .semantic_extractor import (
-    ExtractedRequirement, ExtractionResult, 
+    ExtractedRequirement, ExtractionResult,
     SemanticRequirementType, RFPSection
 )
+from .text_utils import correct_filename
 
 
 class SemanticCTMExporter:
@@ -601,7 +602,9 @@ class SemanticCTMExporter:
         return section_names.get(section_value, f"Section {section_value}")
     
     def _truncate_filename(self, filename: str, max_len: int = 40) -> str:
-        """Truncate long filenames"""
-        if len(filename) <= max_len:
-            return filename
-        return filename[:max_len-3] + "..."
+        """Truncate long filenames and correct common typos"""
+        # First correct common typos in the filename
+        corrected = correct_filename(filename) if filename else filename
+        if len(corrected) <= max_len:
+            return corrected
+        return corrected[:max_len-3] + "..."

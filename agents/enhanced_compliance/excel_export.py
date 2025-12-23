@@ -154,10 +154,16 @@ class ExcelExporter:
         extraction_coverage = getattr(result, 'extraction_coverage', 0.0) or 0.0
         duration = getattr(result, 'duration_seconds', 0.0) or 0.0
         stats_dict = getattr(result, 'stats', {}) or {}
-        req_graph = getattr(result, 'requirements_graph', {}) or {}
-        
+
+        # Calculate valid requirements count from compliance matrix (not req_graph which may be empty)
+        total_valid_requirements = 0
+        for matrix_row in result.compliance_matrix:
+            req_text = getattr(matrix_row, 'requirement_text', '') or ''
+            if not self._is_garbage_requirement(req_text):
+                total_valid_requirements += 1
+
         stats = [
-            ("Total Requirements", len(req_graph)),
+            ("Total Requirements", total_valid_requirements),
             ("Cross-References", cross_ref_count),
             ("Documents Processed", stats_dict.get('documents_processed', 0)),
             ("Pages Analyzed", stats_dict.get('total_pages', 0)),
