@@ -2865,22 +2865,41 @@ def process_rfp_best_practices_background(rfp_id: str):
             "outline": None  # Clear cached outline - will be regenerated from new requirements
         }
 
-        # v4.2: Extract solicitation number from documents if not already set
+        # v4.2.1: Extract solicitation number from documents if not already set
         current_rfp = store.get(rfp_id)
-        if not current_rfp.get("solicitation_number"):
+        existing_sol = current_rfp.get("solicitation_number")
+        print(f"[DEBUG] Solicitation extraction: existing='{existing_sol}'")
+
+        if not existing_sol:
             from agents.enhanced_compliance.bundle_detector import BundleDetector
             detector = BundleDetector()
-            # Try to extract from filenames first
+
+            # Try to extract from file_paths first (these include full paths)
+            print(f"[DEBUG] Checking {len(file_paths)} file paths for solicitation number")
             for file_path in file_paths:
                 import os
                 filename = os.path.basename(file_path)
+                print(f"[DEBUG] Checking filename: '{filename}'")
                 sol_num = detector._extract_solicitation_number(filename)
                 if sol_num:
                     update_data["solicitation_number"] = sol_num
                     print(f"[INFO] Extracted solicitation number from filename: {sol_num}")
                     break
-            # If not found in filename, try document content
+
+            # Also check the 'files' array (just filenames, not full paths)
             if "solicitation_number" not in update_data:
+                files_list = current_rfp.get("files", [])
+                print(f"[DEBUG] Checking 'files' array: {files_list}")
+                for filename in files_list:
+                    sol_num = detector._extract_solicitation_number(filename)
+                    if sol_num:
+                        update_data["solicitation_number"] = sol_num
+                        print(f"[INFO] Extracted solicitation number from files array: {sol_num}")
+                        break
+
+            # If not found in filenames, try document content
+            if "solicitation_number" not in update_data:
+                print(f"[DEBUG] Checking document content for solicitation number")
                 for doc in documents:
                     content = doc.get('text', '')[:3000]  # Check first 3000 chars
                     sol_num = detector.extract_solicitation_from_content(content)
@@ -2888,6 +2907,8 @@ def process_rfp_best_practices_background(rfp_id: str):
                         update_data["solicitation_number"] = sol_num
                         print(f"[INFO] Extracted solicitation number from content: {sol_num}")
                         break
+        else:
+            print(f"[DEBUG] Solicitation already set: {existing_sol}")
 
         store.update(rfp_id, update_data)
         

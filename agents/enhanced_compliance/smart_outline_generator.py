@@ -734,11 +734,13 @@ class SmartOutlineGenerator:
         """
         volumes = []
 
-        # v4.2 FIX: Use negative lookahead to properly split volumes
-        # Pattern stops capturing when it hits another "Volume X" pattern
-        # This fixes the concatenation bug where "Volume 1: Quote Volume 2: SF-1449"
-        # was being merged into one volume instead of split into two.
-        volume_pattern = r"volume\s*([12ivI]+)\s*[:\-–]\s*([a-zA-Z0-9\-]+(?:\s+(?!volume\s*[12ivI])[a-zA-Z0-9\-]+)*)"
+        # v4.2.1 FIX: Simple regex that captures ONLY the first word/phrase after colon
+        # This prevents the "Frankenstein Volume" bug where entire paragraphs were captured.
+        # Examples:
+        #   "Volume 1: Quote" -> ("1", "Quote")
+        #   "Volume 2: SF-1449" -> ("2", "SF-1449")
+        #   "Volume 1: Quote\nQuotes shall be provided..." -> ("1", "Quote") NOT the whole paragraph
+        volume_pattern = r"volume\s*([12ivI]+)\s*[:\-–]\s*([A-Za-z0-9][-A-Za-z0-9]*)"
 
         matches = list(re.finditer(volume_pattern, text, re.IGNORECASE))
 
@@ -746,14 +748,9 @@ class SmartOutlineGenerator:
             vol_num = match.group(1).strip().upper()
             vol_name = match.group(2).strip()
 
-            # Clean up the volume name - remove trailing whitespace and punctuation
-            vol_name = re.sub(r'\s+', ' ', vol_name).strip()
-            vol_name = re.sub(r'[,.\s]+$', '', vol_name)  # Remove trailing punctuation
-            if len(vol_name) > 50:
-                vol_name = vol_name[:50].rsplit(' ', 1)[0]
-
-            # Skip if volume name is empty or just whitespace
-            if not vol_name or vol_name.isspace():
+            # v4.2.1: With new simple regex, vol_name is just one word like "Quote" or "SF-1449"
+            # Skip if volume name is empty
+            if not vol_name:
                 continue
 
             # Classify the volume type
