@@ -265,7 +265,33 @@ class SmartOutlineGenerator:
         for volume in volumes:
             # Only apply template if volume has no sections already
             if not volume.sections:
-                volume.sections = self.get_volume_sections(volume.volume_type)
+                # v4.2: Special handling for SF-1449 volumes in Commercial RFQs
+                # If volume is "SF-1449", use simplified pricing section
+                vol_name_lower = volume.name.lower()
+                if "sf-1449" in vol_name_lower or "sf 1449" in vol_name_lower:
+                    volume.sections = [
+                        ProposalSection(
+                            id="SEC-SF1449-1",
+                            name="Completed SF-1449 Schedule",
+                            requirements=["Complete all required blocks of SF-1449 form with pricing"]
+                        )
+                    ]
+                elif "quote" in vol_name_lower:
+                    # v4.2: Simple Quote volume for Commercial RFQs
+                    volume.sections = [
+                        ProposalSection(
+                            id="SEC-QUOTE-1",
+                            name="Company Information",
+                            requirements=["Company letterhead with POC, CAGE code, Tax ID"]
+                        ),
+                        ProposalSection(
+                            id="SEC-QUOTE-2",
+                            name="Technical Capability Statement",
+                            requirements=["Brief description of relevant experience and qualifications"]
+                        )
+                    ]
+                else:
+                    volume.sections = self.get_volume_sections(volume.volume_type)
     
     def generate_from_compliance_matrix(
         self,
@@ -707,11 +733,12 @@ class SmartOutlineGenerator:
         This is critical for compliance - using wrong volume structure = non-responsive.
         """
         volumes = []
-        text_lower = text.lower()
 
-        # Pattern to extract explicit volume definitions
-        # Matches: "Volume 1: Quote", "Volume 2 - SF-1449", "Volume I: Pricing", etc.
-        volume_pattern = r"volume\s*([12ivI]+)\s*[:\-–]\s*([a-zA-Z0-9\-\s]+?)(?=volume\s*[12ivI]|\.|,|\n|$)"
+        # v4.2 FIX: Use negative lookahead to properly split volumes
+        # Pattern stops capturing when it hits another "Volume X" pattern
+        # This fixes the concatenation bug where "Volume 1: Quote Volume 2: SF-1449"
+        # was being merged into one volume instead of split into two.
+        volume_pattern = r"volume\s*([12ivI]+)\s*[:\-–]\s*([a-zA-Z0-9\-]+(?:\s+(?!volume\s*[12ivI])[a-zA-Z0-9\-]+)*)"
 
         matches = list(re.finditer(volume_pattern, text, re.IGNORECASE))
 
@@ -719,10 +746,15 @@ class SmartOutlineGenerator:
             vol_num = match.group(1).strip().upper()
             vol_name = match.group(2).strip()
 
-            # Clean up the volume name
+            # Clean up the volume name - remove trailing whitespace and punctuation
             vol_name = re.sub(r'\s+', ' ', vol_name).strip()
+            vol_name = re.sub(r'[,.\s]+$', '', vol_name)  # Remove trailing punctuation
             if len(vol_name) > 50:
                 vol_name = vol_name[:50].rsplit(' ', 1)[0]
+
+            # Skip if volume name is empty or just whitespace
+            if not vol_name or vol_name.isspace():
+                continue
 
             # Classify the volume type
             vol_type = VolumeType.OTHER
@@ -743,6 +775,16 @@ class SmartOutlineGenerator:
                 volume_type=vol_type
             )
             volumes.append(vol)
+
+        # Deduplicate volumes by volume number
+        seen_nums = set()
+        unique_volumes = []
+        for vol in volumes:
+            vol_num = vol.id
+            if vol_num not in seen_nums:
+                seen_nums.add(vol_num)
+                unique_volumes.append(vol)
+        volumes = unique_volumes
 
         # If we found explicit volumes, don't add any defaults
         if volumes:

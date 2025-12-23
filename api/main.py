@@ -2855,14 +2855,41 @@ def process_rfp_best_practices_background(rfp_id: str):
         
         # Store results
         # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
-        store.update(rfp_id, {
+        # v4.2 FIX: Extract solicitation number from documents
+        update_data = {
             "status": "completed",
             "requirements": requirements,
             "best_practices_result": result,  # Keep full result for export
             "stats": stats,
             "extraction_mode": "best_practices",
             "outline": None  # Clear cached outline - will be regenerated from new requirements
-        })
+        }
+
+        # v4.2: Extract solicitation number from documents if not already set
+        current_rfp = store.get(rfp_id)
+        if not current_rfp.get("solicitation_number"):
+            from agents.enhanced_compliance.bundle_detector import BundleDetector
+            detector = BundleDetector()
+            # Try to extract from filenames first
+            for file_path in file_paths:
+                import os
+                filename = os.path.basename(file_path)
+                sol_num = detector._extract_solicitation_number(filename)
+                if sol_num:
+                    update_data["solicitation_number"] = sol_num
+                    print(f"[INFO] Extracted solicitation number from filename: {sol_num}")
+                    break
+            # If not found in filename, try document content
+            if "solicitation_number" not in update_data:
+                for doc in documents:
+                    content = doc.get('text', '')[:3000]  # Check first 3000 chars
+                    sol_num = detector.extract_solicitation_from_content(content)
+                    if sol_num and sol_num != "UNKNOWN":
+                        update_data["solicitation_number"] = sol_num
+                        print(f"[INFO] Extracted solicitation number from content: {sol_num}")
+                        break
+
+        store.update(rfp_id, update_data)
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
         
