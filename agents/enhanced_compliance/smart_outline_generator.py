@@ -290,21 +290,26 @@ class SmartOutlineGenerator:
             ProposalOutline with volumes, eval factors, format requirements, and win themes
         """
         warnings = []
-        
-        # Detect RFP format
+
+        # v4.2: Bridge extraction-structure gap by including ALL requirements
+        # in format/volume detection, not just section L/M.
+        # Volume instructions like "Volume 1: Quote" may appear in any section.
+        all_requirements = section_l_requirements + section_m_requirements + technical_requirements
+
+        # Detect RFP format (now checks all requirements for SF-1449/RFQ markers)
         rfp_format = self._detect_rfp_format(
-            section_l_requirements, 
+            all_requirements,  # Pass all requirements, not just section_l
             section_m_requirements,
             stats
         )
-        
-        # Extract volumes based on format
+
+        # Extract volumes based on format (searches all requirements for volume headers)
         volumes = self._extract_volumes(
-            section_l_requirements,
+            all_requirements,  # Pass all requirements to find volume instructions
             section_m_requirements,
             rfp_format
         )
-        
+
         # If no volumes found, create defaults
         if not volumes:
             volumes = self._create_default_volumes(rfp_format, section_m_requirements)
@@ -405,6 +410,23 @@ class SmartOutlineGenerator:
             elif "quote" in all_text or "quotation" in all_text:
                 return "GSA_RFQ"
 
+        # v4.2: Check for Commercial RFQ (SF-1449) with explicit volume headers
+        # This MUST come before default template to prevent "Volume Trap"
+        # Pattern: "Volume 1: Quote", "Volume 2: SF-1449", etc.
+        explicit_volume_pattern = re.search(
+            r"volume\s*[12ivI]+\s*[:\-–]\s*(?:quote|sf[\-\s]?1449|pricing|administrative)",
+            all_text, re.IGNORECASE
+        )
+        is_commercial_rfq = (
+            "sf 1449" in all_text or
+            "sf-1449" in all_text or
+            "sf1449" in all_text or
+            ("rfq" in all_text and "commercial item" in all_text) or
+            ("request for quot" in all_text and explicit_volume_pattern)
+        )
+        if is_commercial_rfq and explicit_volume_pattern:
+            return "COMMERCIAL_RFQ"
+
         # Check for VA Commercial Services format (FAR 52.212-2, Section E.2)
         # Pattern: "Factor 1 Technical", "Factor 2 Past Performance", etc.
         va_factor_pattern = re.search(
@@ -448,7 +470,9 @@ class SmartOutlineGenerator:
         ])
         
         # Strategy depends on format
-        if rfp_format == "VA_COMMERCIAL":
+        if rfp_format == "COMMERCIAL_RFQ":
+            volumes = self._extract_commercial_rfq_volumes(all_text, section_l)
+        elif rfp_format == "VA_COMMERCIAL":
             volumes = self._extract_va_commercial_volumes(all_text, section_m)
         elif rfp_format == "NIH_FACTOR":
             volumes = self._extract_nih_volumes(all_text, section_m)
@@ -671,6 +695,91 @@ class SmartOutlineGenerator:
 
         return subfactors
 
+    def _extract_commercial_rfq_volumes(self, text: str, section_l: List[Dict]) -> List[ProposalVolume]:
+        """
+        Extract volumes from Commercial RFQ (SF-1449) with explicit volume headers.
+
+        v4.2: Prevents "Volume Trap" by using EXACT volume names from RFP instead
+        of defaulting to Shipley template. Example:
+        - "Volume 1: Quote" -> Volume 1: Quote
+        - "Volume 2: SF-1449" -> Volume 2: SF-1449
+
+        This is critical for compliance - using wrong volume structure = non-responsive.
+        """
+        volumes = []
+        text_lower = text.lower()
+
+        # Pattern to extract explicit volume definitions
+        # Matches: "Volume 1: Quote", "Volume 2 - SF-1449", "Volume I: Pricing", etc.
+        volume_pattern = r"volume\s*([12ivI]+)\s*[:\-–]\s*([a-zA-Z0-9\-\s]+?)(?=volume\s*[12ivI]|\.|,|\n|$)"
+
+        matches = list(re.finditer(volume_pattern, text, re.IGNORECASE))
+
+        for match in matches:
+            vol_num = match.group(1).strip().upper()
+            vol_name = match.group(2).strip()
+
+            # Clean up the volume name
+            vol_name = re.sub(r'\s+', ' ', vol_name).strip()
+            if len(vol_name) > 50:
+                vol_name = vol_name[:50].rsplit(' ', 1)[0]
+
+            # Classify the volume type
+            vol_type = VolumeType.OTHER
+            name_lower = vol_name.lower()
+            if "quote" in name_lower or "quotation" in name_lower:
+                vol_type = VolumeType.ADMINISTRATIVE
+            elif "sf" in name_lower or "1449" in name_lower or "pricing" in name_lower:
+                vol_type = VolumeType.COST_PRICE
+            elif "technical" in name_lower:
+                vol_type = VolumeType.TECHNICAL
+            elif "past" in name_lower or "performance" in name_lower:
+                vol_type = VolumeType.PAST_PERFORMANCE
+
+            # Create the volume with EXACT name from RFP
+            vol = ProposalVolume(
+                id=f"VOL-{vol_num}",
+                name=f"Volume {vol_num}: {vol_name}",
+                volume_type=vol_type
+            )
+            volumes.append(vol)
+
+        # If we found explicit volumes, don't add any defaults
+        if volumes:
+            return volumes
+
+        # Fallback: Look for simpler patterns like "Volume 1" and "Volume 2"
+        simple_volume_pattern = r"volume\s*([12ivI]+)\b"
+        simple_matches = list(re.finditer(simple_volume_pattern, text, re.IGNORECASE))
+
+        if len(simple_matches) >= 2:
+            # Check context to determine volume purposes
+            for match in simple_matches[:2]:
+                vol_num = match.group(1).strip().upper()
+                # Get surrounding context
+                start = max(0, match.start() - 10)
+                end = min(len(text), match.end() + 50)
+                context = text[start:end].lower()
+
+                vol_name = f"Volume {vol_num}"
+                vol_type = VolumeType.OTHER
+
+                if "quote" in context:
+                    vol_name = f"Volume {vol_num}: Quote"
+                    vol_type = VolumeType.ADMINISTRATIVE
+                elif "sf" in context or "1449" in context or "price" in context:
+                    vol_name = f"Volume {vol_num}: SF-1449"
+                    vol_type = VolumeType.COST_PRICE
+
+                vol = ProposalVolume(
+                    id=f"VOL-{vol_num}",
+                    name=vol_name,
+                    volume_type=vol_type
+                )
+                volumes.append(vol)
+
+        return volumes
+
     def _extract_gsa_volumes(self, text: str, section_l: List[Dict]) -> List[ProposalVolume]:
         """Extract volumes from GSA/BPA RFP"""
         volumes = []
@@ -741,8 +850,14 @@ class SmartOutlineGenerator:
     
     def _create_default_volumes(self, rfp_format: str, section_m: List[Dict]) -> List[ProposalVolume]:
         """Create default volumes if none were extracted"""
-        
-        if rfp_format in ["GSA_BPA", "GSA_RFQ"]:
+
+        if rfp_format == "COMMERCIAL_RFQ":
+            # v4.2: Simple structure for Commercial RFQs - don't over-engineer
+            return [
+                ProposalVolume(id="VOL-1", name="Volume 1: Quote", volume_type=VolumeType.ADMINISTRATIVE, order=0),
+                ProposalVolume(id="VOL-2", name="Volume 2: Pricing", volume_type=VolumeType.COST_PRICE, order=1),
+            ]
+        elif rfp_format in ["GSA_BPA", "GSA_RFQ"]:
             return [
                 ProposalVolume(id="VOL-1", name="Technical Approach", volume_type=VolumeType.TECHNICAL, order=0),
                 ProposalVolume(id="VOL-2", name="Past Performance", volume_type=VolumeType.PAST_PERFORMANCE, order=1),

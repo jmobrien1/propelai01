@@ -355,6 +355,13 @@ class BundleDetector:
         if va_match:
             return va_match.group().upper()
 
+        # DOJ/USMS format: 15M10226QA4700011
+        # Pattern: 2 digits + letter + 5 digits + 2 letters + 7 digits
+        # Example: 15M10226QA4700011 (US Marshals Service)
+        doj_match = re.search(r"\d{2}[A-Z]\d{5}[A-Z]{2}\d{7}", text, re.IGNORECASE)
+        if doj_match:
+            return doj_match.group().upper()
+
         # NIH format: 75N96025R00004
         nih_match = re.search(r"75N\d{11}", text)
         if nih_match:
