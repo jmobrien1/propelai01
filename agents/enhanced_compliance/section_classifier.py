@@ -340,6 +340,21 @@ class SectionClassifier:
                 reasons.append(f"RFP reference '{req.rfp_reference}' indicates Section {section_from_ref}")
                 return section_from_ref, self._section_to_category(section_from_ref), 0.8, reasons
 
+        # Layer 3.5: VA Commercial RFP Detection (FAR 52.212-2)
+        # VA puts evaluation factors in Section E.2, not Section M
+        va_eval_patterns = [
+            r'factor\s*[1-4]',  # Factor 1, Factor 2, etc.
+            r'52\.212-2',  # FAR clause for commercial evaluation
+            r'evaluation.*?(?:criteria|factor)',
+            r'comparative\s+evaluation',
+            r'technical\s+experience.*?factor',
+            r'past\s+performance\s+(?:factor|will\s+be\s+evaluat)',
+        ]
+        for pattern in va_eval_patterns:
+            if re.search(pattern, text):
+                reasons.append(f"VA Commercial evaluation pattern '{pattern}' detected -> Section M")
+                return 'M', 'EVALUATION_FACTOR', 0.85, reasons
+
         # Layer 4: Content pattern matching
         section_scores = self._score_content_patterns(text)
 

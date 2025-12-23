@@ -2473,14 +2473,25 @@ def process_rfp_background(rfp_id: str):
         
         # Update store
         # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
-        store.update(rfp_id, {
+        # v4.2 FIX: Extract solicitation number from processing result
+        update_data = {
             "status": "completed",
             "requirements": requirements,
             "requirements_graph": result.requirements_graph,
             "stats": stats,
             "amendment_processor": amendment_processor,
             "outline": None  # Clear cached outline - will be regenerated from new requirements
-        })
+        }
+
+        # v4.2: Update solicitation_number if extracted (only if not already set or was null)
+        extracted_solicitation = result.stats.get("solicitation_number")
+        if extracted_solicitation:
+            current_rfp = store.get(rfp_id)
+            if not current_rfp.get("solicitation_number"):
+                update_data["solicitation_number"] = extracted_solicitation
+                print(f"[INFO] Extracted solicitation number: {extracted_solicitation}")
+
+        store.update(rfp_id, update_data)
         
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
         
@@ -4405,13 +4416,38 @@ async def generate_outline(rfp_id: str):
         generator = SmartOutlineGenerator()
         
         # Separate requirements by category
-        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE" 
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
                      or r.get("section", "").upper() == "L"]
         section_m = [r for r in requirements if r.get("category") == "EVALUATION"
                      or r.get("section", "").upper() == "M"]
         technical = [r for r in requirements if r.get("category") == "TECHNICAL"
                      or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
-        
+
+        # v4.2 FIX: VA Commercial RFPs use Section E.2 for evaluation factors (FAR 52.212-2)
+        # Check if Section E contains evaluation content and add to section_m
+        import re
+        va_eval_patterns = [
+            r'factor\s*[1-4]',  # Factor 1, Factor 2, etc.
+            r'52\.212-2',  # FAR clause for commercial evaluation
+            r'evaluation.*?factor',
+            r'comparative\s+evaluation',
+            r'technical\s+experience',
+            r'past\s+performance\s+(?:factor|evaluat)',
+        ]
+        for req in requirements:
+            section = req.get("section", "").upper()
+            category = req.get("category", "")
+            text = (req.get("text", "") or "").lower()
+
+            # Check if this is Section E with evaluation content
+            if section == "E" or category == "INSPECTION":
+                for pattern in va_eval_patterns:
+                    if re.search(pattern, text, re.IGNORECASE):
+                        # This is VA evaluation content - add to section_m if not already there
+                        if req not in section_m:
+                            section_m.append(req)
+                        break
+
         # If section_l is empty, treat section_m as containing submission instructions (GSA/BPA)
         if not section_l and section_m:
             section_l = section_m  # GSA/BPA format has instructions in eval section
@@ -4473,15 +4509,33 @@ async def get_outline(rfp_id: str, format: str = "json"):
             )
         
         generator = SmartOutlineGenerator()
-        
+
         # Separate requirements by category
-        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE" 
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
                      or r.get("section", "").upper() == "L"]
         section_m = [r for r in requirements if r.get("category") == "EVALUATION"
                      or r.get("section", "").upper() == "M"]
         technical = [r for r in requirements if r.get("category") == "TECHNICAL"
                      or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
-        
+
+        # v4.2 FIX: VA Commercial RFPs use Section E.2 for evaluation factors
+        import re
+        va_eval_patterns = [
+            r'factor\s*[1-4]', r'52\.212-2', r'evaluation.*?factor',
+            r'comparative\s+evaluation', r'technical\s+experience',
+            r'past\s+performance\s+(?:factor|evaluat)',
+        ]
+        for req in requirements:
+            section = req.get("section", "").upper()
+            category = req.get("category", "")
+            text = (req.get("text", "") or "").lower()
+            if section == "E" or category == "INSPECTION":
+                for pattern in va_eval_patterns:
+                    if re.search(pattern, text, re.IGNORECASE):
+                        if req not in section_m:
+                            section_m.append(req)
+                        break
+
         if not section_l and section_m:
             section_l = section_m
 
@@ -4538,26 +4592,45 @@ async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
         print(f"[DEBUG] Regenerating outline (regenerate=true)")
     if not outline:
         generator = SmartOutlineGenerator()
+        requirements = rfp.get("requirements", [])
         # v3.1 FIX: Use category field (set by extraction), not section field
         # The category field contains: L_COMPLIANCE, EVALUATION, TECHNICAL
         # The section field contains SOW references like "2.1" which never start with L/M
-        section_l = [r for r in rfp.get("requirements", []) if r.get("category") == "L_COMPLIANCE"]
-        section_m = [r for r in rfp.get("requirements", []) if r.get("category") == "EVALUATION"]
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"]
+        section_m = [r for r in requirements if r.get("category") == "EVALUATION"]
 
         # Fallback: also include requirements from documents categorized as section_lm
         if not section_l:
-            section_l = [r for r in rfp.get("requirements", [])
+            section_l = [r for r in requirements
                         if r.get("source_content_type") in ["section_l", "section_lm"]]
         if not section_m:
-            section_m = [r for r in rfp.get("requirements", [])
+            section_m = [r for r in requirements
                         if r.get("source_content_type") in ["section_m", "section_lm"]]
 
+        # v4.2 FIX: VA Commercial RFPs use Section E.2 for evaluation factors
+        import re
+        va_eval_patterns = [
+            r'factor\s*[1-4]', r'52\.212-2', r'evaluation.*?factor',
+            r'comparative\s+evaluation', r'technical\s+experience',
+            r'past\s+performance\s+(?:factor|evaluat)',
+        ]
+        for req in requirements:
+            section = req.get("section", "").upper()
+            category = req.get("category", "")
+            text = (req.get("text", "") or "").lower()
+            if section == "E" or category == "INSPECTION":
+                for pattern in va_eval_patterns:
+                    if re.search(pattern, text, re.IGNORECASE):
+                        if req not in section_m:
+                            section_m.append(req)
+                        break
+
         # v4.0 FIX: Get technical requirements (not section L or M)
-        technical = [r for r in rfp.get("requirements", [])
+        technical = [r for r in requirements
                     if r.get("category") not in ["L_COMPLIANCE", "EVALUATION"]]
         stats = {"is_non_ucf_format": len(section_l) == 0}
 
-        print(f"[DEBUG] REGENERATING outline from {len(rfp.get('requirements', []))} requirements")
+        print(f"[DEBUG] REGENERATING outline from {len(requirements)} requirements")
         print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}, technical count: {len(technical)}")
 
         # Log sample requirement to verify data isolation
