@@ -561,14 +561,17 @@ function buildVolumeOutlines(data) {
         }
 
         // Build sections
+        // Track used requirement IDs to prevent duplicates across sections
+        const usedReqIds = new Set();
+
         const sections = volume.sections || [];
         if (sections.length > 0) {
             sections.forEach((section, secIndex) => {
-                children.push(...buildSectionOutline(section, secIndex, volume, requirements, data));
+                children.push(...buildSectionOutline(section, secIndex, volume, requirements, data, usedReqIds));
             });
         } else {
             // No sections detected - create placeholder structure
-            children.push(...buildPlaceholderSection(volume, requirements, data));
+            children.push(...buildPlaceholderSection(volume, requirements, data, usedReqIds));
         }
     });
 
@@ -593,7 +596,7 @@ function buildVolumeOutlines(data) {
 /**
  * Build a single section with full annotations
  */
-function buildSectionOutline(section, secIndex, volume, requirements, data) {
+function buildSectionOutline(section, secIndex, volume, requirements, data, usedReqIds = new Set()) {
     const children = [];
     const sectionNum = `${section.id || (secIndex + 1)}`;
 
@@ -825,9 +828,15 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
     
     if (factorType && requirements.length > 0) {
         // Score all requirements for this factor
+        // DEDUPLICATION: Filter out requirements already used in other sections
         const scoredReqs = requirements
             .filter(r => {
+                const reqId = r.req_id || r.id || '';
                 const text = r.text || r.full_text || '';
+                // Skip if already used in another section (prevent duplicates)
+                if (reqId && usedReqIds.has(reqId)) {
+                    return false;
+                }
                 return text.trim().length > 0;
             })
             .map(r => {
@@ -841,9 +850,17 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
             })
             .filter(r => r._score > 5)  // Minimum relevance threshold
             .sort((a, b) => b._score - a._score);  // Sort by score descending
-        
+
         // Take top 10 most relevant
         pwsReqs = scoredReqs.slice(0, 10);
+
+        // Mark these requirements as used to prevent duplication
+        pwsReqs.forEach(r => {
+            const reqId = r.req_id || r.id || '';
+            if (reqId) {
+                usedReqIds.add(reqId);
+            }
+        });
     }
     
     // If we still have no requirements, try a simple keyword fallback
@@ -853,10 +870,23 @@ function buildSectionOutline(section, secIndex, volume, requirements, data) {
             const topKeywords = profile.keywords.slice(0, 5);
             pwsReqs = requirements
                 .filter(r => {
+                    const reqId = r.req_id || r.id || '';
+                    // Skip if already used in another section (prevent duplicates)
+                    if (reqId && usedReqIds.has(reqId)) {
+                        return false;
+                    }
                     const text = (r.text || r.full_text || '').toLowerCase();
                     return topKeywords.some(kw => text.includes(kw.toLowerCase()));
                 })
                 .slice(0, 5);
+
+            // Mark fallback requirements as used too
+            pwsReqs.forEach(r => {
+                const reqId = r.req_id || r.id || '';
+                if (reqId) {
+                    usedReqIds.add(reqId);
+                }
+            });
         }
     }
     
@@ -1087,7 +1117,7 @@ function createBoilerplateGuidance() {
 /**
  * Build placeholder section when no structure detected
  */
-function buildPlaceholderSection(volume, requirements, data) {
+function buildPlaceholderSection(volume, requirements, data, usedReqIds = new Set()) {
     const children = [];
     const allWinThemes = data.winThemes || [];
 
