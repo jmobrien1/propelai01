@@ -386,38 +386,47 @@ class SmartOutlineGenerator:
         )
     
     def _detect_rfp_format(
-        self, 
-        section_l: List[Dict], 
+        self,
+        section_l: List[Dict],
         section_m: List[Dict],
         stats: Dict
     ) -> str:
         """Detect the RFP format type"""
-        
+
         all_text = " ".join([
-            r.get("text", "") or r.get("full_text", "") 
+            r.get("text", "") or r.get("full_text", "")
             for r in (section_l + section_m)
         ]).lower()
-        
+
         # Check for GSA/BPA indicators
         if stats.get("is_non_ucf_format") or len(section_l) == 0:
             if "gsa" in all_text or "schedule" in all_text or "bpa" in all_text:
                 return "GSA_BPA"
             elif "quote" in all_text or "quotation" in all_text:
                 return "GSA_RFQ"
-        
+
+        # Check for VA Commercial Services format (FAR 52.212-2, Section E.2)
+        # Pattern: "Factor 1 Technical", "Factor 2 Past Performance", etc.
+        va_factor_pattern = re.search(
+            r"(?:e\.?2|52\.212-2).*?evaluation.*?factor\s*1.*?factor\s*2",
+            all_text, re.DOTALL
+        )
+        if va_factor_pattern or ("comparative evaluation" in all_text and "factor 1" in all_text):
+            return "VA_COMMERCIAL"
+
         # Check for NIH Factor-based format
         factor_matches = re.findall(r"factor\s*\d+", all_text)
         if len(factor_matches) >= 3:
             return "NIH_FACTOR"
-        
+
         # Check for state RFP format
         if re.search(r"section\s+[f-g]\.\d+", all_text):
             return "STATE_RFP"
-        
+
         # Check for DoD format
         if "dfars" in all_text or "section l." in all_text:
             return "DOD_UCF"
-        
+
         # Default to standard UCF
         return "STANDARD_UCF"
     
@@ -439,7 +448,9 @@ class SmartOutlineGenerator:
         ])
         
         # Strategy depends on format
-        if rfp_format == "NIH_FACTOR":
+        if rfp_format == "VA_COMMERCIAL":
+            volumes = self._extract_va_commercial_volumes(all_text, section_m)
+        elif rfp_format == "NIH_FACTOR":
             volumes = self._extract_nih_volumes(all_text, section_m)
         elif rfp_format in ["GSA_BPA", "GSA_RFQ"]:
             volumes = self._extract_gsa_volumes(all_text, section_l)
@@ -545,7 +556,121 @@ class SmartOutlineGenerator:
             volumes[0].sections = tech_sections
         
         return volumes
-    
+
+    def _extract_va_commercial_volumes(self, text: str, section_m: List[Dict]) -> List[ProposalVolume]:
+        """
+        Extract volumes from VA Commercial Services RFP (FAR 52.212-2).
+
+        VA commercial solicitations typically use a Factor-based evaluation
+        structure in Section E.2, with factors like:
+        - Factor 1: Technical (with subfactors)
+        - Factor 2: Past Performance
+        - Factor 3: SDVOSB/VOSB Status
+        - Factor 4: Cost/Price
+        """
+        volumes = []
+        text_lower = text.lower()
+
+        # VA commercial services typically have single quote/proposal structure
+        main_volume = ProposalVolume(
+            id="VOL-QUOTE",
+            name="Quote Response",
+            volume_type=VolumeType.TECHNICAL
+        )
+
+        # Extract factors from text using multiple patterns
+        factor_names = {}
+
+        # Pattern 1: "Factor N [Name]" or "Factor N: [Name]" or "Factor N. [Name]"
+        factor_patterns = [
+            r"factor\s*(\d+)[\.\:\s]+([a-z][a-z\s\-\/]+?)(?=factor\s*\d|$|\n|\.\.)",
+            r"(\d+)\.\s*factor\s*(\d+)[:\s]+([a-z][a-z\s\-\/]+)",
+        ]
+
+        for pattern in factor_patterns:
+            for match in re.finditer(pattern, text_lower):
+                if len(match.groups()) == 2:
+                    factor_num = match.group(1)
+                    factor_name = match.group(2).strip()
+                elif len(match.groups()) == 3:
+                    factor_num = match.group(2)
+                    factor_name = match.group(3).strip()
+                else:
+                    continue
+
+                # Clean up factor name
+                factor_name = re.sub(r'[\s\-]+$', '', factor_name)
+                factor_name = factor_name.title()
+
+                # Skip garbage/short names
+                if len(factor_name) >= 4 and factor_name.lower() not in ['the', 'this', 'that']:
+                    key = f"factor_{factor_num}"
+                    if key not in factor_names or len(factor_name) > len(factor_names[key]):
+                        factor_names[key] = factor_name
+
+        # Also look for common VA factor names explicitly
+        va_default_factors = {
+            "1": "Technical Factors",
+            "2": "Past Performance",
+            "3": "SDVOSB/VOSB Status",
+            "4": "Cost/Price",
+        }
+
+        # Check for specific VA patterns
+        if "technical experience" in text_lower or "jci" in text_lower or "johnson controls" in text_lower:
+            factor_names["factor_1"] = "Technical Factors"
+        if "past performance" in text_lower and "references" in text_lower:
+            factor_names["factor_2"] = "Past Performance"
+        if "sdvosb" in text_lower or "vosb" in text_lower:
+            factor_names["factor_3"] = "SDVOSB/VOSB Status"
+        if "cost" in text_lower or "price" in text_lower:
+            factor_names["factor_4"] = "Cost/Price"
+
+        # Build sections from factors
+        tech_sections = []
+        for factor_key in sorted(factor_names.keys()):
+            factor_num = factor_key.replace("factor_", "")
+            factor_name = factor_names[factor_key]
+
+            section = ProposalSection(
+                id=f"SEC-F{factor_num}",
+                name=f"Factor {factor_num}: {factor_name}"
+            )
+
+            # Add subfactors for Factor 1 (Technical) if applicable
+            if factor_num == "1":
+                subfactors = self._extract_va_subfactors(text_lower)
+                if subfactors:
+                    section.subsections = subfactors
+
+            tech_sections.append(section)
+
+        main_volume.sections = tech_sections
+        volumes.append(main_volume)
+
+        return volumes
+
+    def _extract_va_subfactors(self, text_lower: str) -> List[ProposalSection]:
+        """Extract subfactors for VA Technical Factor (1.1, 1.2, etc.)"""
+        subfactors = []
+
+        # Common VA subfactor patterns
+        subfactor_patterns = [
+            (r"1\.1\.?\s*technical\s+experience", "Technical Experience"),
+            (r"1\.2\.?\s*understanding", "Understanding of the Project"),
+            (r"1\.3\.?\s*experience\s+and\s+qualification", "Experience and Qualification"),
+            (r"1\.4\.?\s*contingency", "Contingency Plan"),
+        ]
+
+        for pattern, name in subfactor_patterns:
+            if re.search(pattern, text_lower):
+                subfactors.append(ProposalSection(
+                    id=f"SEC-{name.replace(' ', '-').upper()[:10]}",
+                    name=name
+                ))
+
+        return subfactors
+
     def _extract_gsa_volumes(self, text: str, section_l: List[Dict]) -> List[ProposalVolume]:
         """Extract volumes from GSA/BPA RFP"""
         volumes = []
@@ -946,9 +1071,26 @@ class SmartOutlineGenerator:
             r"pass[-/]fail",
         ]
 
-        # Combine all patterns into one compiled regex
+        # Gatekeeper patterns - authorization/certification requirements
+        # These are "kill switch" requirements where missing documentation = disqualification
+        gatekeeper_patterns = [
+            r"(?:authorized|certified|licensed)\s+(?:by|to|from)\s+(?:the\s+)?(?:manufacturer|oem|vendor)",
+            r"documentation\s+from\s+[A-Z][a-zA-Z\s]+(?:Inc\.?|LLC|Corp)",  # Documentation from Company Inc.
+            r"(?:jci|johnson\s+controls)\s+(?:authorized|certified|documentation)",
+            r"oem\s+(?:authorization|certification|documentation)",
+            r"manufacturer['']?s?\s+(?:authorization|certification|letter)",
+            r"shall\s+(?:be|provide)\s+(?:a\s+)?(?:certified|authorized|licensed)",
+            r"proof\s+of\s+(?:authorization|certification|licensing)",
+            r"letterhead.*(?:authorization|certified)",
+        ]
+
+        # Combine all patterns into compiled regexes
         combined_pattern = re.compile(
             "|".join(pass_fail_patterns),
+            re.IGNORECASE
+        )
+        gatekeeper_pattern = re.compile(
+            "|".join(gatekeeper_patterns),
             re.IGNORECASE
         )
 
@@ -962,15 +1104,31 @@ class SmartOutlineGenerator:
         for requirements, section_code in all_requirements:
             for req in requirements:
                 req_text = req.get("text", "") or req.get("full_text", "") or ""
+                req_text_lower = req_text.lower()
+
+                # Check for GATEKEEPER requirements first (highest priority)
+                is_gatekeeper = gatekeeper_pattern.search(req_text)
 
                 # Check if this looks like a pass/fail requirement
-                if combined_pattern.search(req_text):
+                if is_gatekeeper or combined_pattern.search(req_text):
                     # Determine consequence based on language
                     consequence = "Non-responsive if not met"
-                    if "reject" in req_text.lower():
+                    if "reject" in req_text_lower:
                         consequence = "Proposal will be rejected"
-                    elif "disqualif" in req_text.lower():
+                    elif "disqualif" in req_text_lower:
                         consequence = "Offeror will be disqualified"
+
+                    # Gatekeeper requirements get special flagging
+                    if is_gatekeeper:
+                        consequence = "CRITICAL GATEKEEPER: " + consequence
+                        # Add specific verification requirement
+                        verification = "MUST INCLUDE: Authorization/certification documentation required"
+
+                        # Check for specific OEM mentions
+                        if "jci" in req_text_lower or "johnson controls" in req_text_lower:
+                            verification = "MUST INCLUDE: JCI (Johnson Controls) authorization letter on company letterhead"
+                    else:
+                        verification = "Compliance review required"
 
                     # Create constraint
                     constraint = P0Constraint(
@@ -978,7 +1136,7 @@ class SmartOutlineGenerator:
                         requirement=req_text[:500],  # Truncate long requirements
                         section=section_code,
                         consequence=consequence,
-                        verification="Compliance review required"
+                        verification=verification
                     )
                     constraints.append(constraint)
                     constraint_id += 1

@@ -349,6 +349,12 @@ class BundleDetector:
     
     def _extract_solicitation_number(self, text: str) -> Optional[str]:
         """Extract solicitation number from filename or text"""
+        # VA format: 36C26126Q0281 (36C + 5 digits + Q/R + 4 digits)
+        # Matches VA Network Contracting Office formats
+        va_match = re.search(r"36C\d{5}[QR]\d{4}", text, re.IGNORECASE)
+        if va_match:
+            return va_match.group().upper()
+
         # NIH format: 75N96025R00004
         nih_match = re.search(r"75N\d{11}", text)
         if nih_match:
@@ -407,6 +413,9 @@ class BundleDetector:
 
         # Look for explicit solicitation number patterns (comprehensive list)
         explicit_patterns = [
+            # SF1449 Block 5 patterns (most common in federal solicitations)
+            r"5\.\s*SOLICITATION\s*NUMBER\s*[\n\r\s]*([A-Z0-9][-A-Z0-9]+)",
+            r"SOLICITATION\s*NUMBER\s*[\n\r\s]*([A-Z0-9][-A-Z0-9]+)",
             # Standard patterns
             r"Solicitation\s*(?:Number|No\.?|#)[:\s]+([A-Z0-9][-A-Z0-9]+)",
             r"Solicitation[:\s]+([A-Z0-9][-A-Z0-9]+)",
@@ -422,6 +431,8 @@ class BundleDetector:
             r"(?:Block\s*)?2\.\s*(?:Contract|Solicitation)\s*(?:Number|No\.?)[:\s]*([A-Z0-9][-A-Z0-9]+)",
             # Inline patterns (commonly found in document headers)
             r"(?:Sol|Solicitation)\s*#\s*([A-Z0-9][-A-Z0-9]+)",
+            # Page header patterns (VA style: "36C26126Q0281" at top of page)
+            r"^([0-9]{2}[A-Z][0-9]+[A-Z][0-9]+)\s*$",
         ]
 
         for pattern in explicit_patterns:
