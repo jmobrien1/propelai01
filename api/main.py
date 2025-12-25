@@ -2097,6 +2097,191 @@ async def get_similar_wins(rfp_id: str, limit: int = 5):
     }
 
 
+# ============== v6.0: CMMC Compliance API ==============
+
+# Import CMMC compliance checker
+try:
+    from swarm.cmmc import (
+        CMMCComplianceChecker,
+        create_cmmc_checker,
+        CMMCLevel,
+    )
+    CMMC_AVAILABLE = True
+except ImportError:
+    CMMC_AVAILABLE = False
+
+# Global CMMC checker
+cmmc_checker = None
+if CMMC_AVAILABLE:
+    try:
+        cmmc_checker = create_cmmc_checker()
+    except Exception as e:
+        print(f"Warning: Could not initialize CMMC checker: {e}")
+
+
+@app.get("/api/v6/cmmc/practices")
+async def get_cmmc_practices():
+    """Get all CMMC Level 2 practices"""
+    if not CMMC_AVAILABLE or not cmmc_checker:
+        raise HTTPException(status_code=501, detail="CMMC checker not available")
+
+    practices = []
+    for practice_id, practice in cmmc_checker.practices.items():
+        practices.append({
+            "practice_id": practice_id,
+            "domain": practice.domain.value,
+            "level": practice.level.value,
+            "title": practice.title,
+            "description": practice.description,
+            "nist_mapping": practice.nist_mapping,
+            "assessment_objectives": practice.assessment_objectives,
+        })
+
+    return {"practices": practices, "total": len(practices)}
+
+
+@app.post("/api/v6/rfp/{rfp_id}/cmmc/detect")
+async def detect_cmmc_requirements(rfp_id: str):
+    """Detect CMMC requirements in an RFP"""
+    if not CMMC_AVAILABLE or not cmmc_checker:
+        raise HTTPException(status_code=501, detail="CMMC checker not available")
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    # Get RFP text from requirements
+    rfp_text = "\n\n".join([
+        f"[{r.get('section', 'General')}] {r['text']}"
+        for r in rfp.get("requirements", [])
+    ])
+
+    result = cmmc_checker.detect_cmmc_requirements(rfp_text)
+
+    return {
+        "rfp_id": rfp_id,
+        **result,
+    }
+
+
+@app.post("/api/v6/proposal/{proposal_id}/cmmc/assess")
+async def assess_cmmc_compliance(proposal_id: str):
+    """Assess proposal compliance with CMMC requirements"""
+    if not CMMC_AVAILABLE or not cmmc_checker:
+        raise HTTPException(status_code=501, detail="CMMC checker not available")
+
+    if proposal_id not in proposal_workflows:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+
+    workflow = proposal_workflows[proposal_id]
+    result = workflow.get("result", {})
+
+    # Build proposal text from draft sections
+    proposal_text = "\n\n".join([
+        section.get("content", "")
+        for section in result.get("draft_sections", [])
+    ])
+
+    if not proposal_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Proposal has no draft content to assess"
+        )
+
+    # Get company capabilities if available
+    company_capabilities = None
+    if COMPANY_LIBRARY_AVAILABLE and company_library:
+        company_capabilities = company_library.get_profile()
+
+    assessment = cmmc_checker.assess_compliance(
+        proposal_id=proposal_id,
+        proposal_text=proposal_text,
+        company_capabilities=company_capabilities,
+    )
+
+    return {
+        "proposal_id": proposal_id,
+        "level": assessment.level.value,
+        "overall_status": assessment.overall_status.value,
+        "practices_count": len(assessment.practices),
+        "compliant": sum(1 for p in assessment.practices.values() if p.status.value == "Compliant"),
+        "partial": sum(1 for p in assessment.practices.values() if p.status.value == "Partially Compliant"),
+        "gaps": assessment.gaps,
+        "recommendations": assessment.recommendations,
+    }
+
+
+@app.get("/api/v6/proposal/{proposal_id}/cmmc/matrix")
+async def get_cmmc_matrix(proposal_id: str):
+    """Get CMMC compliance matrix for a proposal"""
+    if not CMMC_AVAILABLE or not cmmc_checker:
+        raise HTTPException(status_code=501, detail="CMMC checker not available")
+
+    if proposal_id not in proposal_workflows:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+
+    workflow = proposal_workflows[proposal_id]
+    result = workflow.get("result", {})
+
+    proposal_text = "\n\n".join([
+        section.get("content", "")
+        for section in result.get("draft_sections", [])
+    ])
+
+    if not proposal_text:
+        # Return empty matrix template
+        matrix = []
+        for practice_id, practice in cmmc_checker.practices.items():
+            matrix.append({
+                "practice_id": practice_id,
+                "domain": practice.domain.value,
+                "title": practice.title,
+                "nist_ref": practice.nist_mapping,
+                "status": "Pending Review",
+                "evidence": [],
+                "notes": "",
+            })
+        return {"proposal_id": proposal_id, "matrix": matrix}
+
+    assessment = cmmc_checker.assess_compliance(proposal_id, proposal_text)
+    matrix = cmmc_checker.generate_compliance_matrix(assessment)
+
+    return {"proposal_id": proposal_id, "matrix": matrix}
+
+
+@app.get("/api/v6/proposal/{proposal_id}/cmmc/gaps")
+async def get_cmmc_gap_report(proposal_id: str):
+    """Get CMMC gap analysis report"""
+    if not CMMC_AVAILABLE or not cmmc_checker:
+        raise HTTPException(status_code=501, detail="CMMC checker not available")
+
+    if proposal_id not in proposal_workflows:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+
+    workflow = proposal_workflows[proposal_id]
+    result = workflow.get("result", {})
+
+    proposal_text = "\n\n".join([
+        section.get("content", "")
+        for section in result.get("draft_sections", [])
+    ])
+
+    if not proposal_text:
+        return {
+            "proposal_id": proposal_id,
+            "report": "No proposal content available for gap analysis.",
+        }
+
+    assessment = cmmc_checker.assess_compliance(proposal_id, proposal_text)
+    report = cmmc_checker.get_gap_report(assessment)
+
+    return {
+        "proposal_id": proposal_id,
+        "report": report,
+        "format": "markdown",
+    }
+
+
 # ============== Main Entry ==============
 
 if __name__ == "__main__":

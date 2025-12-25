@@ -28,6 +28,13 @@ from swarm.flywheel import (
     OutcomeType,
     FeedbackType,
 )
+from swarm.cmmc import (
+    CMMCComplianceChecker,
+    create_cmmc_checker,
+    CMMCLevel,
+    CMMCDomain,
+    CMMCAssessment,
+)
 
 __all__ = [
     # State
@@ -53,4 +60,10 @@ __all__ = [
     "create_flywheel",
     "OutcomeType",
     "FeedbackType",
+    # CMMC Compliance
+    "CMMCComplianceChecker",
+    "create_cmmc_checker",
+    "CMMCLevel",
+    "CMMCDomain",
+    "CMMCAssessment",
 ]
