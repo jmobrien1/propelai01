@@ -1672,6 +1672,279 @@ async def get_key_personnel():
     return {"key_personnel": profile.get("key_personnel", [])}
 
 
+# ============== v6.0: Agent Swarm API ==============
+
+# Import v6.0 Agent Swarm
+try:
+    from swarm import (
+        ProposalOrchestrator,
+        create_orchestrator,
+        ProposalState,
+    )
+    SWARM_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Agent Swarm not available: {e}")
+    SWARM_AVAILABLE = False
+    ProposalOrchestrator = None
+
+# Global orchestrator instance
+proposal_orchestrator = None
+if SWARM_AVAILABLE:
+    try:
+        proposal_orchestrator = create_orchestrator()
+    except Exception as e:
+        print(f"Warning: Could not initialize orchestrator: {e}")
+
+# In-memory proposal workflow store
+proposal_workflows: Dict[str, Dict[str, Any]] = {}
+
+
+class ProposalStartRequest(BaseModel):
+    """Request to start autonomous proposal generation"""
+    rfp_id: str
+    company_context: Optional[Dict[str, Any]] = None
+
+
+class ProposalFeedbackRequest(BaseModel):
+    """Human feedback to resume paused workflow"""
+    feedback: Dict[str, Any]
+    approved: bool = False
+
+
+@app.get("/api/v6/health")
+async def v6_health():
+    """v6.0 Agent Swarm health check"""
+    return {
+        "version": "6.0.0",
+        "swarm_available": SWARM_AVAILABLE,
+        "orchestrator_ready": proposal_orchestrator is not None,
+        "agents": [
+            "ComplianceAgent",
+            "StrategyAgent",
+            "DraftingAgent",
+            "ResearchAgent",
+            "RedTeamAgent",
+            "SupervisorAgent",
+        ] if SWARM_AVAILABLE else [],
+    }
+
+
+@app.post("/api/v6/proposal/start")
+async def start_proposal_workflow(
+    request: ProposalStartRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Start autonomous proposal generation workflow (v6.0)
+
+    Triggers the LangGraph agent swarm to:
+    1. Extract and map RFP requirements (Compliance Agent)
+    2. Analyze competitors and generate win themes (Strategy Agent)
+    3. Draft proposal sections with F-B-P framework (Drafting Agent)
+    4. Score and review (Red Team Agent)
+    5. Iterate until quality threshold met
+    """
+    if not SWARM_AVAILABLE or not proposal_orchestrator:
+        raise HTTPException(
+            status_code=501,
+            detail="Agent Swarm not available. Install langgraph and dependencies."
+        )
+
+    # Get the RFP
+    rfp = store.get(request.rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    if rfp["status"] != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail="RFP must be processed first. Use /api/rfp/{id}/process"
+        )
+
+    # Create proposal ID
+    proposal_id = f"PROP-{uuid.uuid4().hex[:8].upper()}"
+
+    # Get RFP text from requirements
+    rfp_text = "\n\n".join([
+        f"[{r.get('section', 'General')}] {r['text']}"
+        for r in rfp.get("requirements", [])
+    ])
+
+    # Get company context from library if available
+    company_context = request.company_context
+    if not company_context and COMPANY_LIBRARY_AVAILABLE and company_library:
+        company_context = company_library.get_profile()
+
+    # Initialize workflow state
+    proposal_workflows[proposal_id] = {
+        "id": proposal_id,
+        "rfp_id": request.rfp_id,
+        "status": "starting",
+        "phase": "SHRED",
+        "progress": 0,
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+        "error": None,
+        "result": None,
+    }
+
+    # Run workflow in background
+    async def run_workflow():
+        try:
+            proposal_workflows[proposal_id]["status"] = "running"
+            proposal_workflows[proposal_id]["updated_at"] = datetime.now().isoformat()
+
+            result = await proposal_orchestrator.run(
+                rfp_text=rfp_text,
+                proposal_id=proposal_id,
+                company_context=company_context,
+                thread_id=proposal_id,
+            )
+
+            proposal_workflows[proposal_id]["status"] = "completed"
+            proposal_workflows[proposal_id]["phase"] = result.get("current_phase", "COMPLETE")
+            proposal_workflows[proposal_id]["progress"] = 100
+            proposal_workflows[proposal_id]["result"] = dict(result)
+            proposal_workflows[proposal_id]["updated_at"] = datetime.now().isoformat()
+
+        except Exception as e:
+            proposal_workflows[proposal_id]["status"] = "error"
+            proposal_workflows[proposal_id]["error"] = str(e)
+            proposal_workflows[proposal_id]["updated_at"] = datetime.now().isoformat()
+
+    # Start background task
+    import asyncio
+    asyncio.create_task(run_workflow())
+
+    return {
+        "proposal_id": proposal_id,
+        "rfp_id": request.rfp_id,
+        "status": "started",
+        "message": "Autonomous proposal workflow initiated"
+    }
+
+
+@app.get("/api/v6/proposal/{proposal_id}/status")
+async def get_proposal_status(proposal_id: str):
+    """Get proposal workflow status"""
+    if proposal_id not in proposal_workflows:
+        raise HTTPException(status_code=404, detail="Proposal workflow not found")
+
+    workflow = proposal_workflows[proposal_id]
+
+    # Get detailed status from orchestrator if available
+    if SWARM_AVAILABLE and proposal_orchestrator:
+        try:
+            detailed_status = proposal_orchestrator.get_status(proposal_id)
+            workflow["detailed_status"] = detailed_status
+        except Exception:
+            pass
+
+    return workflow
+
+
+@app.get("/api/v6/proposal/{proposal_id}")
+async def get_proposal(proposal_id: str):
+    """Get completed proposal"""
+    if proposal_id not in proposal_workflows:
+        raise HTTPException(status_code=404, detail="Proposal workflow not found")
+
+    workflow = proposal_workflows[proposal_id]
+
+    if workflow["status"] != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Proposal not ready. Current status: {workflow['status']}"
+        )
+
+    result = workflow.get("result", {})
+
+    return {
+        "proposal_id": proposal_id,
+        "rfp_id": workflow["rfp_id"],
+        "status": "completed",
+        "win_themes": result.get("win_themes", []),
+        "draft_sections": result.get("draft_sections", []),
+        "requirements": result.get("requirements", []),
+        "overall_score": result.get("overall_score", 0),
+        "revision_count": result.get("revision_count", 0),
+        "agent_actions": result.get("agent_actions", []),
+        "created_at": workflow["created_at"],
+        "completed_at": workflow["updated_at"],
+    }
+
+
+@app.post("/api/v6/proposal/{proposal_id}/resume")
+async def resume_proposal_workflow(
+    proposal_id: str,
+    request: ProposalFeedbackRequest
+):
+    """
+    Resume a paused proposal workflow with human feedback
+
+    Used when the workflow needs human review/approval before continuing.
+    """
+    if not SWARM_AVAILABLE or not proposal_orchestrator:
+        raise HTTPException(
+            status_code=501,
+            detail="Agent Swarm not available"
+        )
+
+    if proposal_id not in proposal_workflows:
+        raise HTTPException(status_code=404, detail="Proposal workflow not found")
+
+    workflow = proposal_workflows[proposal_id]
+
+    if workflow["status"] not in ["paused", "needs_review"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Workflow cannot be resumed. Status: {workflow['status']}"
+        )
+
+    try:
+        # Resume with human feedback
+        result = await proposal_orchestrator.resume(
+            thread_id=proposal_id,
+            human_feedback={
+                "feedback": request.feedback,
+                "approved": request.approved,
+            }
+        )
+
+        proposal_workflows[proposal_id]["status"] = "completed"
+        proposal_workflows[proposal_id]["result"] = dict(result)
+        proposal_workflows[proposal_id]["updated_at"] = datetime.now().isoformat()
+
+        return {
+            "proposal_id": proposal_id,
+            "status": "resumed",
+            "message": "Workflow resumed with human feedback"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resume failed: {str(e)}")
+
+
+@app.get("/api/v6/proposals")
+async def list_proposals():
+    """List all proposal workflows"""
+    return {
+        "count": len(proposal_workflows),
+        "proposals": [
+            {
+                "id": w["id"],
+                "rfp_id": w["rfp_id"],
+                "status": w["status"],
+                "phase": w["phase"],
+                "progress": w["progress"],
+                "created_at": w["created_at"],
+                "updated_at": w["updated_at"],
+            }
+            for w in proposal_workflows.values()
+        ]
+    }
+
+
 # ============== Main Entry ==============
 
 if __name__ == "__main__":
