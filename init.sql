@@ -105,15 +105,20 @@ CREATE TABLE IF NOT EXISTS library_documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
     filename VARCHAR(500) NOT NULL,
-    s3_path VARCHAR(1000) NOT NULL,
+    s3_path VARCHAR(1000),
+    entity_type VARCHAR(50) NOT NULL,
+    entity_name VARCHAR(500),
     doc_type VARCHAR(50),
     file_size BIGINT,
     embedding_status VARCHAR(50) DEFAULT 'pending',
+    extracted_data JSONB DEFAULT '{}',
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_library_documents_tenant ON library_documents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_library_documents_entity_type ON library_documents(entity_type);
 
 CREATE TABLE IF NOT EXISTS library_entities (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -130,17 +135,20 @@ CREATE INDEX IF NOT EXISTS idx_library_entities_type ON library_entities(entity_
 
 CREATE TABLE IF NOT EXISTS library_embeddings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
     document_id UUID REFERENCES library_documents(id) ON DELETE CASCADE,
     entity_id UUID REFERENCES library_entities(id) ON DELETE SET NULL,
     chunk_text TEXT NOT NULL,
     chunk_index INTEGER,
+    page_number INTEGER,
+    section VARCHAR(255),
+    bbox JSONB,
     embedding vector(1536),
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_library_embeddings_tenant ON library_embeddings(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_library_embeddings_document ON library_embeddings(document_id);
 
 -- Vector similarity index (HNSW for fast approximate search)
 CREATE INDEX IF NOT EXISTS idx_library_embeddings_vector
@@ -239,7 +247,10 @@ CREATE POLICY tenant_isolation_library_entities ON library_entities
     USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::UUID);
 
 CREATE POLICY tenant_isolation_library_embeddings ON library_embeddings
-    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::UUID);
+    USING (document_id IN (
+        SELECT id FROM library_documents
+        WHERE tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::UUID
+    ));
 
 -- ===========================================
 -- Utility Functions
