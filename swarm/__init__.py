@@ -22,6 +22,12 @@ from swarm.agents import (
     RedTeamAgent,
     SupervisorAgent,
 )
+from swarm.flywheel import (
+    DataFlywheel,
+    create_flywheel,
+    OutcomeType,
+    FeedbackType,
+)
 
 __all__ = [
     # State
@@ -42,4 +48,9 @@ __all__ = [
     "ResearchAgent",
     "RedTeamAgent",
     "SupervisorAgent",
+    # Flywheel
+    "DataFlywheel",
+    "create_flywheel",
+    "OutcomeType",
+    "FeedbackType",
 ]

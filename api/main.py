@@ -1945,6 +1945,158 @@ async def list_proposals():
     }
 
 
+# ============== v6.0: RLHF Data Flywheel API ==============
+
+# Import flywheel
+try:
+    from swarm.flywheel import (
+        DataFlywheel,
+        create_flywheel,
+        OutcomeType,
+        FeedbackType,
+    )
+    FLYWHEEL_AVAILABLE = True
+except ImportError:
+    FLYWHEEL_AVAILABLE = False
+
+# Global flywheel instance
+data_flywheel = None
+if FLYWHEEL_AVAILABLE:
+    try:
+        data_flywheel = create_flywheel(str(OUTPUT_DIR / "flywheel"))
+    except Exception as e:
+        print(f"Warning: Could not initialize flywheel: {e}")
+
+
+class FeedbackSubmission(BaseModel):
+    """Human feedback submission"""
+    section_id: str
+    original_text: str
+    revised_text: Optional[str] = None
+    comments: str = ""
+    score: Optional[float] = None
+
+
+class DebriefSubmission(BaseModel):
+    """Post-award debrief submission"""
+    outcome: str  # win, loss, no_bid
+    evaluator_feedback: str
+    strengths: List[str] = []
+    weaknesses: List[str] = []
+    competitor_info: Optional[Dict[str, Any]] = None
+
+
+@app.get("/api/v6/flywheel/stats")
+async def get_flywheel_stats():
+    """Get RLHF flywheel statistics"""
+    if not FLYWHEEL_AVAILABLE or not data_flywheel:
+        raise HTTPException(status_code=501, detail="Flywheel not available")
+
+    return data_flywheel.get_stats()
+
+
+@app.post("/api/v6/proposal/{proposal_id}/feedback")
+async def submit_feedback(proposal_id: str, feedback: FeedbackSubmission):
+    """Submit human feedback on a proposal section"""
+    if not FLYWHEEL_AVAILABLE or not data_flywheel:
+        raise HTTPException(status_code=501, detail="Flywheel not available")
+
+    feedback_type = FeedbackType.HUMAN_EDIT if feedback.revised_text else FeedbackType.HUMAN_APPROVE
+
+    record = data_flywheel.record_feedback(
+        proposal_id=proposal_id,
+        section_id=feedback.section_id,
+        feedback_type=feedback_type,
+        original_text=feedback.original_text,
+        revised_text=feedback.revised_text,
+        score=feedback.score,
+        comments=feedback.comments,
+    )
+
+    return {"status": "recorded", "feedback_id": record.id}
+
+
+@app.post("/api/v6/proposal/{proposal_id}/debrief")
+async def submit_debrief(proposal_id: str, debrief: DebriefSubmission):
+    """Submit post-award debrief information"""
+    if not FLYWHEEL_AVAILABLE or not data_flywheel:
+        raise HTTPException(status_code=501, detail="Flywheel not available")
+
+    outcome_map = {
+        "win": OutcomeType.WIN,
+        "loss": OutcomeType.LOSS,
+        "no_bid": OutcomeType.NO_BID,
+    }
+    outcome = outcome_map.get(debrief.outcome.lower(), OutcomeType.PENDING)
+
+    data_flywheel.record_debrief(
+        proposal_id=proposal_id,
+        outcome=outcome,
+        evaluator_feedback=debrief.evaluator_feedback,
+        strengths=debrief.strengths,
+        weaknesses=debrief.weaknesses,
+        competitor_info=debrief.competitor_info,
+    )
+
+    return {"status": "recorded", "outcome": outcome.value}
+
+
+@app.get("/api/v6/flywheel/patterns")
+async def get_winning_patterns():
+    """Get extracted winning patterns"""
+    if not FLYWHEEL_AVAILABLE or not data_flywheel:
+        raise HTTPException(status_code=501, detail="Flywheel not available")
+
+    return {"patterns": [p.__dict__ for p in data_flywheel.winning_patterns]}
+
+
+@app.post("/api/v6/flywheel/extract-patterns")
+async def extract_patterns():
+    """Trigger pattern extraction from winning proposals"""
+    if not FLYWHEEL_AVAILABLE or not data_flywheel:
+        raise HTTPException(status_code=501, detail="Flywheel not available")
+
+    patterns = data_flywheel.extract_winning_patterns()
+    return {
+        "status": "extracted",
+        "patterns_count": len(patterns),
+        "patterns": [p.__dict__ for p in patterns],
+    }
+
+
+@app.get("/api/v6/flywheel/recommendations")
+async def get_recommendations(
+    agency: Optional[str] = None,
+    section_type: Optional[str] = None,
+):
+    """Get recommendations based on historical data"""
+    if not FLYWHEEL_AVAILABLE or not data_flywheel:
+        raise HTTPException(status_code=501, detail="Flywheel not available")
+
+    rfp_context = {}
+    if agency:
+        rfp_context["agency"] = agency
+
+    recommendations = data_flywheel.get_recommendations(rfp_context, section_type)
+    return {"recommendations": recommendations}
+
+
+@app.get("/api/v6/flywheel/similar-wins")
+async def get_similar_wins(rfp_id: str, limit: int = 5):
+    """Find similar winning proposals"""
+    if not FLYWHEEL_AVAILABLE or not data_flywheel:
+        raise HTTPException(status_code=501, detail="Flywheel not available")
+
+    similar = data_flywheel.get_similar_wins(rfp_id, limit)
+    return {
+        "rfp_id": rfp_id,
+        "similar_wins": [
+            {"proposal_id": pid, "score": score}
+            for pid, score in similar
+        ],
+    }
+
+
 # ============== Main Entry ==============
 
 if __name__ == "__main__":
