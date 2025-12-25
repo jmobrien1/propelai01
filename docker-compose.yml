@@ -1,75 +1,106 @@
-# PropelAI APOS - Docker Compose Configuration
-# Full stack deployment with PostgreSQL and Chroma
+# PropelAI v5.0 - Docker Compose Configuration
+# Full stack with PostgreSQL + pgvector
 
 version: '3.8'
 
 services:
   # PropelAI API Server
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: propelai-api
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
-      - PROPELAI_ENV=production
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=propelai
-      - POSTGRES_USER=propelai
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-propelai_secret}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PROPELAI_ENV=${PROPELAI_ENV:-development}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-propelai}:${POSTGRES_PASSWORD:-propelai}@postgres:5432/${POSTGRES_DB:-propelai}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_PATH=/app/data/storage
+      - JWT_SECRET=${JWT_SECRET:-propelai-dev-secret-change-in-production}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
-      - ./data/uploads:/app/data/uploads
-      - ./data/outputs:/app/data/outputs
-      - ./data/chroma:/app/data/chroma
+      - ./data/storage:/app/data/storage
+      - ./data/exports:/app/data/exports
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 40s
+    restart: unless-stopped
 
-  # PostgreSQL for LangGraph checkpointing
+  # PostgreSQL with pgvector
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg16
     container_name: propelai-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      - POSTGRES_DB=propelai
-      - POSTGRES_USER=propelai
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-propelai_secret}
+      - POSTGRES_DB=${POSTGRES_DB:-propelai}
+      - POSTGRES_USER=${POSTGRES_USER:-propelai}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-propelai}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U propelai -d propelai"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-propelai} -d ${POSTGRES_DB:-propelai}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
-  # Chroma Vector Database (optional - can use embedded)
-  chroma:
-    image: chromadb/chroma:latest
-    container_name: propelai-chroma
+  # MinIO for S3-compatible storage (optional)
+  minio:
+    image: minio/minio:latest
+    container_name: propelai-minio
     ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
+      - "9000:9000"
+      - "9001:9001"
     environment:
-      - ANONYMIZED_TELEMETRY=False
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    profiles:
+      - full
+    restart: unless-stopped
+
+  # Redis for caching (future)
+  redis:
+    image: redis:7-alpine
+    container_name: propelai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - full
     restart: unless-stopped
 
 volumes:
   postgres_data:
-  chroma_data:
+    driver: local
+  minio_data:
+    driver: local
+  redis_data:
+    driver: local
 
 networks:
   default:
