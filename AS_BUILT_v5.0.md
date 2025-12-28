@@ -1,6 +1,6 @@
 # PropelAI v5.0 As-Built Technical Document
 
-**Version:** 5.0.0
+**Version:** 5.0.3
 **Date:** December 2024
 **Classification:** Technical Architecture Documentation
 
@@ -30,6 +30,10 @@
     - [16.10 Word API Semantic Search (v5.0.1)](#1610-word-api-semantic-search-v501)
     - [16.11 Force-Directed Graph Layout (v5.0.2)](#1611-force-directed-graph-layout-v502)
     - [16.12 Agent Trace Log (NFR-2.3)](#1612-agent-trace-log-nfr-23-data-flywheel)
+17. [QA Test Infrastructure (v5.0.3)](#17-qa-test-infrastructure-v503)
+    - [17.1 Test Suite Overview](#171-test-suite-overview)
+    - [17.2 Test Fixtures](#172-test-fixtures)
+    - [17.3 CI/CD Pipeline](#173-cicd-pipeline)
 
 ---
 
@@ -62,6 +66,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Semantic Search | pgvector embeddings for Word API requirement matching | v5.0.1 |
 | Force-Directed Graph | Physics-based layout for Iron Triangle visualization | v5.0.2 |
 | Agent Trace Log | Data Flywheel foundation (Input→Output→Correction) | v5.0.2 |
+| QA Test Infrastructure | 114 tests with GoldenRFP fixtures and CI/CD pipeline | v5.0.3 |
 
 ### 1.3 Technology Stack
 
@@ -1467,7 +1472,8 @@ LogEntry = {
 | v4.2 | 2024-12 | Master Architect Workflow: F-B-P Drafting + Red Team Review |
 | v5.0 | 2024-12 | Iron Triangle + Click-to-Verify + War Room + Word API |
 | v5.0.1 | 2024-12 | Word API Semantic Search (pgvector embeddings) |
-| v5.0.2 | 2024-12 | **Force-Directed Graph + Agent Trace Log (NFR-2.3)** |
+| v5.0.2 | 2024-12 | Force-Directed Graph + Agent Trace Log (NFR-2.3) |
+| v5.0.3 | 2024-12 | **QA Test Infrastructure: 114 tests + CI/CD pipeline** |
 
 ### v5.0 Changes
 
@@ -3759,6 +3765,235 @@ GET /api/trace-logs?rfp_id=RFP-A1B2C3D4&agent_name=ComplianceAgent&status=comple
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 17. QA Test Infrastructure (v5.0.3)
+
+**Location:** `tests/`, `requirements-test.txt`, `.github/workflows/test.yml`
+
+The QA Test Infrastructure provides comprehensive automated testing for all PropelAI components, ensuring reliability and enabling confident refactoring.
+
+### 17.1 Test Suite Overview
+
+**114 tests** organized across three tiers:
+
+| Category | Count | Location | Purpose |
+|----------|-------|----------|---------|
+| Unit | 38 | `tests/unit/` | Graph logic, validation, models |
+| Integration | 33 | `tests/integration/` | Word API, semantic search |
+| E2E | 24 | `tests/e2e/` | Agent trajectory, trace logs |
+| Agent | 19 | `tests/test_agents.py` | All 4 agents + full workflow |
+
+**Test Categories:**
+
+```
+tests/
+├── conftest.py                      # Shared fixtures (GoldenRFP, MockEmbedding)
+├── test_agents.py                   # Agent unit tests (19 tests)
+├── unit/
+│   └── test_graph_logic.py          # Iron Triangle DAG tests (38 tests)
+├── integration/
+│   └── test_word_semantic_search.py # Word API tests (33 tests)
+└── e2e/
+    └── test_agent_trajectory.py     # Trace log tests (24 tests)
+```
+
+**Run Tests:**
+
+```bash
+# All tests
+pytest tests/ -v
+
+# With coverage
+pytest tests/ --cov=agents --cov=api --cov-report=html
+
+# Specific category
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+pytest tests/e2e/ -v
+```
+
+### 17.2 Test Fixtures
+
+#### GoldenRFP Fixture
+
+A realistic RFP with C/L/M sections for deterministic testing:
+
+```python
+@pytest.fixture
+def golden_rfp() -> GoldenRFP:
+    """
+    Provides:
+    - 12 requirements across C/L/M sections
+    - Realistic SHALL statements
+    - Cross-section references
+    - 1 intentional orphan (REQ-C-005)
+    """
+```
+
+**Sections:**
+- **Section C (5 reqs):** Performance, compliance, deliverables
+- **Section L (4 reqs):** Proposal instructions, format rules
+- **Section M (3 reqs):** Evaluation criteria
+
+#### MockEmbeddingGenerator
+
+Deterministic embedding generator for semantic search tests:
+
+```python
+class MockEmbeddingGenerator:
+    """
+    - Returns 1536-dim vectors from text hash
+    - Consistent embeddings for same input
+    - Configurable failure patterns
+    - Tracks call count for verification
+    """
+
+    async def generate(self, text: str) -> List[float]:
+        # MD5 hash → deterministic random vector
+        # Normalized to unit length
+```
+
+**Usage:**
+
+```python
+def test_semantic_search(mock_embedding_generator):
+    # Generator returns consistent vectors
+    vec1 = await mock_embedding_generator.generate("cloud services")
+    vec2 = await mock_embedding_generator.generate("cloud services")
+    assert vec1 == vec2  # Deterministic
+```
+
+#### Agent State Fixtures
+
+```python
+@pytest.fixture
+def initial_state() -> ProposalState:
+    """Clean proposal state for agent testing"""
+
+@pytest.fixture
+def compliance_complete_state(initial_state, golden_rfp) -> ProposalState:
+    """State with requirements extracted"""
+
+@pytest.fixture
+def strategy_complete_state(compliance_complete_state) -> ProposalState:
+    """State with win themes generated"""
+```
+
+### 17.3 CI/CD Pipeline
+
+**Location:** `.github/workflows/test.yml`
+
+GitHub Actions workflow for automated testing:
+
+```yaml
+name: Tests
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'claude/**']
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11']
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - run: pip install -r requirements-test.txt
+      - run: pytest tests/ -v --tb=short
+      - run: pytest tests/ --cov=agents --cov=api --cov-report=xml
+```
+
+**Pipeline Features:**
+
+| Feature | Description |
+|---------|-------------|
+| Matrix Testing | Python 3.10 + 3.11 |
+| Import Verification | Catches missing deps early |
+| Coverage Reports | XML for Codecov integration |
+| Lint Check | Ruff (non-blocking) |
+
+#### Test Dependencies
+
+**requirements-test.txt:**
+
+```
+# Testing framework
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.0.0
+
+# Core dependencies
+fastapi>=0.109.0
+pydantic>=2.0.0
+sqlalchemy>=2.0.0
+httpx>=0.24.0
+networkx>=3.0
+
+# Security/Auth
+bcrypt>=4.0.0
+passlib[bcrypt]>=1.7.4
+PyJWT>=2.8.0
+pyotp>=2.9.0
+
+# Document processing
+pypdf>=3.0.0
+python-docx>=0.8.11
+openpyxl>=3.0.10
+```
+
+### 17.4 Agent Trace Log Accumulation Fix
+
+**Issue:** Agents were replacing trace logs instead of accumulating them.
+
+**Root Cause:** Each agent returned `{"agent_trace_log": [trace_log]}` which overwrote previous entries when using `state.update()`.
+
+**Fix:** All agents now accumulate trace logs:
+
+```python
+# Before (broken)
+return {"agent_trace_log": [trace_log]}
+
+# After (fixed)
+existing_trace = state.get("agent_trace_log", [])
+return {"agent_trace_log": existing_trace + [trace_log]}
+```
+
+**Files Modified:**
+- `agents/compliance_agent.py`
+- `agents/strategy_agent.py`
+- `agents/drafting_agent.py`
+- `agents/red_team_agent.py`
+- `agents/enhanced_compliance/agent.py`
+
+**Test Coverage:**
+
+```python
+def test_trace_log_completeness(self, initial_state, golden_rfp):
+    """Verify all agents contribute to trace log"""
+    # Run all agents in sequence
+    # Assert trace log has entries from each agent
+    assert len(trace_log) == 4  # compliance, strategy, drafting, red_team
+    agent_names = [t["agent_name"] for t in trace_log]
+    assert "ComplianceAgent" in agent_names
+    assert "StrategyAgent" in agent_names
+    # ...
+```
+
+### 17.5 Test Design Principles
+
+1. **Trajectory-First Testing**: Tests validate agent execution order and state transitions
+2. **Deterministic Fixtures**: GoldenRFP and MockEmbedding ensure reproducible results
+3. **Isolation**: Each test starts with clean state, no shared mutable state
+4. **Fast Feedback**: Full suite runs in <5 seconds locally
+5. **CI Integration**: Automated testing on every push/PR
 
 ---
 

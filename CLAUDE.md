@@ -1,6 +1,6 @@
 # PropelAI: Autonomous Proposal Operating System
-**Current Status:** v5.0 - Trust Gate + Strategy Engine Architecture
-**Phase 1 Complete:** Iron Triangle DAG ✓ | Click-to-Verify ✓ | War Room ✓ | Word API ✓
+**Current Status:** v5.0.3 - Trust Gate + Strategy Engine + QA Infrastructure
+**Phase 1 Complete:** Iron Triangle DAG ✓ | Click-to-Verify ✓ | War Room ✓ | Word API ✓ | QA Tests ✓
 **Phase 2 Planned:** Strategy Engine | Annotated Outline | Win Theme Generator
 
 ## 1. Architecture & Tech Stack
@@ -15,6 +15,8 @@
 
 ## 2. Core Commands
 - **Start Server:** `python -m uvicorn api.main:app --reload --port 8000`
+- **Run Tests:** `pytest tests/ -v` (114 tests, <5s)
+- **Run Tests with Coverage:** `pytest tests/ --cov=agents --cov=api --cov-report=html`
 - **Run Extraction Test:** `python agents/enhanced_compliance/section_aware_extractor.py`
 - **Docker Build:** `docker-compose up --build`
 - **Deploy:** `git push origin main` (Triggers Render.com auto-deploy).
@@ -35,7 +37,12 @@
 - `agents/enhanced_compliance/document_types.py`: Guided upload document classification.
 - `web/index.html`: React SPA with guided upload wizard (v4.1 dark theme).
 - `init.sql`: PostgreSQL schema with pgvector extension.
-- `tests/test_auth_v41.py`: Integration tests for auth, teams, and 2FA.
+- `tests/conftest.py`: Shared test fixtures (GoldenRFP, MockEmbeddingGenerator).
+- `tests/test_agents.py`: Agent unit tests (19 tests).
+- `tests/unit/test_graph_logic.py`: Iron Triangle DAG tests (38 tests).
+- `tests/integration/test_word_semantic_search.py`: Word API semantic search tests (33 tests).
+- `tests/e2e/test_agent_trajectory.py`: Agent trace log tests (24 tests).
+- `.github/workflows/test.yml`: CI/CD pipeline (Python 3.10/3.11 matrix).
 
 ## 5. v4.0 Architecture Phases
 
@@ -648,10 +655,11 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 ## 11. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation
-- `AS_BUILT_v5.0.md`: v5.0 Trust Gate & Strategy Engine documentation
+- `AS_BUILT_v5.0.md`: v5.0.3 Trust Gate, Strategy Engine, and QA Infrastructure documentation
 - `HANDOFF_DOCUMENT.md`: Legacy v2.9 documentation (Shipley methodology)
 - `prd5.rtf`: PRD v5.0 Phase 1 - Trust Gate specification
 - `prd12.rtf`: PRD v5.0 Phase 2 - Strategy Engine specification
+- `requirements-test.txt`: Test dependencies for CI/CD pipeline
 
 ## 12. v5.0 Phase 1: Trust Gate (IMPLEMENTED)
 **Status:** Complete - Deterministic compliance verification
