@@ -1,6 +1,6 @@
-# PropelAI v4.1 As-Built Technical Document
+# PropelAI v4.2 As-Built Technical Document
 
-**Version:** 4.1.0
+**Version:** 4.2.0
 **Date:** December 2024
 **Classification:** Technical Architecture Documentation
 
@@ -22,6 +22,7 @@
 12. [Security & Governance](#12-security--governance)
 13. [Version History](#13-version-history)
 14. [Team Workspaces (v4.1)](#14-team-workspaces-v41)
+15. [Master Architect Workflow (v4.2)](#15-master-architect-workflow-v42)
 
 ---
 
@@ -42,6 +43,9 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Trust Gate | PDF coordinate extraction for source verification | v4.0 |
 | Strategy Generation | Win themes and discriminators | v4.0 |
 | Persistent Storage | PostgreSQL + Render Disk | v4.1 |
+| Master Architect | 6-phase proposal development workflow | v4.2 |
+| F-B-P Drafting | Feature-Benefit-Proof content generation | v4.2 |
+| Red Team Review | Government evaluator simulation with color ratings | v4.2 |
 
 ### 1.3 Technology Stack
 
@@ -1443,9 +1447,45 @@ LogEntry = {
 | v3.1 | 2024 | Guided upload, document classification |
 | v3.2 | 2024 | Improved outline generation |
 | v4.0 | 2024 | Trust Gate (PDF coordinates), strategy agent, drafting workflow |
-| v4.1 | 2024-12 | **Persistent storage: PostgreSQL + Render Disk** |
+| v4.1 | 2024-12 | Persistent storage: PostgreSQL + Render Disk |
+| v4.2 | 2024-12 | **Master Architect Workflow: F-B-P Drafting + Red Team Review** |
 
-### v4.1 Changes (Current)
+### v4.2 Changes (Current)
+
+1. **Master Architect Workflow**
+   - 6-phase proposal development orchestration
+   - Volume cloning fix for outline re-processing
+   - Requirement injection into outline sections
+
+2. **Win Theme Generation (P1)**
+   - Automatic matching of Company Library to sections
+   - Capability → section keyword matching
+   - Past performance → proof point extraction
+   - Differentiator → discriminator mapping
+
+3. **Page Allocation from Section M (P1)**
+   - Weight parsing (percentage, points, qualitative)
+   - Proportional page distribution by factor importance
+   - Support for "Most Important", "Significant", etc.
+
+4. **F-B-P Drafting Workflow (P3)**
+   - Feature-Benefit-Proof structured drafting
+   - LangGraph workflow with human-in-the-loop
+   - Quality scoring on 5 dimensions
+   - Draft revision with feedback integration
+
+5. **Red Team Review (P4)**
+   - Government SSEB simulation
+   - Color rating system (Blue/Green/Yellow/Red)
+   - Finding generation with severity levels
+   - Prioritized remediation planning
+
+6. **Draft & Review UI**
+   - Section drafts table with quality progress bars
+   - Red Team results with color-coded scores
+   - Findings and remediation plan display
+
+### v4.1 Changes
 
 1. **PostgreSQL Integration**
    - SQLAlchemy 2.0 async ORM
@@ -1993,6 +2033,694 @@ Response:
 
 ---
 
+## 15. Master Architect Workflow (v4.2)
+
+### 15.1 Overview
+
+The Master Architect is a 6-phase proposal development workflow that orchestrates the entire proposal creation process from RFP analysis through final quality review.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       MASTER ARCHITECT WORKFLOW                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐       │
+│  │  P0     │──▶│  P1     │──▶│  P2     │──▶│  P3     │──▶│  P4     │       │
+│  │ Outline │   │Strategy │   │Architect│   │ F-B-P   │   │Red Team │       │
+│  │  Gen    │   │  Gen    │   │  API    │   │Drafting │   │ Review  │       │
+│  └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘       │
+│       │             │             │             │             │              │
+│       ▼             ▼             ▼             ▼             ▼              │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐       │
+│  │ Volume  │   │Win Theme│   │Require- │   │ Draft   │   │ Color   │       │
+│  │Cloning  │   │  from   │   │  ment   │   │ with    │   │ Score   │       │
+│  │  Fix    │   │ Library │   │Injection│   │Quality  │   │(B/G/Y/R)│       │
+│  └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 15.2 Phase Implementation
+
+#### Phase 0: Outline Generation Fix
+
+**Location:** `agents/enhanced_compliance/smart_outline_generator.py`
+
+Fixed volume cloning issue that caused outline corruption when re-processing RFPs.
+
+```python
+class SmartOutlineGenerator:
+    """Generate proposal outline from Section L/M analysis"""
+
+    def _clone_volumes_deep(self, volumes: List[ProposalVolume]) -> List[ProposalVolume]:
+        """Deep clone volumes to prevent reference issues"""
+        return [
+            ProposalVolume(
+                id=vol.id,
+                name=vol.name,
+                volume_type=vol.volume_type,
+                page_limit=vol.page_limit,
+                order=vol.order,
+                eval_factors=vol.eval_factors.copy(),
+                sections=[
+                    ProposalSection(
+                        id=sec.id,
+                        name=sec.name,
+                        page_limit=sec.page_limit,
+                        requirements=sec.requirements.copy(),
+                        eval_criteria=sec.eval_criteria.copy(),
+                        subsections=sec.subsections.copy()
+                    )
+                    for sec in vol.sections
+                ]
+            )
+            for vol in volumes
+        ]
+```
+
+#### Phase 1: Strategy Generation
+
+**Location:** `agents/enhanced_compliance/smart_outline_generator.py`
+
+**Win Theme Generation from Company Library:**
+
+```python
+def _generate_win_themes_for_sections(
+    self,
+    volumes: List[ProposalVolume],
+    company_library_data: Optional[Dict],
+    eval_factors: List[EvaluationFactor]
+) -> None:
+    """
+    Generate win themes by matching Company Library data to sections.
+
+    Matches:
+    - Capabilities to section requirements
+    - Past performance to relevant sections
+    - Differentiators to hot buttons
+    - Key personnel to staffing sections
+    """
+```
+
+**Page Allocation from Section M Weights:**
+
+```python
+def _calculate_page_allocations(
+    self,
+    volumes: List[ProposalVolume],
+    eval_factors: List[EvaluationFactor],
+    total_pages: Optional[int]
+) -> None:
+    """
+    Calculate page allocations based on Section M evaluation weights.
+
+    Formula: section_pages = total_pages * (factor_weight / total_weight)
+
+    Weight interpretation:
+    - "Most Important" / "Primary" = 0.35
+    - "Important" / "Significant" = 0.25
+    - "Less Important" / "Secondary" = 0.15
+    - Numeric weights (e.g., "30%", "300 points") are normalized
+    """
+```
+
+**Data Model Extensions:**
+
+```python
+@dataclass
+class ProposalSection:
+    """A section within a proposal volume"""
+    id: str
+    name: str
+    page_limit: Optional[int] = None
+    page_allocation: Optional[int] = None  # Calculated from M weights
+    requirements: List[str] = field(default_factory=list)
+    eval_criteria: List[str] = field(default_factory=list)
+    win_themes: List[str] = field(default_factory=list)  # From Company Library
+    proof_points: List[str] = field(default_factory=list)  # Evidence
+    subsections: List['ProposalSection'] = field(default_factory=list)
+```
+
+#### Phase 2: Requirement Injector
+
+**Location:** `agents/enhanced_compliance/requirement_injector.py`
+
+The RequirementInjector maps extracted requirements to outline sections based on semantic matching.
+
+```python
+class RequirementInjector:
+    """Inject extracted requirements into proposal outline sections"""
+
+    def inject(
+        self,
+        outline: Dict,
+        requirements: List[Dict],
+        eval_factors: List[Dict]
+    ) -> Dict:
+        """
+        Inject requirements into outline sections.
+
+        Mapping Strategy:
+        - Section L requirements → Compliance/format sections
+        - Section M criteria → Evaluation factor sections
+        - Section C/SOW requirements → Technical approach sections
+        """
+
+    def _find_best_section_match(
+        self,
+        requirement: Dict,
+        sections: List[Dict]
+    ) -> Optional[str]:
+        """Find best matching section for a requirement using keyword overlap"""
+```
+
+**API Endpoint:**
+
+```
+POST /api/rfp/{rfp_id}/master-architect
+
+Request Body:
+{
+  "phases": ["outline", "inject", "allocate", "themes"]
+}
+
+Response:
+{
+  "status": "success",
+  "phases_completed": ["outline", "inject", "allocate", "themes"],
+  "outline": {
+    "volumes": [...],
+    "total_pages": 150,
+    "warnings": []
+  },
+  "stats": {
+    "sections_with_requirements": 12,
+    "sections_with_win_themes": 8,
+    "total_page_allocation": 145
+  }
+}
+```
+
+### 15.3 F-B-P Drafting Workflow
+
+**Location:** `agents/drafting_workflow.py`
+
+The Feature-Benefit-Proof (F-B-P) framework ensures all drafted content follows a structured format that connects capabilities to customer benefits with evidence.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        F-B-P DRAFTING WORKFLOW                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐  │
+│  │ Research │──▶│Structure │──▶│  Draft   │──▶│ Quality  │──▶│ Human    │  │
+│  │   Node   │   │FBP Node  │   │   Node   │   │  Check   │   │ Review   │  │
+│  └──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘  │
+│       │              │              │              │              │         │
+│       ▼              ▼              ▼              ▼              ▼         │
+│  Query Company  Build F-B-P    Generate      Score Draft    Pause for     │
+│  Library for    blocks from    narrative     on 5 dims      feedback      │
+│  evidence       requirements   prose                                       │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                     Quality Scoring Dimensions                        │  │
+│  │  compliance (0-100): Addresses all requirements                      │  │
+│  │  clarity (0-100): Clear, well-structured prose                       │  │
+│  │  citation_coverage (0-100): Evidence properly cited                  │  │
+│  │  word_count_ratio (0-100): Fits within page allocation              │  │
+│  │  theme_alignment (0-100): Aligns with win themes                     │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**LangGraph State:**
+
+```python
+class DraftingState(TypedDict):
+    """State for drafting workflow"""
+    rfp_id: str
+    section_id: str
+    requirements: List[Dict]
+    company_library: Dict
+    win_themes: List[str]
+
+    # F-B-P blocks
+    fbp_blocks: List[Dict]  # [{feature, benefit, proof}]
+
+    # Draft content
+    draft_text: str
+    word_count: int
+
+    # Quality scores
+    quality_scores: Dict[str, float]
+    overall_score: float
+
+    # Human review
+    feedback: Optional[str]
+    revision_count: int
+```
+
+**API Endpoints:**
+
+```
+POST /api/rfp/{rfp_id}/draft/section/{section_id}
+
+Request Body:
+{
+  "requirements": ["REQ-001", "REQ-002"],
+  "win_themes": ["theme-1"],
+  "page_limit": 5
+}
+
+Response:
+{
+  "status": "drafting_started",
+  "draft_id": "DRAFT-A1B2C3D4",
+  "section_id": "sec-1.1",
+  "estimated_time": 30
+}
+```
+
+```
+POST /api/rfp/{rfp_id}/draft/section/{section_id}/feedback
+
+Request Body:
+{
+  "feedback": "Add more specific metrics on cost savings",
+  "action": "revise"  // or "approve", "reject"
+}
+
+Response:
+{
+  "status": "revision_started",
+  "revision_number": 2
+}
+```
+
+```
+GET /api/rfp/{rfp_id}/drafts
+
+Response:
+{
+  "drafts": [
+    {
+      "section_id": "sec-1.1",
+      "section_name": "Technical Approach",
+      "status": "completed",
+      "quality_scores": {
+        "compliance": 92,
+        "clarity": 88,
+        "citation_coverage": 95,
+        "word_count_ratio": 85,
+        "theme_alignment": 90
+      },
+      "overall_score": 90,
+      "word_count": 2450,
+      "revision_count": 1,
+      "updated_at": "2024-12-20T15:30:00"
+    }
+  ],
+  "stats": {
+    "total_sections": 12,
+    "drafted": 8,
+    "pending": 4,
+    "average_score": 87
+  }
+}
+```
+
+### 15.4 Red Team Review
+
+**Location:** `agents/red_team_agent.py`
+
+The Red Team Agent simulates a government Source Selection Evaluation Board (SSEB) to identify weaknesses before submission.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         RED TEAM REVIEW SYSTEM                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                        COLOR RATING SYSTEM                               ││
+│  │                                                                          ││
+│  │  🔵 BLUE (90-100)   Exceptional - Exceeds requirements                  ││
+│  │  🟢 GREEN (70-89)   Strong - Meets requirements with strengths          ││
+│  │  🟡 YELLOW (50-69)  Adequate - Meets minimum requirements               ││
+│  │  🔴 RED (0-49)      Needs Work - Does not meet requirements             ││
+│  │                                                                          ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                        EVALUATION PROCESS                                ││
+│  │                                                                          ││
+│  │  1. Compliance Check                                                     ││
+│  │     - Does section address all L requirements?                          ││
+│  │     - Are page limits observed?                                          ││
+│  │     - Are format requirements followed?                                  ││
+│  │                                                                          ││
+│  │  2. Technical Evaluation                                                 ││
+│  │     - Does approach address C/SOW requirements?                         ││
+│  │     - Is the solution technically sound?                                 ││
+│  │     - Are risks identified and mitigated?                                ││
+│  │                                                                          ││
+│  │  3. Scoring Alignment                                                    ││
+│  │     - Does content address M evaluation factors?                        ││
+│  │     - Are discriminators highlighted?                                    ││
+│  │     - Is evidence sufficient for claimed strengths?                     ││
+│  │                                                                          ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Red Team Agent:**
+
+```python
+class RedTeamAgent:
+    """Simulate government evaluation board review"""
+
+    def review_proposal(
+        self,
+        sections: List[Dict],
+        requirements: Dict,
+        eval_factors: List[Dict]
+    ) -> RedTeamResult:
+        """
+        Perform comprehensive Red Team review.
+
+        Returns:
+        - Overall color rating
+        - Per-section scores
+        - Findings (strengths, weaknesses, deficiencies)
+        - Remediation plan
+        """
+
+    def _evaluate_section(
+        self,
+        section: Dict,
+        requirements: List[Dict],
+        eval_factor: Optional[Dict]
+    ) -> SectionScore:
+        """Evaluate single section against requirements and criteria"""
+
+    def _generate_findings(
+        self,
+        section_scores: List[SectionScore]
+    ) -> List[Finding]:
+        """Generate findings from section evaluations"""
+
+    def _create_remediation_plan(
+        self,
+        findings: List[Finding]
+    ) -> List[RemediationItem]:
+        """Create prioritized remediation plan"""
+```
+
+**Data Models:**
+
+```python
+@dataclass
+class Finding:
+    """Red Team finding"""
+    id: str
+    section_id: str
+    severity: str  # "critical", "major", "minor"
+    category: str  # "compliance", "technical", "scoring"
+    description: str
+    recommendation: str
+    effort_estimate: str  # "low", "medium", "high"
+
+@dataclass
+class SectionScore:
+    """Section evaluation score"""
+    section_id: str
+    section_name: str
+    score: int  # 0-100
+    color: str  # "blue", "green", "yellow", "red"
+    strengths: List[str]
+    weaknesses: List[str]
+    compliance_gaps: List[str]
+
+@dataclass
+class RedTeamResult:
+    """Complete Red Team review result"""
+    overall_score: int
+    overall_color: str
+    section_scores: List[SectionScore]
+    findings: List[Finding]
+    remediation_plan: List[Dict]
+    summary: str
+    review_date: str
+```
+
+**API Endpoints:**
+
+```
+POST /api/rfp/{rfp_id}/red-team
+
+Request Body:
+{
+  "sections": ["all"],  // or specific section IDs
+  "evaluation_mode": "full"  // or "quick"
+}
+
+Response:
+{
+  "status": "review_complete",
+  "result": {
+    "overall_score": 78,
+    "overall_color": "green",
+    "section_scores": [
+      {
+        "section_id": "sec-1.1",
+        "section_name": "Technical Approach",
+        "score": 85,
+        "color": "green",
+        "strengths": ["Clear methodology", "Strong past performance"],
+        "weaknesses": ["Risk section could be more detailed"]
+      }
+    ],
+    "findings": [
+      {
+        "id": "F-001",
+        "severity": "major",
+        "category": "compliance",
+        "description": "Section L.4.2 page limit exceeded by 2 pages",
+        "recommendation": "Condense risk discussion and remove redundant content"
+      }
+    ],
+    "remediation_plan": [
+      {
+        "priority": 1,
+        "finding_id": "F-001",
+        "action": "Reduce Technical Approach by 2 pages",
+        "owner": "Technical Lead",
+        "effort": "medium"
+      }
+    ]
+  }
+}
+```
+
+```
+GET /api/rfp/{rfp_id}/red-team/history
+
+Response:
+{
+  "reviews": [
+    {
+      "id": "RT-001",
+      "date": "2024-12-20T10:00:00",
+      "overall_score": 72,
+      "overall_color": "green",
+      "findings_count": 8
+    },
+    {
+      "id": "RT-002",
+      "date": "2024-12-21T14:00:00",
+      "overall_score": 85,
+      "overall_color": "green",
+      "findings_count": 3
+    }
+  ]
+}
+```
+
+### 15.5 Draft & Review UI
+
+**Location:** `web/index.html` - DraftingView component
+
+The Draft & Review UI provides a comprehensive interface for managing the drafting and review workflow.
+
+```javascript
+function DraftingView({ rfpId }) {
+    const [drafts, setDrafts] = useState([]);
+    const [redTeamResult, setRedTeamResult] = useState(null);
+    const [activeTab, setActiveTab] = useState('drafts'); // 'drafts' | 'redteam'
+
+    // Section Drafts Tab
+    // - Table with section name, status, quality scores
+    // - Progress bars for each quality dimension
+    // - Draft/Redraft action buttons
+
+    // Red Team Results Tab
+    // - Overall score card with color rating
+    // - Section-by-section breakdown
+    // - Findings list with severity badges
+    // - Remediation plan display
+}
+```
+
+**UI Components:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Draft & Review                                                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                │
+│  │ 📝 Drafted: 8   │ │ ⏳ Pending: 4   │ │ 🎯 Red Team: 78 │                │
+│  └─────────────────┘ └─────────────────┘ └─────────────────┘                │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │ [Section Drafts] [Red Team Results]                                   │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  SECTION DRAFTS TAB:                                                         │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │ Section          │ Status    │ Quality Score        │ Actions        │   │
+│  │──────────────────│───────────│──────────────────────│────────────────│   │
+│  │ Tech Approach    │ ✓ Done    │ ████████░░ 85%       │ [Redraft]     │   │
+│  │ Management       │ ✓ Done    │ ███████░░░ 72%       │ [Redraft]     │   │
+│  │ Past Performance │ ⏳ Pending │ ░░░░░░░░░░ --        │ [Draft]       │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  RED TEAM RESULTS TAB:                                                       │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │  OVERALL SCORE                                                  │  │   │
+│  │  │  🟢 78 - GREEN                                                 │  │   │
+│  │  │  "Strong proposal with minor improvements needed"               │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  │                                                                       │   │
+│  │  Section Scores:                                                      │   │
+│  │  🔵 Technical Approach      92                                        │   │
+│  │  🟢 Management Plan         78                                        │   │
+│  │  🟡 Past Performance        65                                        │   │
+│  │                                                                       │   │
+│  │  Findings (3):                                                        │   │
+│  │  ⚠️ MAJOR: Page limit exceeded in Technical section                  │   │
+│  │  ⚠️ MAJOR: Missing risk mitigation details                           │   │
+│  │  📝 MINOR: Inconsistent formatting in tables                         │   │
+│  │                                                                       │   │
+│  │  Remediation Plan:                                                    │   │
+│  │  1. Reduce Technical section by 2 pages                               │   │
+│  │  2. Add risk register to Management section                           │   │
+│  │  3. Standardize table formatting                                       │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Color Score Display:**
+
+```javascript
+function getColorClass(score) {
+    if (score >= 90) return 'score-blue';      // 🔵 Exceptional
+    if (score >= 70) return 'score-green';     // 🟢 Strong
+    if (score >= 50) return 'score-yellow';    // 🟡 Adequate
+    return 'score-red';                         // 🔴 Needs Work
+}
+
+function getColorLabel(score) {
+    if (score >= 90) return 'Blue - Exceptional';
+    if (score >= 70) return 'Green - Strong';
+    if (score >= 50) return 'Yellow - Adequate';
+    return 'Red - Needs Work';
+}
+```
+
+### 15.6 Annotated Outline Export
+
+**Location:** `agents/enhanced_compliance/annotated_outline_exporter.js`
+
+The annotated outline exporter generates Word documents with color-coded annotations for each requirement type.
+
+**Color Coding:**
+
+| Annotation Type | Color | Hex Code |
+|-----------------|-------|----------|
+| Section L (Compliance) | Red | #FF0000 |
+| Section M (Evaluation) | Blue | #0000FF |
+| Section C (Technical) | Purple | #800080 |
+| Win Themes | Green | #008000 |
+| Proof Points | Orange | #FF8C00 |
+
+**Document Structure:**
+
+```javascript
+function buildSectionContent(section, data, sectionNum) {
+    // Section heading
+    children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        text: `${sectionNum}. ${section.name}`
+    }));
+
+    // Page allocation (from M weights OR RFP limit)
+    if (section.page_allocation || section.page_limit) {
+        children.push(createPageAllocationBlock(section));
+    }
+
+    // Section L requirements (RED)
+    children.push(createAnnotationBlock(
+        "SECTION L - COMPLIANCE REQUIREMENTS",
+        section.requirements,
+        COLORS.SECTION_L
+    ));
+
+    // Section M criteria (BLUE)
+    children.push(createAnnotationBlock(
+        "SECTION M - EVALUATION CRITERIA",
+        section.eval_criteria,
+        COLORS.SECTION_M
+    ));
+
+    // Win themes (GREEN) - From Company Library
+    children.push(createAnnotationBlock(
+        "WIN THEMES & DISCRIMINATORS",
+        section.win_themes,
+        COLORS.WIN_THEME
+    ));
+
+    // Proof points (ORANGE) - Evidence from past performance
+    children.push(createAnnotationBlock(
+        "PROOF POINTS REQUIRED",
+        section.proof_points,
+        COLORS.PROOF_POINT
+    ));
+
+    // Graphics placeholder
+    children.push(createGraphicsPlaceholder());
+
+    // Boilerplate guidance
+    children.push(createBoilerplateGuidance());
+}
+```
+
+### 15.7 API Endpoint Summary
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/rfp/{id}/master-architect` | Run Master Architect workflow |
+| POST | `/api/rfp/{id}/draft/section/{sec_id}` | Start section draft |
+| POST | `/api/rfp/{id}/draft/section/{sec_id}/feedback` | Submit draft feedback |
+| GET | `/api/rfp/{id}/drafts` | List all section drafts |
+| POST | `/api/rfp/{id}/red-team` | Run Red Team review |
+| GET | `/api/rfp/{id}/red-team/history` | Get review history |
+
+---
+
 ## Appendix A: Dependencies
 
 **requirements.txt:**
@@ -2054,4 +2782,4 @@ httpx>=0.24.0
 ---
 
 *Document generated: December 2024*
-*PropelAI v4.1.0*
+*PropelAI v4.2.0*
