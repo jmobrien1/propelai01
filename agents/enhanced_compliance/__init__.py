@@ -123,6 +123,15 @@ except ImportError as e:
     BEST_PRACTICES_AVAILABLE = False
     BestPracticesCTMExporter = export_ctm_best_practices = None
 
+# Trust Gate (PDF Coordinate Extraction for v4.0)
+try:
+    from .pdf_coordinate_extractor import PDFCoordinateExtractor
+    TRUST_GATE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Trust Gate not available: {e}")
+    TRUST_GATE_AVAILABLE = False
+    PDFCoordinateExtractor = None
+
 __all__ = [
     "__version__",
     # v3.0 Data Models
@@ -156,6 +165,8 @@ __all__ = [
     "BEST_PRACTICES_AVAILABLE",
     # Availability flags
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
+    # Trust Gate (v4.0)
+    "TRUST_GATE_AVAILABLE", "PDFCoordinateExtractor",
 ]
 
 # =============================================================================

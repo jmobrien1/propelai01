@@ -683,3 +683,208 @@ def create_strategy_agent(
         llm_client=llm_client,
         past_performance_store=past_performance_store
     )
+
+
+class CompetitorAnalyzer:
+    """
+    Competitive Analysis Engine
+
+    Analyzes competitive landscape for proposal strategy:
+    - Identifies likely competitors
+    - Generates ghosting language
+    - Maps competitor weaknesses to our strengths
+    """
+
+    def __init__(self, use_llm: bool = True):
+        """
+        Initialize the Competitor Analyzer
+
+        Args:
+            use_llm: Whether to use LLM for advanced analysis
+        """
+        self.use_llm = use_llm
+
+    def analyze_competitive_landscape(
+        self,
+        rfp_data: Dict[str, Any],
+        known_competitors: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze competitive landscape for an RFP
+
+        Args:
+            rfp_data: RFP data including requirements and evaluation criteria
+            known_competitors: List of known competitor profiles
+
+        Returns:
+            Competitive analysis with ghosting library
+        """
+        known_competitors = known_competitors or []
+
+        # Build competitor profiles
+        profiles = []
+        for comp in known_competitors:
+            profile = CompetitorProfile(
+                name=comp.get("name", "Unknown"),
+                strengths=comp.get("strengths", []),
+                weaknesses=comp.get("weaknesses", []),
+                likely_themes=self._infer_themes(comp),
+                ghosting_opportunities=self._identify_ghosting(comp)
+            )
+            profiles.append(profile)
+
+        # Generate ghosting library
+        ghosting_library = self._build_ghosting_library(profiles, rfp_data)
+
+        # Identify win opportunities
+        opportunities = self._identify_opportunities(profiles, rfp_data)
+
+        return {
+            "competitor_count": len(profiles),
+            "competitors": [
+                {
+                    "name": p.name,
+                    "strengths": p.strengths,
+                    "weaknesses": p.weaknesses,
+                    "likely_themes": p.likely_themes,
+                    "ghosting_opportunities": p.ghosting_opportunities
+                }
+                for p in profiles
+            ],
+            "ghosting_library": ghosting_library,
+            "win_opportunities": opportunities,
+            "analysis_date": datetime.now().isoformat()
+        }
+
+    def _infer_themes(self, competitor: Dict[str, Any]) -> List[str]:
+        """Infer likely win themes a competitor will use"""
+        themes = []
+        strengths = competitor.get("strengths", [])
+
+        if any("incumbent" in str(s).lower() for s in strengths):
+            themes.append("Continuity and proven performance")
+        if any("price" in str(s).lower() or "cost" in str(s).lower() for s in strengths):
+            themes.append("Competitive pricing")
+        if any("innovation" in str(s).lower() or "technology" in str(s).lower() for s in strengths):
+            themes.append("Technical innovation")
+        if any("experience" in str(s).lower() or "years" in str(s).lower() for s in strengths):
+            themes.append("Deep domain experience")
+
+        return themes if themes else ["Standard compliance approach"]
+
+    def _identify_ghosting(self, competitor: Dict[str, Any]) -> List[str]:
+        """Identify ghosting opportunities for a competitor"""
+        opportunities = []
+        weaknesses = competitor.get("weaknesses", [])
+
+        for weakness in weaknesses:
+            weakness_lower = weakness.lower()
+            if "transition" in weakness_lower:
+                opportunities.append("Emphasize seamless transition capability")
+            if "size" in weakness_lower or "capacity" in weakness_lower:
+                opportunities.append("Highlight scalable resources and depth")
+            if "innovation" in weakness_lower:
+                opportunities.append("Lead with modern, innovative approaches")
+            if "past performance" in weakness_lower:
+                opportunities.append("Showcase directly relevant experience")
+            if "key personnel" in weakness_lower:
+                opportunities.append("Feature committed, named key personnel")
+
+        return opportunities
+
+    def _build_ghosting_library(
+        self,
+        profiles: List[CompetitorProfile],
+        rfp_data: Dict[str, Any]
+    ) -> List[Dict[str, str]]:
+        """Build library of ghosting language"""
+        library = []
+
+        # Common ghosting phrases by weakness type
+        ghosting_templates = {
+            "transition": {
+                "phrase": "Our team brings Day 1 readiness with no learning curve",
+                "context": "When competitors lack transition experience"
+            },
+            "innovation": {
+                "phrase": "Unlike legacy approaches, our modern methodology...",
+                "context": "When competitors use dated methods"
+            },
+            "personnel": {
+                "phrase": "Our named key personnel are committed and available",
+                "context": "When competitors have turnover concerns"
+            },
+            "scalability": {
+                "phrase": "With [X] employees nationwide, we scale to meet surge demands",
+                "context": "When competitors have capacity limits"
+            },
+            "incumbent_risk": {
+                "phrase": "Fresh perspective unencumbered by legacy processes",
+                "context": "Counter incumbent's 'we've always done it this way'"
+            }
+        }
+
+        # Add applicable ghosting phrases
+        all_weaknesses = []
+        for profile in profiles:
+            all_weaknesses.extend(profile.weaknesses)
+
+        for weakness in all_weaknesses:
+            weakness_lower = weakness.lower()
+            for key, template in ghosting_templates.items():
+                if key in weakness_lower or any(k in weakness_lower for k in key.split("_")):
+                    if template not in library:
+                        library.append(template)
+
+        # Always include some standard differentiators
+        library.append({
+            "phrase": "Our proven track record of on-time, on-budget delivery",
+            "context": "Standard differentiator"
+        })
+
+        return library
+
+    def _identify_opportunities(
+        self,
+        profiles: List[CompetitorProfile],
+        rfp_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Identify win opportunities based on competitive analysis"""
+        opportunities = []
+
+        # Collect all competitor weaknesses
+        all_weaknesses = set()
+        for profile in profiles:
+            all_weaknesses.update(profile.weaknesses)
+
+        # Map weaknesses to opportunities
+        if any("transition" in w.lower() for w in all_weaknesses):
+            opportunities.append({
+                "opportunity": "Transition Excellence",
+                "description": "Competitors lack transition experience - emphasize our proven transition methodology",
+                "priority": "high"
+            })
+
+        if any("incumbent" in w.lower() for w in all_weaknesses):
+            opportunities.append({
+                "opportunity": "Fresh Perspective",
+                "description": "Incumbent complacency - position as innovative challenger with new ideas",
+                "priority": "medium"
+            })
+
+        if any("personnel" in w.lower() or "staff" in w.lower() for w in all_weaknesses):
+            opportunities.append({
+                "opportunity": "Key Personnel Commitment",
+                "description": "Competitor personnel concerns - showcase committed, named staff",
+                "priority": "high"
+            })
+
+        # Default opportunity
+        if not opportunities:
+            opportunities.append({
+                "opportunity": "Compliance and Value",
+                "description": "Standard competitive position - focus on clear compliance and best value",
+                "priority": "medium"
+            })
+
+        return opportunities
