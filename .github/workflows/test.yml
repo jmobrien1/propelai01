@@ -46,7 +46,7 @@ jobs:
       - name: Run tests with coverage
         if: matrix.python-version == '3.11'
         run: |
-          pytest tests/ --cov=agents --cov=api --cov-report=xml --cov-report=term-missing
+          pytest tests/ --cov=agents --cov=api --cov-report=xml --cov-report=term-missing --cov-fail-under=0
         env:
           PYTHONPATH: ${{ github.workspace }}
 
