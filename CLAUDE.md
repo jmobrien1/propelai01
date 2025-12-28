@@ -668,8 +668,28 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 - `GET /api/rfp/{rfp_id}/graph/orphans` - Unlinked requirements
 - `POST /api/rfp/{rfp_id}/graph/link` - Create C↔L↔M links
 - `DELETE /api/rfp/{rfp_id}/graph/link/{link_id}` - Remove links
-- `POST /api/word/context` - Word Add-in context awareness
+- `POST /api/word/context` - Word Add-in context awareness (with semantic search)
 - `GET /api/word/rfps` - List RFPs for Word Add-in
+
+### Word API Semantic Search (v5.0.1)
+**Goal:** Upgrade from keyword-based Jaccard similarity to meaning-based semantic search.
+
+**Implementation:**
+- Uses `EmbeddingGenerator` from `api/vector_store.py` (Voyage AI / OpenAI / fallback)
+- Requirement embeddings cached in `rfp["_requirement_embeddings"]` for performance
+- Cosine similarity matching with 0.3 threshold
+- Automatic fallback to Jaccard similarity if semantic unavailable
+
+**Request Parameters:**
+- `use_semantic_search: bool = True` - Enable/disable semantic search
+
+**Response Fields:**
+- `search_method: str` - "semantic" or "jaccard" indicating which method was used
+
+**Benefits over Jaccard:**
+- Understands synonyms (e.g., "personnel" matches "staffing requirements")
+- Handles paraphrasing and context
+- Better accuracy for proposal compliance checking
 
 ### Frontend Components:
 - `PDFViewerModal`: Supports `mode="split"` for split-screen, multi-page highlights

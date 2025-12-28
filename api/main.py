@@ -5372,6 +5372,7 @@ class WordContextRequest(BaseModel):
     section_heading: Optional[str] = Field(None, description="Current section heading in Word")
     document_context: Optional[str] = Field(None, description="Additional document context (e.g., volume name)")
     max_results: int = Field(5, ge=1, le=20, description="Maximum number of matching requirements")
+    use_semantic_search: bool = Field(True, description="Use pgvector semantic search (recommended). Falls back to Jaccard if unavailable.")
 
 
 class WordContextResponse(BaseModel):
@@ -5381,16 +5382,173 @@ class WordContextResponse(BaseModel):
     section_context: Optional[Dict]
     compliance_status: Optional[Dict]
     suggestions: List[str]
+    search_method: str = Field(default="jaccard", description="Search method used: 'semantic' or 'jaccard'")
+
+
+# ============== Semantic Search Helpers for Word API ==============
+
+# Global embedding generator for Word API (lazy-initialized)
+_word_embedding_generator = None
+
+
+def _get_embedding_generator():
+    """Get or create the embedding generator for Word API"""
+    global _word_embedding_generator
+    if _word_embedding_generator is None:
+        try:
+            from api.vector_store import EmbeddingGenerator
+            _word_embedding_generator = EmbeddingGenerator()
+        except ImportError:
+            _word_embedding_generator = None
+    return _word_embedding_generator
+
+
+def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Compute cosine similarity between two vectors"""
+    import math
+    if not vec1 or not vec2 or len(vec1) != len(vec2):
+        return 0.0
+
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    magnitude1 = math.sqrt(sum(a * a for a in vec1))
+    magnitude2 = math.sqrt(sum(b * b for b in vec2))
+
+    if magnitude1 == 0 or magnitude2 == 0:
+        return 0.0
+
+    return dot_product / (magnitude1 * magnitude2)
+
+
+def _jaccard_similarity(text1: str, text2: str) -> float:
+    """Compute Jaccard similarity between two texts (fallback method)"""
+    words1 = set(text1.lower().split())
+    words1 = {w for w in words1 if len(w) > 3}
+    words2 = set(text2.lower().split())
+
+    if not words1:
+        return 0.0
+
+    intersection = len(words1 & words2)
+    union = len(words1 | words2)
+
+    return intersection / union if union > 0 else 0.0
+
+
+async def _get_or_create_requirement_embeddings(rfp: Dict, requirements: List[Dict]) -> Dict[str, List[float]]:
+    """
+    Get cached requirement embeddings or generate them.
+
+    Embeddings are cached in rfp["_requirement_embeddings"] for subsequent calls.
+    """
+    # Check cache
+    cached = rfp.get("_requirement_embeddings")
+    if cached:
+        # Verify all requirements have embeddings
+        missing = [r.get("id") for r in requirements if r.get("id") and r.get("id") not in cached]
+        if not missing:
+            return cached
+
+    # Generate embeddings
+    embeddings = cached or {}
+    generator = _get_embedding_generator()
+
+    if not generator:
+        return embeddings
+
+    # Get requirements that need embeddings
+    to_embed = []
+    to_embed_ids = []
+    for req in requirements:
+        req_id = req.get("id")
+        if req_id and req_id not in embeddings:
+            req_text = req.get("text", "")
+            if req_text:
+                to_embed.append(req_text)
+                to_embed_ids.append(req_id)
+
+    if to_embed:
+        try:
+            # Batch generate embeddings
+            new_embeddings = await generator.generate_batch(to_embed)
+            for req_id, embedding in zip(to_embed_ids, new_embeddings):
+                if embedding:
+                    embeddings[req_id] = embedding
+
+            # Cache in RFP
+            rfp["_requirement_embeddings"] = embeddings
+            print(f"[Word API] Generated {len(to_embed)} requirement embeddings (total cached: {len(embeddings)})")
+        except Exception as e:
+            print(f"[Word API] Failed to generate embeddings: {e}")
+
+    return embeddings
+
+
+async def _semantic_search_requirements(
+    query_text: str,
+    requirements: List[Dict],
+    requirement_embeddings: Dict[str, List[float]],
+    max_results: int,
+    min_similarity: float = 0.3
+) -> List[Dict]:
+    """
+    Search requirements using semantic similarity.
+
+    Returns list of matching requirements with similarity scores.
+    """
+    generator = _get_embedding_generator()
+    if not generator:
+        return []
+
+    # Generate query embedding
+    try:
+        query_embedding = await generator.generate(query_text)
+        if not query_embedding:
+            return []
+    except Exception as e:
+        print(f"[Word API] Query embedding failed: {e}")
+        return []
+
+    # Compute similarities
+    matches = []
+    for req in requirements:
+        req_id = req.get("id")
+        if not req_id:
+            continue
+
+        req_embedding = requirement_embeddings.get(req_id)
+        if not req_embedding:
+            continue
+
+        similarity = _cosine_similarity(query_embedding, req_embedding)
+
+        if similarity >= min_similarity:
+            matches.append({
+                "id": req_id,
+                "text": req.get("text"),
+                "type": req.get("type"),
+                "section": req.get("section"),
+                "priority": req.get("priority"),
+                "similarity_score": round(similarity, 3),
+            })
+
+    # Sort by similarity
+    matches.sort(key=lambda x: x["similarity_score"], reverse=True)
+    return matches[:max_results]
 
 
 @app.post("/api/word/context", tags=["Word Integration"])
 async def get_word_context(request: WordContextRequest):
     """
-    v5.0 Word Integration: Context Awareness Endpoint
+    v5.0 Word Integration: Context Awareness Endpoint (with Semantic Search)
 
     This endpoint allows a Word Add-in to query the Compliance Matrix
     based on the current document context. It returns relevant requirements,
     compliance status, and suggestions for the current section.
+
+    Search Methods:
+    - **Semantic Search** (default): Uses pgvector embeddings for meaning-based matching.
+      Understands synonyms, context, and related concepts.
+    - **Jaccard Similarity** (fallback): Keyword-based matching when semantic unavailable.
 
     Use cases:
     - Show relevant requirements for current paragraph
@@ -5408,39 +5566,51 @@ async def get_word_context(request: WordContextRequest):
         raise HTTPException(status_code=404, detail=f"RFP '{request.rfp_id}' not found")
 
     requirements = rfp.get("requirements", [])
-
-    # Find matching requirements based on text similarity
     matching_reqs = []
+    search_method = "jaccard"  # Default fallback
 
-    # Simple keyword-based matching (can be enhanced with semantic search)
-    query_words = set(request.current_text.lower().split())
-    query_words = {w for w in query_words if len(w) > 3}  # Filter short words
+    # Try semantic search first if enabled
+    if request.use_semantic_search:
+        try:
+            # Get or create requirement embeddings (cached)
+            requirement_embeddings = await _get_or_create_requirement_embeddings(rfp, requirements)
 
-    for req in requirements:
-        req_text = req.get("text", "").lower()
-        req_words = set(req_text.split())
+            if requirement_embeddings:
+                # Perform semantic search
+                matching_reqs = await _semantic_search_requirements(
+                    query_text=request.current_text,
+                    requirements=requirements,
+                    requirement_embeddings=requirement_embeddings,
+                    max_results=request.max_results,
+                    min_similarity=0.3  # Semantic similarity threshold
+                )
 
-        # Calculate simple Jaccard similarity
-        if query_words:
-            intersection = len(query_words & req_words)
-            union = len(query_words | req_words)
-            similarity = intersection / union if union > 0 else 0
-        else:
-            similarity = 0
+                if matching_reqs:
+                    search_method = "semantic"
+                    print(f"[Word API] Semantic search found {len(matching_reqs)} matches")
 
-        if similarity > 0.1:  # Threshold for relevance
-            matching_reqs.append({
-                "id": req.get("id"),
-                "text": req.get("text"),
-                "type": req.get("type"),
-                "section": req.get("section"),
-                "priority": req.get("priority"),
-                "similarity_score": round(similarity, 3),
-            })
+        except Exception as e:
+            print(f"[Word API] Semantic search error, falling back to Jaccard: {e}")
 
-    # Sort by similarity and limit results
-    matching_reqs.sort(key=lambda x: x["similarity_score"], reverse=True)
-    matching_reqs = matching_reqs[:request.max_results]
+    # Fallback to Jaccard similarity if semantic search didn't produce results
+    if not matching_reqs:
+        search_method = "jaccard"
+        for req in requirements:
+            similarity = _jaccard_similarity(request.current_text, req.get("text", ""))
+
+            if similarity > 0.1:  # Jaccard threshold
+                matching_reqs.append({
+                    "id": req.get("id"),
+                    "text": req.get("text"),
+                    "type": req.get("type"),
+                    "section": req.get("section"),
+                    "priority": req.get("priority"),
+                    "similarity_score": round(similarity, 3),
+                })
+
+        # Sort by similarity and limit results
+        matching_reqs.sort(key=lambda x: x["similarity_score"], reverse=True)
+        matching_reqs = matching_reqs[:request.max_results]
 
     # Get section context if heading provided
     section_context = None
@@ -5492,6 +5662,7 @@ async def get_word_context(request: WordContextRequest):
         "section_context": section_context,
         "compliance_status": compliance_status,
         "suggestions": suggestions,
+        "search_method": search_method,
     }
 
 
