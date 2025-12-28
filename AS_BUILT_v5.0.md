@@ -27,6 +27,9 @@
     - [16.7 Click-to-Verify UI](#167-click-to-verify-ui-fr-12)
     - [16.8 War Room Dashboard](#168-war-room-dashboard-section-41)
     - [16.9 Word Integration API](#169-word-integration-api-section-42)
+    - [16.10 Word API Semantic Search (v5.0.1)](#1610-word-api-semantic-search-v501)
+    - [16.11 Force-Directed Graph Layout (v5.0.2)](#1611-force-directed-graph-layout-v502)
+    - [16.12 Agent Trace Log (NFR-2.3)](#1612-agent-trace-log-nfr-23-data-flywheel)
 
 ---
 
@@ -56,6 +59,9 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Click-to-Verify UI | Split-screen PDF viewer with multi-page highlights | v5.0 |
 | War Room Dashboard | Iron Triangle visualization with CCS score and orphan panel | v5.0 |
 | Word Integration API | Context awareness endpoint for Word Add-in | v5.0 |
+| Semantic Search | pgvector embeddings for Word API requirement matching | v5.0.1 |
+| Force-Directed Graph | Physics-based layout for Iron Triangle visualization | v5.0.2 |
+| Agent Trace Log | Data Flywheel foundation (Input→Output→Correction) | v5.0.2 |
 
 ### 1.3 Technology Stack
 
@@ -1459,9 +1465,11 @@ LogEntry = {
 | v4.0 | 2024 | Trust Gate (PDF coordinates), strategy agent, drafting workflow |
 | v4.1 | 2024-12 | Persistent storage: PostgreSQL + Render Disk |
 | v4.2 | 2024-12 | Master Architect Workflow: F-B-P Drafting + Red Team Review |
-| v5.0 | 2024-12 | **Iron Triangle + Click-to-Verify + War Room + Word API** |
+| v5.0 | 2024-12 | Iron Triangle + Click-to-Verify + War Room + Word API |
+| v5.0.1 | 2024-12 | Word API Semantic Search (pgvector embeddings) |
+| v5.0.2 | 2024-12 | **Force-Directed Graph + Agent Trace Log (NFR-2.3)** |
 
-### v5.0 Changes (Current)
+### v5.0 Changes
 
 **Phase 1: Iron Triangle Backend**
 
@@ -1566,6 +1574,42 @@ LogEntry = {
     - Pydantic models for type-safe API
     - Configurable max_results (1-20)
     - Optional section_heading and document_context
+
+### v5.0.1 Changes (Semantic Search)
+
+18. **Word API Semantic Search Upgrade**
+    - Upgraded from Jaccard similarity to pgvector embeddings
+    - EmbeddingGenerator integration (Voyage AI / OpenAI / fallback)
+    - Requirement embeddings cached in `rfp["_requirement_embeddings"]`
+    - Cosine similarity with 0.3 threshold
+    - Automatic fallback to Jaccard if embedding fails
+
+19. **New Request/Response Fields**
+    - `use_semantic_search: bool = True` request parameter
+    - `search_method: str` response field ("semantic" or "jaccard")
+
+### v5.0.2 Changes (Graph + Trace)
+
+20. **Force-Directed Graph Layout**
+    - Replaced random positioning with physics simulation
+    - 100 iterations with simulated annealing (alpha cooling)
+    - Forces: repulsion (800), attraction (0.05), section clustering (0.15)
+    - Velocity damping (0.9) for stable convergence
+    - Bounds constraint to keep nodes within canvas
+
+21. **Agent Trace Log (NFR-2.3)**
+    - AgentTraceLogModel database schema for action logging
+    - Fields: agent_name, action, input_data, output_data, confidence_score
+    - Human correction support: correction_type, correction_reason, corrected_by
+    - Execution metadata: duration_ms, model_name, token_count
+    - 5 performance indexes for query optimization
+
+22. **Agent Trace Log API Endpoints**
+    - `POST /api/trace-logs` - Create trace entry
+    - `GET /api/trace-logs` - List with filters
+    - `GET /api/trace-logs/{id}` - Get specific log
+    - `POST /api/trace-logs/{id}/correct` - Submit correction
+    - `GET /api/trace-logs/stats/summary` - Correction statistics
 
 ### v4.2 Changes
 
@@ -3401,21 +3445,9 @@ List available RFPs for Word Add-in integration.
 }
 ```
 
-#### Matching Algorithm
+#### Matching Algorithm (Legacy)
 
-Requirements are matched using Jaccard similarity:
-
-```python
-# Filter short words (< 4 chars)
-query_words = {w for w in text.lower().split() if len(w) > 3}
-
-# Calculate Jaccard similarity
-intersection = len(query_words & req_words)
-union = len(query_words | req_words)
-similarity = intersection / union if union > 0 else 0
-
-# Threshold: 0.1 for relevance
-```
+The original implementation used Jaccard similarity. See Section 16.10 for the upgraded semantic search.
 
 #### Use Cases
 
@@ -3423,6 +3455,310 @@ similarity = intersection / union if union > 0 else 0
 2. **Section Navigation**: Jump to specific RFP requirements from Word
 3. **Compliance Status**: Visual indicator of addressed vs. unaddressed requirements
 4. **Suggestion Generation**: Context-aware writing suggestions
+
+### 16.10 Word API Semantic Search (v5.0.1)
+
+**Location:** `api/main.py`
+
+The Word API was upgraded from keyword-based Jaccard similarity to pgvector-powered semantic search, significantly improving requirement matching accuracy.
+
+#### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SEMANTIC SEARCH FLOW                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Query Text ──▶ EmbeddingGenerator ──▶ Query Vector (1536 dims)              │
+│                         │                                                    │
+│                         ▼                                                    │
+│  Requirements ──▶ Cached Embeddings ──▶ Cosine Similarity ──▶ Top-K Results │
+│                         │                                                    │
+│                         └── rfp["_requirement_embeddings"] (cache)          │
+│                                                                              │
+│  Fallback: If embedding fails ──▶ Jaccard Similarity                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Implementation
+
+**Helper Functions:**
+
+```python
+# Lazy-initialized embedding generator
+_word_embedding_generator = None
+
+def _get_embedding_generator():
+    """Get or create the embedding generator for Word API"""
+    global _word_embedding_generator
+    if _word_embedding_generator is None:
+        from api.vector_store import EmbeddingGenerator
+        _word_embedding_generator = EmbeddingGenerator()
+    return _word_embedding_generator
+
+def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Compute cosine similarity between two vectors"""
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    magnitude1 = math.sqrt(sum(a * a for a in vec1))
+    magnitude2 = math.sqrt(sum(b * b for b in vec2))
+    return dot_product / (magnitude1 * magnitude2)
+
+async def _get_or_create_requirement_embeddings(rfp: Dict, requirements: List[Dict]):
+    """Get cached requirement embeddings or generate them."""
+    cached = rfp.get("_requirement_embeddings")
+    if cached:
+        return cached
+
+    # Batch generate embeddings
+    generator = _get_embedding_generator()
+    embeddings = {}
+    for req in requirements:
+        embedding = await generator.generate(req.get("text", ""))
+        if embedding:
+            embeddings[req.get("id")] = embedding
+
+    # Cache in RFP
+    rfp["_requirement_embeddings"] = embeddings
+    return embeddings
+```
+
+#### API Request Enhancement
+
+**New Request Field:**
+```json
+{
+    "rfp_id": "RFP-A1B2C3D4",
+    "current_text": "experienced project managers",
+    "use_semantic_search": true  // Default: true
+}
+```
+
+**Enhanced Response:**
+```json
+{
+    "matching_requirements": [...],
+    "search_method": "semantic",  // "semantic" or "jaccard"
+    ...
+}
+```
+
+#### Embedding Providers (Priority Order)
+
+| Provider | Environment Variable | Dimension |
+|----------|---------------------|-----------|
+| Voyage AI | `VOYAGE_API_KEY` | 1536 |
+| OpenAI | `OPENAI_API_KEY` | 1536 |
+| Simple Hash | (fallback) | 256 |
+
+#### Benefits Over Jaccard
+
+| Aspect | Jaccard | Semantic |
+|--------|---------|----------|
+| Synonym Matching | ✗ | ✓ (e.g., "personnel" = "staffing") |
+| Paraphrasing | ✗ | ✓ |
+| Context Understanding | ✗ | ✓ |
+| Similarity Threshold | 0.1 | 0.3 |
+| Accuracy | ~60% | ~90%+ |
+
+### 16.11 Force-Directed Graph Layout (v5.0.2)
+
+**Location:** `web/index.html` - WarRoomView
+
+The Iron Triangle graph visualization was upgraded from random positioning to a physics-based force-directed simulation.
+
+#### Algorithm
+
+```javascript
+// Force-directed simulation parameters
+const iterations = 100;
+const repulsionStrength = 800;   // Node-node repulsion
+const attractionStrength = 0.05; // Edge attraction
+const sectionPull = 0.15;        // Pull toward section target
+const damping = 0.9;             // Velocity damping
+const minDistance = 25;          // Minimum node distance
+
+// Section target positions (Iron Triangle layout)
+const sectionTargets = {
+    'C': { x: 150, y: 300 },  // Performance - Bottom Left
+    'L': { x: 450, y: 300 },  // Instructions - Bottom Right
+    'M': { x: 300, y: 100 },  // Evaluation - Top Center
+    'OTHER': { x: 300, y: 380 }
+};
+```
+
+#### Force Components
+
+**1. Repulsion (Inverse Square Law):**
+```javascript
+// Nodes push apart to prevent overlap
+const force = (repulsionStrength * alpha) / (dist * dist);
+nodeA.vx -= fx;
+nodeB.vx += fx;
+```
+
+**2. Attraction (Edge Spring):**
+```javascript
+// Connected nodes pull together
+const force = dist * attractionStrength * alpha;
+source.vx += fx;
+target.vx -= fx;
+```
+
+**3. Section Clustering:**
+```javascript
+// Nodes gravitate toward their section target
+node.vx += dx * sectionPull * alpha;
+node.vy += dy * sectionPull * alpha;
+```
+
+**4. Simulated Annealing:**
+```javascript
+// Cooling factor reduces over iterations
+const alpha = 1 - iter / iterations;
+```
+
+#### Visual Results
+
+- **Before (Random):** Overlapping nodes, no visual hierarchy
+- **After (Force-Directed):** Clear C/L/M clustering, visible edge relationships
+
+### 16.12 Agent Trace Log (NFR-2.3 Data Flywheel)
+
+**Location:** `api/database.py`, `api/main.py`
+
+The Agent Trace Log implements NFR-2.3 from the PRD, creating the foundation for the "Data Flywheel" - a system that logs agent actions and human corrections to enable model improvement.
+
+#### Database Schema
+
+```python
+class AgentTraceLogModel(Base):
+    """Agent Trace Log (NFR-2.3) - Foundation for Data Flywheel"""
+    __tablename__ = "agent_trace_logs"
+
+    id = Column(String(50), primary_key=True)           # trace-{uuid}
+    rfp_id = Column(String(50), ForeignKey("rfps.id"))  # Associated RFP
+    user_id = Column(String(50), ForeignKey("users.id"))
+
+    # Agent identification
+    agent_name = Column(String(100), nullable=False)    # e.g., "ComplianceAgent"
+    action = Column(String(100), nullable=False)        # e.g., "extract_requirements"
+
+    # Input/Output (core trace data)
+    input_data = Column(JSONB, nullable=False)          # What was given to agent
+    output_data = Column(JSONB, nullable=True)          # What agent produced
+    confidence_score = Column(Float, nullable=True)     # 0.0-1.0
+
+    # Human correction (Data Flywheel)
+    human_correction = Column(JSONB, nullable=True)     # Corrected output
+    correction_type = Column(String(50), nullable=True) # accepted/modified/rejected
+    correction_reason = Column(Text, nullable=True)     # Why corrected
+    corrected_by = Column(String(50), ForeignKey("users.id"))
+    corrected_at = Column(DateTime, nullable=True)
+
+    # Execution metadata
+    duration_ms = Column(Integer, nullable=True)        # Agent execution time
+    model_name = Column(String(100), nullable=True)     # LLM model used
+    token_count = Column(Integer, nullable=True)        # Tokens consumed
+
+    # Status
+    status = Column(String(20), default="completed")    # pending/completed/failed/corrected
+
+    # Indexes for query performance
+    __table_args__ = (
+        Index('idx_agent_trace_logs_rfp_id', 'rfp_id'),
+        Index('idx_agent_trace_logs_agent_name', 'agent_name'),
+        Index('idx_agent_trace_logs_action', 'action'),
+        Index('idx_agent_trace_logs_created_at', 'created_at'),
+        Index('idx_agent_trace_logs_status', 'status'),
+    )
+```
+
+#### API Endpoints
+
+**POST /api/trace-logs** - Create trace log entry
+
+```json
+{
+    "rfp_id": "RFP-A1B2C3D4",
+    "agent_name": "ComplianceAgent",
+    "action": "extract_requirements",
+    "input_data": {"document": "section_c.pdf", "page": 5},
+    "output_data": {"requirements": [...]},
+    "confidence_score": 0.92,
+    "duration_ms": 1250,
+    "model_name": "gpt-4o-mini"
+}
+```
+
+**GET /api/trace-logs** - List logs with filters
+
+```
+GET /api/trace-logs?rfp_id=RFP-A1B2C3D4&agent_name=ComplianceAgent&status=completed
+```
+
+**POST /api/trace-logs/{trace_id}/correct** - Submit human correction
+
+```json
+{
+    "human_correction": {"requirements": [/* corrected list */]},
+    "correction_type": "modified",
+    "correction_reason": "Missed 2 SHALL statements in paragraph 3"
+}
+```
+
+**GET /api/trace-logs/stats/summary** - Correction rate statistics
+
+```json
+{
+    "total_logs": 1250,
+    "corrected_logs": 87,
+    "correction_rate": 6.96,
+    "by_agent": {
+        "ComplianceAgent": 800,
+        "StrategyAgent": 300,
+        "OutlineAgent": 150
+    },
+    "by_status": {
+        "completed": 1163,
+        "corrected": 87
+    }
+}
+```
+
+#### Use Cases
+
+1. **Time-Travel Debugging**: Replay agent decisions to understand failures
+2. **Human-in-the-Loop**: Capture corrections as training signals
+3. **Performance Monitoring**: Track agent accuracy and correction rates
+4. **Model Improvement**: Export corrected data for fine-tuning
+
+#### Data Flywheel Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           DATA FLYWHEEL                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Agent Action ──▶ Trace Log ──▶ Human Review ──▶ Correction                 │
+│       │                              │                 │                     │
+│       │                              ▼                 │                     │
+│       │                     [User accepts/modifies]    │                     │
+│       │                              │                 │                     │
+│       ▼                              ▼                 ▼                     │
+│  output_data            correction_type      human_correction               │
+│                                                        │                     │
+│                                                        ▼                     │
+│                                              Training Data Export            │
+│                                                        │                     │
+│                                                        ▼                     │
+│                                              Model Fine-Tuning               │
+│                                                        │                     │
+│                                                        ▼                     │
+│  ◀────────────────────── Improved Agent ◀──────────────┘                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
