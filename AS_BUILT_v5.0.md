@@ -24,6 +24,7 @@
 14. [Team Workspaces (v4.1)](#14-team-workspaces-v41)
 15. [Master Architect Workflow (v4.2)](#15-master-architect-workflow-v42)
 16. [Iron Triangle Graph & Validation (v5.0)](#16-iron-triangle-graph--validation-v50)
+    - [16.7 Click-to-Verify UI](#167-click-to-verify-ui-fr-12)
 
 ---
 
@@ -50,6 +51,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | NetworkX DAG | Iron Triangle dependency graph with orphan detection | v5.0 |
 | Multi-Page Spanning | SourceCoordinate with visual_rects for spanning requirements | v5.0 |
 | Validation Engine | Deterministic L-M-C consistency checking | v5.0 |
+| Click-to-Verify UI | Split-screen PDF viewer with multi-page highlights | v5.0 |
 
 ### 1.3 Technology Stack
 
@@ -1453,9 +1455,11 @@ LogEntry = {
 | v4.0 | 2024 | Trust Gate (PDF coordinates), strategy agent, drafting workflow |
 | v4.1 | 2024-12 | Persistent storage: PostgreSQL + Render Disk |
 | v4.2 | 2024-12 | Master Architect Workflow: F-B-P Drafting + Red Team Review |
-| v5.0 | 2024-12 | **Iron Triangle DAG + Validation Engine (PRD v5.0 Phase 1)** |
+| v5.0 | 2024-12 | **Iron Triangle DAG + Validation Engine + Click-to-Verify UI** |
 
 ### v5.0 Changes (Current)
+
+**Phase 1: Iron Triangle Backend**
 
 1. **NetworkX Requirements DAG (FR-2.2)**
    - Directed acyclic graph for requirements dependencies
@@ -1483,6 +1487,32 @@ LogEntry = {
 
 5. **New Dependencies**
    - NetworkX >= 3.0 for graph operations
+
+**Phase 2: Click-to-Verify UI (FR-1.2)**
+
+6. **Split-Screen PDF Viewer**
+   - Compliance matrix on left, PDF viewer on right
+   - Click "Source" to open split-screen view
+   - Shift+Click for popup modal mode
+   - Selected requirement row highlighted
+
+7. **Multi-Page Highlight Support**
+   - Page indicators (dots) for spanning requirements
+   - Click dot to navigate to that page
+   - Amber highlights for multi-rect requirements
+   - Blue highlights for single-rect requirements
+
+8. **PDFViewerModal Enhancements**
+   - `mode` prop: "modal" or "split"
+   - `highlightPages` computed from visual_rects
+   - `getCurrentPageHighlights()` for multi-rect rendering
+   - "Spans X pages" badge indicator
+
+9. **MatrixView Updates**
+   - `splitScreenMode` state for layout switching
+   - `MatrixContent` extracted for reuse
+   - Selected row visual indicator
+   - Dynamic table height in split mode
 
 ### v4.2 Changes
 
@@ -3045,6 +3075,99 @@ Response:
 ```
 networkx>=3.0  # v5.0: Requirements dependency graph
 ```
+
+### 16.7 Click-to-Verify UI (FR-1.2)
+
+**Location:** `web/index.html` - PDFViewerModal, MatrixView
+
+The Click-to-Verify UI provides visual source verification through split-screen PDF viewing with highlight overlays.
+
+#### Split-Screen Mode
+
+```javascript
+// User clicks "Source" button in Compliance Matrix
+<button onClick={() => onViewSource(req, true)}>
+    Source
+</button>
+
+// MatrixView renders split-screen layout
+if (splitScreenMode && selectedRequirement) {
+    return (
+        <div className="split-screen-container">
+            <div className="split-screen-left">
+                <MatrixContent ... />
+            </div>
+            <PDFViewerModal
+                rfpId={rfpId}
+                requirement={selectedRequirement}
+                sourceData={sourceData}
+                mode="split"
+            />
+        </div>
+    );
+}
+```
+
+#### Multi-Page Highlight Support
+
+```javascript
+// PDFViewerModal handles visual_rects from v5.0 API
+const highlightPages = useMemo(() => {
+    if (sourceData?.visual_rects) {
+        return [...new Set(sourceData.visual_rects.map(vr => vr.page_number))];
+    }
+    return sourceData?.page_number ? [sourceData.page_number] : [];
+}, [sourceData]);
+
+// Render all highlights for current page
+const getCurrentPageHighlights = () => {
+    return sourceData.visual_rects
+        .filter(vr => vr.page_number === currentPage)
+        .map(vr => ({
+            style: {
+                left: `${vr.bounding_box.x0 * 100}%`,
+                top: `${vr.bounding_box.y0 * 100}%`,
+                width: `${(vr.bounding_box.x1 - vr.bounding_box.x0) * 100}%`,
+                height: `${(vr.bounding_box.y1 - vr.bounding_box.y0) * 100}%`
+            }
+        }));
+};
+```
+
+#### Page Indicators
+
+The UI shows page indicators (dots) for requirements spanning multiple pages:
+
+```jsx
+{highlightPages.map(pageNum => (
+    <div
+        className={`page-dot has-highlight ${currentPage === pageNum ? 'current' : ''}`}
+        onClick={() => setCurrentPage(pageNum)}
+    />
+))}
+```
+
+#### CSS Classes
+
+| Class | Description |
+|-------|-------------|
+| `.split-screen-container` | Flexbox container for split layout |
+| `.split-screen-left` | Matrix table half (50%) |
+| `.split-screen-right` | PDF viewer half (50%) |
+| `.pdf-highlight` | Blue highlight (single rect) |
+| `.pdf-highlight-multi` | Amber highlight (multi-rect) |
+| `.page-dot` | Page indicator dot |
+| `.page-dot.has-highlight` | Amber dot for pages with content |
+| `.spans-badge` | "Multi-page" indicator badge |
+
+#### User Interaction
+
+| Action | Result |
+|--------|--------|
+| Click "Source" | Open split-screen with PDF viewer |
+| Shift+Click "Source" | Open popup modal instead |
+| Click page dot | Navigate to that page |
+| Click "Close Viewer" | Exit split-screen mode |
 
 ---
 

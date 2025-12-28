@@ -592,6 +592,97 @@
             50% { box-shadow: 0 0 0 8px rgba(79, 140, 255, 0); }
         }
 
+        /* Split-Screen Mode (Trust Gate v5.0) */
+        .split-screen-container {
+            display: flex;
+            height: calc(100vh - 120px);
+            gap: 0;
+        }
+
+        .split-screen-left {
+            flex: 1;
+            overflow: auto;
+            border-right: 2px solid var(--border-color);
+        }
+
+        .split-screen-right {
+            width: 50%;
+            min-width: 400px;
+            max-width: 60%;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-secondary);
+        }
+
+        .split-screen-right .pdf-viewer-header {
+            padding: 12px 16px;
+        }
+
+        .split-screen-right .pdf-viewer-body {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .split-screen-right .pdf-sidebar {
+            width: 280px;
+        }
+
+        /* Page indicator dots for multi-page requirements */
+        .page-indicators {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-left: 12px;
+        }
+
+        .page-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .page-dot.has-highlight {
+            background: var(--accent-amber);
+            border-color: var(--accent-amber);
+        }
+
+        .page-dot.current {
+            transform: scale(1.3);
+            border-width: 2px;
+        }
+
+        .page-dot.current.has-highlight {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .spans-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            background: rgba(251, 146, 60, 0.2);
+            color: var(--accent-amber);
+            border-radius: 4px;
+            margin-left: 8px;
+        }
+
+        /* Multiple highlight boxes on same page */
+        .pdf-highlight-multi {
+            position: absolute;
+            background: rgba(251, 191, 36, 0.35);
+            border: 2px solid var(--accent-amber);
+            border-radius: 2px;
+            animation: pulse-highlight-amber 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-highlight-amber {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5); }
+            50% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
+        }
+
         .pdf-sidebar {
             width: 320px;
             background: var(--bg-card);
@@ -814,22 +905,32 @@
             const [filterType, setFilterType] = useState('all');
             const [filterPriority, setFilterPriority] = useState('all');
 
-            // PDF Viewer State (Trust Gate)
+            // PDF Viewer State (Trust Gate v5.0)
             const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+            const [splitScreenMode, setSplitScreenMode] = useState(false);
             const [selectedRequirement, setSelectedRequirement] = useState(null);
             const [sourceData, setSourceData] = useState(null);
 
-            // Handler to open PDF viewer with source data
-            const handleViewSource = async (requirement) => {
+            // Handler to open PDF viewer with source data (v5.0: split-screen support)
+            const handleViewSource = async (requirement, useSplitScreen = true) => {
                 setSelectedRequirement(requirement);
-                setPdfViewerOpen(true);
 
-                // Fetch source coordinates from API
+                // Use split-screen by default, popup if shift is held or explicitly requested
+                if (useSplitScreen && !window.event?.shiftKey) {
+                    setSplitScreenMode(true);
+                    setPdfViewerOpen(false);
+                } else {
+                    setPdfViewerOpen(true);
+                    setSplitScreenMode(false);
+                }
+
+                // Fetch source coordinates from API (v5.0: includes visual_rects)
                 try {
                     const response = await fetch(`/api/rfp/${currentRfpId}/requirements/${requirement.id}/source`);
                     if (response.ok) {
                         const data = await response.json();
-                        setSourceData(data);
+                        // v5.0: Source data now includes visual_rects for multi-page spanning
+                        setSourceData(data.source || data);
                     } else {
                         setSourceData(null);
                     }
@@ -1300,6 +1401,10 @@
                                 onExport={exportToExcel}
                                 rfpId={currentRfpId}
                                 onViewSource={handleViewSource}
+                                splitScreenMode={splitScreenMode}
+                                setSplitScreenMode={setSplitScreenMode}
+                                selectedRequirement={selectedRequirement}
+                                sourceData={sourceData}
                             />
                         )}
                         
@@ -1368,8 +1473,8 @@
                         />
                     )}
 
-                    {/* PDF Viewer Modal (Trust Gate) */}
-                    {pdfViewerOpen && (
+                    {/* PDF Viewer Modal (Trust Gate v5.0 - popup mode) */}
+                    {pdfViewerOpen && !splitScreenMode && (
                         <PDFViewerModal
                             rfpId={currentRfpId}
                             requirement={selectedRequirement}
@@ -1379,6 +1484,7 @@
                                 setSelectedRequirement(null);
                                 setSourceData(null);
                             }}
+                            mode="modal"
                         />
                     )}
                 </div>
@@ -2814,16 +2920,37 @@
             );
         }
 
-        // PDF Viewer Modal (Trust Gate - Source Traceability)
-        function PDFViewerModal({ rfpId, requirement, sourceData, onClose }) {
+        // PDF Viewer Modal (Trust Gate - Source Traceability v5.0)
+        // Enhanced with multi-page spanning support and split-screen mode
+        function PDFViewerModal({ rfpId, requirement, sourceData, onClose, mode = 'modal' }) {
             const canvasRef = useRef(null);
             const [pdfDoc, setPdfDoc] = useState(null);
             const [currentPage, setCurrentPage] = useState(1);
             const [totalPages, setTotalPages] = useState(0);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
-            const [scale, setScale] = useState(1.5);
+            const [scale, setScale] = useState(mode === 'split' ? 1.2 : 1.5);
             const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 });
+
+            // v5.0: Get all pages that have highlights (multi-page spanning)
+            const highlightPages = useMemo(() => {
+                if (!sourceData) return [];
+
+                // Check for v5.0 visual_rects (multi-page spanning)
+                if (sourceData.visual_rects && sourceData.visual_rects.length > 0) {
+                    return [...new Set(sourceData.visual_rects.map(vr => vr.page_number))].sort((a, b) => a - b);
+                }
+
+                // Check for all_pages from API
+                if (sourceData.all_pages && sourceData.all_pages.length > 0) {
+                    return sourceData.all_pages;
+                }
+
+                // Fallback to single page
+                return sourceData.page_number ? [sourceData.page_number] : [];
+            }, [sourceData]);
+
+            const spansMultiplePages = highlightPages.length > 1;
 
             // Load PDF document
             useEffect(() => {
@@ -2845,8 +2972,10 @@
                         setPdfDoc(pdf);
                         setTotalPages(pdf.numPages);
 
-                        // Jump to the page with the requirement if we have source data
-                        if (sourceData?.page_number) {
+                        // Jump to the first page with highlights
+                        if (highlightPages.length > 0) {
+                            setCurrentPage(highlightPages[0]);
+                        } else if (sourceData?.page_number) {
                             setCurrentPage(sourceData.page_number);
                         }
 
@@ -2864,7 +2993,7 @@
                     setError('PDF.js library not loaded');
                     setLoading(false);
                 }
-            }, [rfpId, sourceData]);
+            }, [rfpId, sourceData, highlightPages]);
 
             // Render current page
             useEffect(() => {
@@ -2894,99 +3023,164 @@
                 renderPage();
             }, [pdfDoc, currentPage, scale]);
 
-            // Calculate overlay positions based on bounding box
-            const getOverlayStyle = () => {
-                if (!sourceData?.bounding_box || !canvasDimensions.width) return null;
+            // v5.0: Get all highlight boxes for current page (supports multi-rect)
+            const getCurrentPageHighlights = () => {
+                if (!sourceData || !canvasDimensions.width) return [];
 
-                const bbox = sourceData.bounding_box;
-                // Coordinates are normalized (0-1), convert to pixels
-                return {
-                    left: `${bbox.x0 * 100}%`,
-                    top: `${bbox.y0 * 100}%`,
-                    width: `${(bbox.x1 - bbox.x0) * 100}%`,
-                    height: `${(bbox.y1 - bbox.y0) * 100}%`
-                };
+                const highlights = [];
+
+                // Check for v5.0 visual_rects
+                if (sourceData.visual_rects && sourceData.visual_rects.length > 0) {
+                    sourceData.visual_rects.forEach((vr, idx) => {
+                        if (vr.page_number === currentPage && vr.bounding_box) {
+                            const bbox = vr.bounding_box;
+                            // Handle both normalized and absolute coordinates
+                            const isNormalized = bbox.x1 <= 1 && bbox.y1 <= 1;
+                            highlights.push({
+                                id: idx,
+                                style: isNormalized ? {
+                                    left: `${bbox.x0 * 100}%`,
+                                    top: `${bbox.y0 * 100}%`,
+                                    width: `${(bbox.x1 - bbox.x0) * 100}%`,
+                                    height: `${(bbox.y1 - bbox.y0) * 100}%`
+                                } : {
+                                    left: `${(bbox.x0 / bbox.page_width) * 100}%`,
+                                    top: `${(bbox.y0 / bbox.page_height) * 100}%`,
+                                    width: `${((bbox.x1 - bbox.x0) / bbox.page_width) * 100}%`,
+                                    height: `${((bbox.y1 - bbox.y0) / bbox.page_height) * 100}%`
+                                }
+                            });
+                        }
+                    });
+                }
+
+                // Fallback to single bounding_box if no visual_rects
+                if (highlights.length === 0 && sourceData.bounding_box && currentPage === sourceData.page_number) {
+                    const bbox = sourceData.bounding_box;
+                    highlights.push({
+                        id: 0,
+                        style: {
+                            left: `${bbox.x0 * 100}%`,
+                            top: `${bbox.y0 * 100}%`,
+                            width: `${(bbox.x1 - bbox.x0) * 100}%`,
+                            height: `${(bbox.y1 - bbox.y0) * 100}%`
+                        }
+                    });
+                }
+
+                return highlights;
             };
 
-            const overlayStyle = getOverlayStyle();
-            const isOnHighlightPage = sourceData?.page_number === currentPage;
+            const currentHighlights = getCurrentPageHighlights();
+            const hasHighlightsOnCurrentPage = currentHighlights.length > 0;
+
+            // Wrapper component based on mode
+            const ViewerWrapper = ({ children }) => {
+                if (mode === 'split') {
+                    return <div className="split-screen-right">{children}</div>;
+                }
+                return (
+                    <div className="pdf-viewer-modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
+                        <div className="pdf-viewer-container">{children}</div>
+                    </div>
+                );
+            };
 
             return (
-                <div className="pdf-viewer-modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
-                    <div className="pdf-viewer-container">
-                        <div className="pdf-viewer-header">
-                            <h3>
-                                <Icon name="FileText" size={20} />
-                                Source Document Viewer
-                                <span style={{
-                                    fontSize: '12px',
-                                    background: 'rgba(79, 140, 255, 0.2)',
-                                    padding: '2px 8px',
-                                    borderRadius: '4px',
-                                    marginLeft: '8px'
-                                }}>
-                                    Trust Gate
+                <ViewerWrapper>
+                    <div className="pdf-viewer-header">
+                        <h3>
+                            <Icon name="FileText" size={20} />
+                            Source Document
+                            <span style={{
+                                fontSize: '12px',
+                                background: 'rgba(79, 140, 255, 0.2)',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                marginLeft: '8px'
+                            }}>
+                                Trust Gate v5.0
+                            </span>
+                            {spansMultiplePages && (
+                                <span className="spans-badge">
+                                    Spans {highlightPages.length} pages
                                 </span>
-                            </h3>
+                            )}
+                        </h3>
 
-                            <div className="page-nav">
-                                <button
-                                    onClick={() => setScale(s => Math.max(0.5, s - 0.25))}
-                                    title="Zoom out"
-                                >
-                                    <Icon name="ZoomOut" size={16} />
-                                </button>
-                                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                                    {Math.round(scale * 100)}%
-                                </span>
-                                <button
-                                    onClick={() => setScale(s => Math.min(3, s + 0.25))}
-                                    title="Zoom in"
-                                >
-                                    <Icon name="ZoomIn" size={16} />
-                                </button>
+                        <div className="page-nav">
+                            <button
+                                onClick={() => setScale(s => Math.max(0.5, s - 0.25))}
+                                title="Zoom out"
+                            >
+                                <Icon name="ZoomOut" size={16} />
+                            </button>
+                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                {Math.round(scale * 100)}%
+                            </span>
+                            <button
+                                onClick={() => setScale(s => Math.min(3, s + 0.25))}
+                                title="Zoom in"
+                            >
+                                <Icon name="ZoomIn" size={16} />
+                            </button>
 
-                                <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 8px' }} />
-
-                                <button
-                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                    disabled={currentPage <= 1}
-                                >
-                                    <Icon name="ChevronLeft" size={16} />
-                                </button>
-                                <span style={{ fontSize: '13px', minWidth: '80px', textAlign: 'center' }}>
-                                    Page {currentPage} of {totalPages}
-                                </span>
-                                <button
-                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                    disabled={currentPage >= totalPages}
-                                >
-                                    <Icon name="ChevronRight" size={16} />
-                                </button>
-
-                                {sourceData?.page_number && currentPage !== sourceData.page_number && (
-                                    <button
-                                        onClick={() => setCurrentPage(sourceData.page_number)}
-                                        style={{ background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
-                                    >
-                                        Go to Source (p.{sourceData.page_number})
-                                    </button>
-                                )}
-                            </div>
+                            <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 8px' }} />
 
                             <button
-                                onClick={onClose}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: 'var(--text-secondary)',
-                                    cursor: 'pointer',
-                                    padding: '8px'
-                                }}
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage <= 1}
                             >
-                                <Icon name="X" size={20} />
+                                <Icon name="ChevronLeft" size={16} />
                             </button>
+                            <span style={{ fontSize: '13px', minWidth: '80px', textAlign: 'center' }}>
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage >= totalPages}
+                            >
+                                <Icon name="ChevronRight" size={16} />
+                            </button>
+
+                            {/* v5.0: Page indicators showing which pages have highlights */}
+                            {highlightPages.length > 0 && (
+                                <div className="page-indicators" title="Pages with highlighted content">
+                                    {highlightPages.map(pageNum => (
+                                        <div
+                                            key={pageNum}
+                                            className={`page-dot has-highlight ${currentPage === pageNum ? 'current' : ''}`}
+                                            onClick={() => setCurrentPage(pageNum)}
+                                            title={`Go to page ${pageNum}`}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Quick jump to first source page if not on a highlight page */}
+                            {highlightPages.length > 0 && !highlightPages.includes(currentPage) && (
+                                <button
+                                    onClick={() => setCurrentPage(highlightPages[0])}
+                                    style={{ background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
+                                >
+                                    Go to Source
+                                </button>
+                            )}
                         </div>
+
+                        <button
+                            onClick={onClose}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer',
+                                padding: '8px'
+                            }}
+                        >
+                            <Icon name="X" size={20} />
+                        </button>
+                    </div>
 
                         <div className="pdf-viewer-body">
                             <div className="pdf-canvas-wrapper">
@@ -3007,10 +3201,16 @@
                                     <div className="pdf-page-container">
                                         <canvas ref={canvasRef} className="pdf-canvas" />
 
-                                        {/* Highlight overlay */}
-                                        {isOnHighlightPage && overlayStyle && (
+                                        {/* v5.0: Multiple highlight overlays per page */}
+                                        {currentHighlights.length > 0 && (
                                             <div className="pdf-overlay" style={{ width: canvasDimensions.width, height: canvasDimensions.height }}>
-                                                <div className="pdf-highlight" style={overlayStyle} />
+                                                {currentHighlights.map((highlight, idx) => (
+                                                    <div
+                                                        key={highlight.id}
+                                                        className={currentHighlights.length > 1 ? 'pdf-highlight-multi' : 'pdf-highlight'}
+                                                        style={highlight.style}
+                                                    />
+                                                ))}
                                             </div>
                                         )}
                                     </div>
@@ -3038,8 +3238,19 @@
                                     {sourceData && (
                                         <>
                                             <div className="source-info-card">
-                                                <label>Source Page</label>
-                                                <div className="value">Page {sourceData.page_number || 'N/A'}</div>
+                                                <label>Source Location</label>
+                                                <div className="value">
+                                                    {spansMultiplePages ? (
+                                                        <div>
+                                                            <span>Pages {highlightPages.join(', ')}</span>
+                                                            <span className="spans-badge" style={{ marginLeft: '8px' }}>
+                                                                Multi-page
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        `Page ${sourceData.page_number || 'N/A'}`
+                                                    )}
+                                                </div>
                                             </div>
 
                                             <div className="source-info-card">
@@ -3103,12 +3314,11 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
+                </ViewerWrapper>
             );
         }
 
-        // Matrix View
+        // Matrix View with Split-Screen Support (v5.0)
         function MatrixView({
             requirements, allRequirements, stats,
             searchQuery, setSearchQuery,
@@ -3116,12 +3326,84 @@
             filterPriority, setFilterPriority,
             onExport,
             rfpId,
-            onViewSource
+            onViewSource,
+            splitScreenMode,
+            setSplitScreenMode,
+            selectedRequirement,
+            sourceData
         }) {
             const uniqueTypes = [...new Set(allRequirements.map(r => r.type).filter(Boolean))];
-            
+
+            // Split-screen layout wrapper
+            if (splitScreenMode && selectedRequirement) {
+                return (
+                    <div className="split-screen-container animate-in">
+                        <div className="split-screen-left">
+                            <MatrixContent
+                                requirements={requirements}
+                                allRequirements={allRequirements}
+                                stats={stats}
+                                searchQuery={searchQuery}
+                                setSearchQuery={setSearchQuery}
+                                filterType={filterType}
+                                setFilterType={setFilterType}
+                                filterPriority={filterPriority}
+                                setFilterPriority={setFilterPriority}
+                                onExport={onExport}
+                                onViewSource={onViewSource}
+                                splitScreenMode={splitScreenMode}
+                                setSplitScreenMode={setSplitScreenMode}
+                                selectedRequirementId={selectedRequirement?.id}
+                            />
+                        </div>
+                        <PDFViewerModal
+                            rfpId={rfpId}
+                            requirement={selectedRequirement}
+                            sourceData={sourceData}
+                            onClose={() => setSplitScreenMode(false)}
+                            mode="split"
+                        />
+                    </div>
+                );
+            }
+
             return (
                 <div className="animate-in">
+                    <MatrixContent
+                        requirements={requirements}
+                        allRequirements={allRequirements}
+                        stats={stats}
+                        searchQuery={searchQuery}
+                        setSearchQuery={setSearchQuery}
+                        filterType={filterType}
+                        setFilterType={setFilterType}
+                        filterPriority={filterPriority}
+                        setFilterPriority={setFilterPriority}
+                        onExport={onExport}
+                        onViewSource={onViewSource}
+                        splitScreenMode={splitScreenMode}
+                        setSplitScreenMode={setSplitScreenMode}
+                    />
+                </div>
+            );
+        }
+
+        // Matrix Content (extracted for split-screen reuse)
+        function MatrixContent({
+            requirements, allRequirements, stats,
+            searchQuery, setSearchQuery,
+            filterType, setFilterType,
+            filterPriority, setFilterPriority,
+            onExport,
+            onViewSource,
+            splitScreenMode,
+            setSplitScreenMode,
+            selectedRequirementId
+        }) {
+            const uniqueTypes = [...new Set(allRequirements.map(r => r.type).filter(Boolean))];
+
+            return (
+                <>
                     <div className="page-header">
                         <h2>Compliance Matrix</h2>
                         <p>Extracted {stats?.total || allRequirements.length} requirements from your RFP documents</p>
@@ -3201,12 +3483,24 @@
                                 <Icon name="Download" />
                                 Export Excel
                             </button>
+                            {/* v5.0: Split-screen toggle */}
+                            {splitScreenMode ? (
+                                <button
+                                    className="btn"
+                                    onClick={() => setSplitScreenMode(false)}
+                                    style={{ marginLeft: '8px' }}
+                                    title="Exit split-screen view"
+                                >
+                                    <Icon name="X" size={14} />
+                                    Close Viewer
+                                </button>
+                            ) : null}
                         </div>
                     </div>
-                    
+
                     {/* Table */}
                     <div className="card">
-                        <div className="table-container" style={{ maxHeight: '500px', overflow: 'auto' }}>
+                        <div className="table-container" style={{ maxHeight: splitScreenMode ? 'calc(100vh - 300px)' : '500px', overflow: 'auto' }}>
                             <table>
                                 <thead>
                                     <tr>
@@ -3216,12 +3510,18 @@
                                         <th style={{ width: 120 }}>Type</th>
                                         <th style={{ width: 100 }}>Priority</th>
                                         <th style={{ width: 80 }}>Confidence</th>
-                                        <th style={{ width: 100 }}>Source</th>
+                                        <th style={{ width: 120 }}>Source</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {requirements.map((req, idx) => (
-                                        <tr key={req.id || idx}>
+                                        <tr
+                                            key={req.id || idx}
+                                            style={selectedRequirementId === req.id ? {
+                                                background: 'rgba(79, 140, 255, 0.15)',
+                                                borderLeft: '3px solid var(--accent-blue)'
+                                            } : {}}
+                                        >
                                             <td><span className="req-id">{req.id}</span></td>
                                             <td className="req-text" title={req.text}>{req.text}</td>
                                             <td>{req.section}</td>
@@ -3234,12 +3534,17 @@
                                             <td>
                                                 <button
                                                     className="view-source-btn"
-                                                    onClick={() => onViewSource && onViewSource(req)}
+                                                    onClick={() => onViewSource && onViewSource(req, true)}
                                                     disabled={!onViewSource}
-                                                    title="View requirement in source PDF"
+                                                    title="View in split-screen (hold Shift for popup)"
+                                                    style={selectedRequirementId === req.id ? {
+                                                        background: 'var(--accent-blue)',
+                                                        borderColor: 'var(--accent-blue)',
+                                                        color: 'white'
+                                                    } : {}}
                                                 >
                                                     <Icon name="FileSearch" size={14} />
-                                                    View
+                                                    {selectedRequirementId === req.id ? 'Viewing' : 'Source'}
                                                 </button>
                                             </td>
                                         </tr>
@@ -3248,12 +3553,17 @@
                             </table>
                         </div>
                     </div>
-                    
-                    <div style={{ marginTop: 16, color: 'var(--text-muted)', fontSize: 14 }}>
-                        Showing {requirements.length} of {allRequirements.length} requirements
-                        {stats?.processing_time && ` · Processed in ${stats.processing_time.toFixed(2)}s`}
+
+                    <div style={{ marginTop: 16, color: 'var(--text-muted)', fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>
+                            Showing {requirements.length} of {allRequirements.length} requirements
+                            {stats?.processing_time && ` · Processed in ${stats.processing_time.toFixed(2)}s`}
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                            v5.0 Trust Gate: Click Source to verify requirement locations
+                        </span>
                     </div>
-                </div>
+                </>
             );
         }
         
