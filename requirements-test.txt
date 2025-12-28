@@ -9,8 +9,14 @@ pytest-cov>=4.0.0
 # Core dependencies (required for imports)
 fastapi>=0.109.0
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
 sqlalchemy>=2.0.0
 python-multipart>=0.0.6
+uvicorn>=0.23.0
+email-validator>=2.0.0
+
+# HTTP client (required for test client)
+httpx>=0.24.0
 
 # Graph and ML
 networkx>=3.0
@@ -20,6 +26,21 @@ langgraph>=0.0.1
 cffi>=1.15.0
 cryptography>=41.0.0
 PyJWT>=2.8.0
+bcrypt>=4.0.0
+passlib[bcrypt]>=1.7.4
+pyotp>=2.9.0
+
+# Document processing (required for agent imports)
+pypdf>=3.0.0
+python-docx>=0.8.11
+openpyxl>=3.0.10
+
+# Image/QR (required for 2FA)
+Pillow>=10.0.0
+qrcode>=7.4.0
+
+# JSON serialization
+orjson>=3.9.0
 
 # Optional: For coverage reports
 # pytest-html>=4.0.0

@@ -28,12 +28,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
-          # Install main dependencies if requirements.txt exists
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Verify imports
+        run: |
+          python -c "from core.state import ProposalState; print('core.state OK')"
+          python -c "from agents.compliance_agent import ComplianceAgent; print('agents OK')"
+          python -c "from agents.enhanced_compliance.models import RequirementNode; print('models OK')"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
 
       - name: Run tests
         run: |
-          pytest tests/ -v --tb=short -q
+          pytest tests/ -v --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}
 
@@ -72,5 +78,5 @@ jobs:
 
       - name: Run Ruff linter
         run: |
-          ruff check agents/ api/ tests/ --output-format=github
-        continue-on-error: true
+          echo "Note: Linting errors are advisory only and do not block CI"
+          ruff check agents/ api/ tests/ --output-format=github || true
