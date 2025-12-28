@@ -1,6 +1,7 @@
 # PropelAI: Autonomous Proposal Operating System
-**Current Status:** v4.1 - Stateful Agentic Architecture with pgvector semantic search.
-**All Core Phases Complete:** Trust Gate ✓ | Iron Triangle ✓ | Drafting Agent ✓ | Persistence ✓
+**Current Status:** v5.0 - Trust Gate + Strategy Engine Architecture
+**Phase 1 Complete:** Iron Triangle DAG ✓ | Click-to-Verify ✓ | War Room ✓ | Word API ✓
+**Phase 2 Planned:** Strategy Engine | Annotated Outline | Win Theme Generator
 
 ## 1. Architecture & Tech Stack
 - **Backend:** Python 3.10+ / FastAPI / Uvicorn.
@@ -647,4 +648,130 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 ## 11. Reference Documents
 - `docs/TECHNICAL_SPECIFICATION_v4.md`: Original v4.0 architecture specification (all phases complete)
 - `AS_BUILT_v4.1.md`: Comprehensive technical documentation
+- `AS_BUILT_v5.0.md`: v5.0 Trust Gate & Strategy Engine documentation
 - `HANDOFF_DOCUMENT.md`: Legacy v2.9 documentation (Shipley methodology)
+- `prd5.rtf`: PRD v5.0 Phase 1 - Trust Gate specification
+- `prd12.rtf`: PRD v5.0 Phase 2 - Strategy Engine specification
+
+## 12. v5.0 Phase 1: Trust Gate (IMPLEMENTED)
+**Status:** Complete - Deterministic compliance verification
+
+### Features Implemented:
+- **Iron Triangle DAG**: NetworkX-based dependency graph linking C ↔ L ↔ M sections
+- **Multi-Page Spanning**: `visual_rects` array for requirements crossing page boundaries
+- **Click-to-Verify UI**: Split-screen PDF viewer with yellow highlight overlays
+- **War Room Dashboard**: CCS score, Iron Triangle graph visualization, orphan panel
+- **Word Integration API**: Context awareness endpoints for future Word Add-in
+
+### API Endpoints:
+- `GET /api/rfp/{rfp_id}/graph` - Iron Triangle DAG with analysis
+- `GET /api/rfp/{rfp_id}/graph/orphans` - Unlinked requirements
+- `POST /api/rfp/{rfp_id}/graph/link` - Create C↔L↔M links
+- `DELETE /api/rfp/{rfp_id}/graph/link/{link_id}` - Remove links
+- `POST /api/word/context` - Word Add-in context awareness
+- `GET /api/word/rfps` - List RFPs for Word Add-in
+
+### Frontend Components:
+- `PDFViewerModal`: Supports `mode="split"` for split-screen, multi-page highlights
+- `WarRoomView`: CCS header, SVG Iron Triangle graph, orphan sidebar
+- `MatrixView`: Split-screen mode toggle with `splitScreenMode` state
+
+## 13. v5.0 Phase 2: The Strategy Engine (ROADMAP)
+**Status:** Planned - Transform Compliance Matrix into strategic Annotated Outline
+**Target Users:** "Charles" (Executive Strategist) & "Brenda" (Proposal Manager)
+
+### Epic 1: Iron Triangle Logic Graph Enhancement
+
+**FR-1.1: Section M Decomposition**
+Parse Section M (Evaluation Factors) to extract scoring weights and identify discriminators.
+
+**FR-1.2: Dependency Graphing**
+Extend NetworkX graph so Section M factors become parent nodes to Section L instructions.
+- *Constraint:* If Section L is silent, default to Section M structure for evaluator scoring.
+
+### Epic 2: Automated Annotated Outline Generation
+
+**FR-2.1: Outline Skeleton**
+Auto-generate hierarchical outline (Vol 1, Section 1.1, 1.2, etc.) based on Section L instructions.
+
+**FR-2.2: Requirement Injection**
+Inject "Writing Guidance" tables with "Shall" statements from Compliance Matrix per section.
+
+**FR-2.3: Annotation Injection**
+Each section includes:
+- **Page Budget:** Calculated from Section M weight
+- **Win Theme:** Strategic message placeholder
+- **Proof Points:** Required evidence (e.g., "Insert Past Performance Citation")
+
+**FR-2.4: Export to DOCX**
+Generate downloadable `.docx` matching RFP formatting (fonts, margins).
+
+### Epic 3: Strategy Agent (Win Themes & Ghosting)
+
+**FR-3.1: Hot Button Analysis**
+Infer agency pain points from PWS/SOW (e.g., "24/7 uptime → previous outages").
+
+**FR-3.2: Win Theme Generator**
+Using F-B-P framework, generate 3 draft Win Themes per volume:
+- *Format:* "Feature [X] delivers Benefit [Y], proven by [Evidence Z]"
+
+**FR-3.3: Black Hat / Ghosting**
+If competitor identified, suggest ghosting statements:
+- *Example:* Incumbent with legacy tech → themes on "Modernization" and "No Technical Debt"
+
+### Technical Architecture
+
+**LangGraph Plan-and-Execute Pattern:**
+```
+Node 1: Strategy Agent    → Reads Section M + PWS → StrategicPlan JSON
+Node 2: Outline Agent     → Reads Section L + StrategicPlan → OutlineStructure JSON
+Node 3: Requirements Injector → Maps extraction IDs into OutlineStructure
+```
+
+**State Persistence:**
+PostgreSQL `ProposalState` updated with `strategic_plan` and `outline_tree` columns.
+
+**Data Models:**
+```python
+class WinTheme(TypedDict):
+    feature: str
+    benefit: str
+    proof_point_id: str  # Link to Company Library
+    ghosting_strategy: Optional[str]
+
+class OutlineNode(TypedDict):
+    section_number: str
+    title: str
+    page_allocation: int
+    assigned_requirements: List[str]  # Requirement IDs
+    assigned_win_theme: WinTheme
+```
+
+**RAG Strategy: GraphRAG**
+Use GraphRAG (not simple vector search) to traverse knowledge graph for proof points.
+- *Example:* Theme about "Rapid Staffing" → find "Time-to-Fill" metrics in Company Library.
+
+### UX: The War Room (Phase 2 Enhancements)
+
+**Strategy Dashboard:**
+- Input: Strategy Configuration modal (Incumbent, Our Strengths)
+- Output: Split-view with Section M factors (left) and Win Themes (right)
+- Actions: Accept / Reject / Edit AI-suggested themes
+
+**Outline Builder:**
+- Visual drag-and-drop tree for proposal volumes
+- Drag "Orphaned Requirements" from sidebar into sections
+- Click-to-Verify integration (Phase 1 PDF overlay)
+
+### Planned API Endpoints:
+- `POST /api/rfp/{rfp_id}/strategy/configure` - Set incumbent/strengths
+- `POST /api/rfp/{rfp_id}/strategy/generate` - Generate win themes
+- `GET /api/rfp/{rfp_id}/outline` - Get outline structure
+- `PUT /api/rfp/{rfp_id}/outline` - Update outline (drag-drop)
+- `POST /api/rfp/{rfp_id}/outline/export` - Export to DOCX
+- `POST /api/rfp/{rfp_id}/outline/{section}/requirements` - Assign requirements
+
+### Success Metrics:
+- **Outline Generation Time:** 4 days (manual) → <1 hour (AI)
+- **Strategy Alignment Score:** % of Section M factors mapped to outline sections
+- **Requirement Coverage:** 100% of "Shall" statements assigned (no orphans)
