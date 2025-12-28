@@ -385,9 +385,27 @@ class TestRedTeamAgent:
 
 # ============== Integration Tests ==============
 
+def _merge_agent_result(state: dict, result: dict) -> None:
+    """
+    Merge agent result into state, properly accumulating trace logs.
+
+    Each agent returns its own agent_trace_log list. This helper
+    extends the existing list rather than replacing it.
+    """
+    # Extract and accumulate trace logs
+    new_traces = result.pop("agent_trace_log", [])
+    existing_traces = state.get("agent_trace_log", [])
+
+    # Update state with agent result
+    state.update(result)
+
+    # Restore accumulated trace logs
+    state["agent_trace_log"] = existing_traces + new_traces
+
+
 class TestFullWorkflow:
     """Integration tests for the full workflow"""
-    
+
     def test_full_proposal_workflow(self, sample_state):
         """Test complete proposal generation workflow"""
         # Create all agents
@@ -395,56 +413,56 @@ class TestFullWorkflow:
         strategy_agent = create_strategy_agent()
         drafting_agent = create_drafting_agent()
         red_team_agent = create_red_team_agent()
-        
+
         # Step 1: Shred
         compliance_result = compliance_agent(sample_state)
-        sample_state.update(compliance_result)
+        _merge_agent_result(sample_state, compliance_result)
         assert sample_state["current_phase"] == ProposalPhase.SHRED.value
         assert len(sample_state["requirements"]) > 0
-        
+
         # Step 2: Strategy
         strategy_result = strategy_agent(sample_state)
-        sample_state.update(strategy_result)
+        _merge_agent_result(sample_state, strategy_result)
         assert sample_state["current_phase"] == ProposalPhase.STRATEGY.value
         assert len(sample_state["win_themes"]) > 0
-        
+
         # Step 3: Draft
         draft_result = drafting_agent(sample_state)
-        sample_state.update(draft_result)
+        _merge_agent_result(sample_state, draft_result)
         assert len(sample_state["draft_sections"]) > 0
-        
+
         # Step 4: Red Team
         redteam_result = red_team_agent(sample_state)
-        sample_state.update(redteam_result)
+        _merge_agent_result(sample_state, redteam_result)
         assert len(sample_state["red_team_feedback"]) > 0
-        
+
         # Verify audit trail
         assert len(sample_state["agent_trace_log"]) >= 4
-    
+
     def test_trace_log_completeness(self, sample_state):
         """Test that all agents log their actions"""
         compliance_agent = create_compliance_agent()
         strategy_agent = create_strategy_agent()
         drafting_agent = create_drafting_agent()
         red_team_agent = create_red_team_agent()
-        
-        # Run workflow
+
+        # Run workflow with proper trace log accumulation
         compliance_result = compliance_agent(sample_state)
-        sample_state.update(compliance_result)
-        
+        _merge_agent_result(sample_state, compliance_result)
+
         strategy_result = strategy_agent(sample_state)
-        sample_state.update(strategy_result)
-        
+        _merge_agent_result(sample_state, strategy_result)
+
         draft_result = drafting_agent(sample_state)
-        sample_state.update(draft_result)
-        
+        _merge_agent_result(sample_state, draft_result)
+
         redteam_result = red_team_agent(sample_state)
-        sample_state.update(redteam_result)
-        
+        _merge_agent_result(sample_state, redteam_result)
+
         # Check trace log
         trace_log = sample_state["agent_trace_log"]
         agent_names = [entry["agent_name"] for entry in trace_log]
-        
+
         assert "compliance_agent" in agent_names
         assert "strategy_agent" in agent_names
         assert "drafting_agent" in agent_names
