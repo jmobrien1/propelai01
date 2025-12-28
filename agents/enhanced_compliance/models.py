@@ -289,3 +289,67 @@ class ExtractionResult:
     # Errors/warnings
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+
+
+# =============================================================================
+# Trust Gate Models (v4.0)
+# =============================================================================
+
+@dataclass
+class BoundingBox:
+    """
+    Bounding box coordinates for text in a PDF document.
+    Enables one-click source verification by highlighting exact locations.
+    """
+    x0: float  # Left edge
+    y0: float  # Top edge
+    x1: float  # Right edge
+    y1: float  # Bottom edge
+    page_width: float
+    page_height: float
+
+    def to_normalized(self) -> Dict[str, float]:
+        """Convert to normalized 0-1 coordinates for web display"""
+        return {
+            "x": self.x0 / self.page_width if self.page_width else 0,
+            "y": self.y0 / self.page_height if self.page_height else 0,
+            "width": (self.x1 - self.x0) / self.page_width if self.page_width else 0,
+            "height": (self.y1 - self.y0) / self.page_height if self.page_height else 0,
+        }
+
+    def to_dict(self) -> Dict[str, float]:
+        """Convert to dictionary"""
+        return {
+            "x0": self.x0,
+            "y0": self.y0,
+            "x1": self.x1,
+            "y1": self.y1,
+            "page_width": self.page_width,
+            "page_height": self.page_height,
+        }
+
+
+@dataclass
+class SourceCoordinate:
+    """
+    Links a requirement to its exact location in the source document.
+    Used by the Trust Gate to enable one-click verification.
+    """
+    document_id: str
+    page_number: int
+    bounding_box: BoundingBox
+    text_snippet: str = ""
+    extraction_method: str = "pdfplumber"  # pdfplumber, pypdf, ocr
+    confidence: float = 1.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API response"""
+        return {
+            "document_id": self.document_id,
+            "page_number": self.page_number,
+            "bounding_box": self.bounding_box.to_dict(),
+            "normalized_box": self.bounding_box.to_normalized(),
+            "text_snippet": self.text_snippet,
+            "extraction_method": self.extraction_method,
+            "confidence": self.confidence,
+        }

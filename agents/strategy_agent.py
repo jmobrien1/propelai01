@@ -888,3 +888,113 @@ class CompetitorAnalyzer:
             })
 
         return opportunities
+
+
+class GhostingLanguageGenerator:
+    """
+    Generates ghosting language to subtly de-position competitors.
+
+    Ghosting is the art of highlighting your strengths in a way that
+    draws attention to competitor weaknesses without naming them directly.
+    """
+
+    def __init__(self, use_llm: bool = True):
+        """
+        Initialize the Ghosting Language Generator
+
+        Args:
+            use_llm: Whether to use LLM for advanced language generation
+        """
+        self.use_llm = use_llm
+
+        # Standard ghosting templates by category
+        self.templates = {
+            "incumbent_risk": [
+                "Our fresh perspective brings innovative solutions unconstrained by legacy approaches",
+                "We bring proven best practices refined across multiple similar engagements",
+                "Our team is specifically assembled for this opportunity with no competing priorities",
+            ],
+            "transition": [
+                "Our Day 1 readiness ensures zero disruption to mission operations",
+                "Our proven transition methodology has achieved 100% on-time transitions",
+                "We commit dedicated transition resources with no learning curve",
+            ],
+            "personnel": [
+                "Our named key personnel are committed and available for immediate assignment",
+                "We maintain deep bench strength ensuring continuity through any personnel changes",
+                "Our team members average [X] years of directly relevant experience",
+            ],
+            "innovation": [
+                "Our modern, cloud-native architecture enables rapid capability deployment",
+                "We leverage cutting-edge technologies proven in production environments",
+                "Our agile methodology delivers continuous improvement throughout performance",
+            ],
+            "scale": [
+                "With [X] employees nationwide, we scale resources to meet surge demands",
+                "Our national presence ensures local expertise wherever needed",
+                "We maintain excess capacity specifically for rapid response requirements",
+            ],
+            "past_performance": [
+                "Our directly relevant experience spans [X] similar contracts",
+                "We have achieved [metric] across all comparable engagements",
+                "Our customer satisfaction ratings consistently exceed [X]%",
+            ],
+        }
+
+    def generate_ghosting_language(
+        self,
+        competitor_weaknesses: List[str],
+        our_strengths: List[str],
+        evaluation_factors: Optional[List[Dict]] = None
+    ) -> List[Dict[str, str]]:
+        """
+        Generate ghosting language based on competitor weaknesses and our strengths.
+
+        Args:
+            competitor_weaknesses: List of identified competitor weaknesses
+            our_strengths: List of our relevant strengths
+            evaluation_factors: Optional list of evaluation factors for targeting
+
+        Returns:
+            List of ghosting phrases with context
+        """
+        ghosting_phrases = []
+
+        for weakness in competitor_weaknesses:
+            weakness_lower = weakness.lower()
+
+            # Match weakness to template category
+            for category, templates in self.templates.items():
+                if any(kw in weakness_lower for kw in category.split("_")):
+                    # Select best template
+                    phrase = templates[0]  # In production, use LLM to select/customize
+
+                    ghosting_phrases.append({
+                        "phrase": phrase,
+                        "targets_weakness": weakness,
+                        "category": category,
+                        "usage_context": f"Use when addressing {category.replace('_', ' ')} in proposal",
+                    })
+                    break
+
+        # Add strength-based phrases
+        for strength in our_strengths[:3]:  # Top 3 strengths
+            ghosting_phrases.append({
+                "phrase": f"Our proven {strength.lower()} delivers measurable results",
+                "targets_weakness": "general",
+                "category": "strength_highlight",
+                "usage_context": "General discriminator language",
+            })
+
+        return ghosting_phrases
+
+    def get_templates(self) -> Dict[str, List[str]]:
+        """Get all available ghosting templates"""
+        return self.templates
+
+    def add_custom_template(self, category: str, phrases: List[str]):
+        """Add custom ghosting templates for a category"""
+        if category in self.templates:
+            self.templates[category].extend(phrases)
+        else:
+            self.templates[category] = phrases
