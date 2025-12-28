@@ -5044,6 +5044,434 @@ async def get_master_architect_status(rfp_id: str):
     }
 
 
+# ============== F-B-P Drafting Workflow ==============
+
+@app.post("/api/rfp/{rfp_id}/draft/section/{section_id}")
+async def draft_section_content(
+    rfp_id: str,
+    section_id: str,
+    target_word_count: int = 250,
+    include_win_themes: bool = True
+):
+    """
+    Generate draft content for a specific section using F-B-P framework.
+
+    Feature-Benefit-Proof (F-B-P) Framework:
+    1. Research: Query Company Library for evidence
+    2. Structure: Build F-B-P blocks from requirements and evidence
+    3. Draft: Generate narrative prose using LLM
+    4. Quality Check: Score on compliance, clarity, citations
+
+    Returns draft text with quality scores. Use feedback endpoint to revise.
+    """
+    from agents.drafting_workflow import (
+        run_drafting_workflow,
+        build_drafting_graph,
+        LANGGRAPH_AVAILABLE
+    )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    outline = rfp.get("outline", {})
+    requirements = rfp.get("requirements", [])
+
+    # Find the section in the outline
+    target_section = None
+    target_volume = None
+    for vol in outline.get("volumes", []):
+        for sec in vol.get("sections", []):
+            if sec.get("id") == section_id or sec.get("name") == section_id:
+                target_section = sec
+                target_volume = vol
+                break
+
+    if not target_section:
+        raise HTTPException(status_code=404, detail=f"Section '{section_id}' not found in outline")
+
+    # Build requirement context from section
+    section_requirements = target_section.get("requirements", [])
+    section_text = " ".join(section_requirements) if section_requirements else target_section.get("name", "")
+
+    # Get win theme if available
+    win_theme = None
+    if include_win_themes:
+        win_themes = target_section.get("win_themes", [])
+        if win_themes and not win_themes[0].startswith("[WIN THEME:"):
+            win_theme = {
+                "headline": win_themes[0],
+                "narrative": " ".join(win_themes[:3]),
+                "discriminators": win_themes
+            }
+
+    # Build requirement dict
+    requirement = {
+        "id": section_id,
+        "text": section_text,
+        "section": target_volume.get("name", ""),
+    }
+
+    try:
+        # Run the drafting workflow
+        result = run_drafting_workflow(
+            requirement=requirement,
+            win_theme=win_theme,
+            target_word_count=target_word_count
+        )
+
+        # Store draft in RFP
+        drafts = rfp.get("drafts", {})
+        drafts[section_id] = {
+            "workflow_id": result.get("workflow_id"),
+            "draft_text": result.get("draft_text", ""),
+            "word_count": result.get("draft_word_count", 0),
+            "quality_scores": result.get("quality_scores", {}),
+            "fbp_blocks": result.get("fbp_blocks", []),
+            "approved": result.get("approved", False),
+            "revision_count": result.get("revision_count", 0),
+            "generated_at": result.get("started_at"),
+        }
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": "drafted",
+            "section_id": section_id,
+            "workflow_id": result.get("workflow_id"),
+            "draft_text": result.get("draft_text", ""),
+            "word_count": result.get("draft_word_count", 0),
+            "quality_scores": result.get("quality_scores", {}),
+            "fbp_blocks": result.get("fbp_blocks", []),
+            "langgraph_available": LANGGRAPH_AVAILABLE,
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Drafting failed: {str(e)}")
+
+
+@app.post("/api/rfp/{rfp_id}/draft/section/{section_id}/feedback")
+async def submit_draft_feedback(
+    rfp_id: str,
+    section_id: str,
+    feedback: str,
+):
+    """
+    Submit feedback on a draft to trigger revision.
+
+    Feedback options:
+    - "approve" / "approved" / "lgtm": Accept the draft
+    - "reject: <reason>": Reject the draft
+    - Any other text: Request revision with this feedback
+
+    The workflow will revise the draft based on feedback and re-score.
+    """
+    from agents.drafting_workflow import (
+        resume_workflow,
+        build_drafting_graph,
+        LANGGRAPH_AVAILABLE
+    )
+
+    if not LANGGRAPH_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="LangGraph not available for workflow management"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    drafts = rfp.get("drafts", {})
+    if section_id not in drafts:
+        raise HTTPException(status_code=404, detail=f"No draft found for section '{section_id}'")
+
+    workflow_id = drafts[section_id].get("workflow_id")
+    if not workflow_id:
+        raise HTTPException(status_code=400, detail="No workflow ID for this draft")
+
+    try:
+        # Resume workflow with feedback
+        result = resume_workflow(workflow_id, feedback)
+
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+
+        # Update stored draft
+        drafts[section_id].update({
+            "draft_text": result.get("draft_text", drafts[section_id].get("draft_text")),
+            "quality_scores": result.get("quality_scores", {}),
+            "approved": result.get("approved", False),
+            "revision_count": result.get("revision_count", 0),
+        })
+        store.update(rfp_id, {"drafts": drafts})
+
+        return {
+            "status": result.get("status", "unknown"),
+            "section_id": section_id,
+            "approved": result.get("approved", False),
+            "draft_text": result.get("draft_text", ""),
+            "quality_scores": result.get("quality_scores", {}),
+            "revision_count": result.get("revision_count", 0),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Feedback processing failed: {str(e)}")
+
+
+@app.get("/api/rfp/{rfp_id}/drafts")
+async def list_section_drafts(rfp_id: str):
+    """
+    List all drafted sections for an RFP.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    drafts = rfp.get("drafts", {})
+
+    return {
+        "rfp_id": rfp_id,
+        "drafts_count": len(drafts),
+        "drafts": [
+            {
+                "section_id": section_id,
+                "word_count": draft.get("word_count", 0),
+                "quality_score": draft.get("quality_scores", {}).get("overall", 0),
+                "approved": draft.get("approved", False),
+                "revision_count": draft.get("revision_count", 0),
+                "generated_at": draft.get("generated_at"),
+            }
+            for section_id, draft in drafts.items()
+        ]
+    }
+
+
+# ============== Red Team Review ==============
+
+@app.post("/api/rfp/{rfp_id}/red-team")
+async def run_red_team_review(rfp_id: str, section_ids: Optional[List[str]] = None):
+    """
+    Run Red Team review on drafted sections.
+
+    Simulates a government evaluator using Section M criteria.
+    Provides color scoring (Blue/Green/Yellow/Red) and actionable feedback.
+
+    **Scoring System:**
+    - BLUE: Exceptional - Significantly exceeds requirements (90+)
+    - GREEN: Acceptable - Meets requirements (70-89)
+    - YELLOW: Marginal - May not meet requirements (50-69)
+    - RED: Unacceptable - Fails to meet requirements (<50)
+
+    **Query Parameters:**
+    - `section_ids`: Optional list of specific sections to review. If None, reviews all drafts.
+
+    **Returns:** Evaluation with scores, findings, and remediation plan.
+    """
+    try:
+        from agents.red_team_agent import RedTeamAgent, create_red_team_agent
+        from core.state import ScoreColor
+        RED_TEAM_AVAILABLE = True
+    except ImportError:
+        RED_TEAM_AVAILABLE = False
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    drafts = rfp.get("drafts", {})
+    requirements = rfp.get("requirements", [])
+    outline = rfp.get("outline", {})
+
+    if not drafts:
+        raise HTTPException(
+            status_code=400,
+            detail="No drafts to review. Generate drafts first using /draft/section/{section_id}"
+        )
+
+    # Filter sections if specified
+    sections_to_review = section_ids if section_ids else list(drafts.keys())
+    sections_to_review = [s for s in sections_to_review if s in drafts]
+
+    if not sections_to_review:
+        raise HTTPException(status_code=400, detail="No valid sections to review")
+
+    if RED_TEAM_AVAILABLE:
+        # Use full Red Team Agent
+        try:
+            agent = create_red_team_agent()
+
+            # Build draft_sections dict for agent
+            draft_sections = {}
+            for section_id in sections_to_review:
+                draft = drafts[section_id]
+                draft_sections[section_id] = {
+                    "content": draft.get("draft_text", ""),
+                    "section_title": section_id,
+                    "word_count": draft.get("word_count", 0),
+                    "citations": [],  # Extract from F-B-P blocks
+                    "uncited_claims": [],
+                    "page_allocation": 1,
+                }
+
+            # Get evaluation criteria from outline
+            eval_criteria = outline.get("evaluation_factors", [])
+
+            # Build state for agent
+            state = {
+                "draft_sections": draft_sections,
+                "evaluation_criteria": eval_criteria,
+                "requirements": requirements,
+                "compliance_matrix": [],
+            }
+
+            # Run Red Team evaluation
+            result = agent(state)
+
+            # Store evaluation
+            evaluations = rfp.get("red_team_evaluations", [])
+            if result.get("red_team_feedback"):
+                evaluations.append(result["red_team_feedback"][0])
+                store.update(rfp_id, {"red_team_evaluations": evaluations})
+
+            return {
+                "status": "evaluated",
+                "rfp_id": rfp_id,
+                "sections_reviewed": sections_to_review,
+                "overall_score": result.get("red_team_feedback", [{}])[0].get("overall_score", "unknown"),
+                "overall_numeric": result.get("red_team_feedback", [{}])[0].get("overall_numeric", 0),
+                "recommendation": result.get("red_team_feedback", [{}])[0].get("recommendation", "unknown"),
+                "section_scores": result.get("red_team_feedback", [{}])[0].get("section_scores", []),
+                "findings": result.get("red_team_feedback", [{}])[0].get("findings", [])[:10],
+                "remediation_plan": result.get("red_team_feedback", [{}])[0].get("remediation_plan", [])[:5],
+            }
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # Fall through to simplified evaluation
+            pass
+
+    # Simplified Red Team evaluation (fallback)
+    section_scores = []
+    all_findings = []
+
+    for section_id in sections_to_review:
+        draft = drafts[section_id]
+        draft_text = draft.get("draft_text", "")
+        quality_scores = draft.get("quality_scores", {})
+
+        # Calculate score from quality metrics
+        overall_quality = quality_scores.get("overall", 0.5)
+        numeric_score = overall_quality * 100
+
+        # Determine color
+        if numeric_score >= 90:
+            color = "blue"
+        elif numeric_score >= 70:
+            color = "green"
+        elif numeric_score >= 50:
+            color = "yellow"
+        else:
+            color = "red"
+
+        # Generate basic findings
+        findings = []
+        if quality_scores.get("compliance", 0) < 0.7:
+            findings.append({
+                "type": "weakness",
+                "description": f"Section may not fully address requirements (compliance: {quality_scores.get('compliance', 0):.0%})",
+                "remediation": "Review requirements and add explicit responses"
+            })
+
+        if quality_scores.get("citation_coverage", 0) < 0.5:
+            findings.append({
+                "type": "weakness",
+                "description": "Insufficient citations or proof points",
+                "remediation": "Add evidence from past performance or Company Library"
+            })
+
+        if quality_scores.get("theme_alignment", 0) < 0.5:
+            findings.append({
+                "type": "risk",
+                "description": "Win themes not strongly reinforced",
+                "remediation": "Weave win theme language throughout section"
+            })
+
+        section_scores.append({
+            "section_id": section_id,
+            "color_score": color,
+            "numeric_score": numeric_score,
+            "compliance_rate": quality_scores.get("compliance", 0),
+            "findings_count": len(findings)
+        })
+        all_findings.extend([{**f, "section": section_id} for f in findings])
+
+    # Calculate overall
+    avg_score = sum(s["numeric_score"] for s in section_scores) / len(section_scores) if section_scores else 0
+    if avg_score >= 90:
+        overall_color = "blue"
+        recommendation = "submit"
+    elif avg_score >= 70:
+        overall_color = "green"
+        recommendation = "submit"
+    elif avg_score >= 50:
+        overall_color = "yellow"
+        recommendation = "revise"
+    else:
+        overall_color = "red"
+        recommendation = "major_revision"
+
+    # Store evaluation
+    evaluation = {
+        "evaluated_at": datetime.now().isoformat(),
+        "overall_score": overall_color,
+        "overall_numeric": avg_score,
+        "sections_reviewed": sections_to_review,
+        "recommendation": recommendation,
+    }
+    evaluations = rfp.get("red_team_evaluations", [])
+    evaluations.append(evaluation)
+    store.update(rfp_id, {"red_team_evaluations": evaluations})
+
+    return {
+        "status": "evaluated",
+        "rfp_id": rfp_id,
+        "sections_reviewed": sections_to_review,
+        "overall_score": overall_color,
+        "overall_numeric": avg_score,
+        "recommendation": recommendation,
+        "section_scores": section_scores,
+        "findings": all_findings[:10],
+        "remediation_plan": [
+            {"priority": "HIGH", "action": f["remediation"], "section": f["section"]}
+            for f in all_findings if f.get("type") == "weakness"
+        ][:5]
+    }
+
+
+@app.get("/api/rfp/{rfp_id}/red-team/history")
+async def get_red_team_history(rfp_id: str):
+    """
+    Get history of Red Team evaluations for an RFP.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    evaluations = rfp.get("red_team_evaluations", [])
+
+    return {
+        "rfp_id": rfp_id,
+        "evaluation_count": len(evaluations),
+        "evaluations": evaluations,
+        "latest": evaluations[-1] if evaluations else None,
+    }
+
+
 # ============== Company Library API ==============
 
 # Import company library components
