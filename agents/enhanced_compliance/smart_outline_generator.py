@@ -33,6 +33,66 @@ class VolumeType(Enum):
     OTHER = "other"
 
 
+# =============================================================================
+# Volume-Specific Section Templates (Master Architect Plan - P0 Fix)
+# =============================================================================
+# Each volume type gets its own section structure instead of cloning Volume 1
+
+VOLUME_SECTION_TEMPLATES = {
+    VolumeType.TECHNICAL: [
+        ("1.0", "Executive Summary", "High-level overview demonstrating understanding of requirements and proposed solution"),
+        ("2.0", "Technical Approach", "Detailed methodology, tools, technologies, and technical solution design"),
+        ("3.0", "Management Approach", "Project management methodology, schedule, risk mitigation, QA/QC processes"),
+        ("4.0", "Transition Plan", "Transition-in approach, Day 1 readiness, knowledge transfer"),
+    ],
+    VolumeType.MANAGEMENT: [
+        ("1.0", "Management Philosophy", "Overall management approach and organizational structure"),
+        ("2.0", "Program Management", "Program/project management methodology and tools"),
+        ("3.0", "Quality Assurance", "QA/QC processes, continuous improvement, metrics"),
+        ("4.0", "Risk Management", "Risk identification, mitigation strategies, contingency planning"),
+        ("5.0", "Staffing Approach", "Recruitment, retention, training, and development"),
+    ],
+    VolumeType.PAST_PERFORMANCE: [
+        ("1.0", "Past Performance Summary", "Overview of relevant contract experience and qualifications"),
+        ("2.0", "Contract Reference 1", "Detailed description of most relevant prior contract"),
+        ("3.0", "Contract Reference 2", "Second relevant contract with comparable scope"),
+        ("4.0", "Contract Reference 3", "Third relevant contract demonstrating capability"),
+        ("5.0", "Past Performance Questionnaires", "PPQ submission instructions and references"),
+    ],
+    VolumeType.COST_PRICE: [
+        ("1.0", "Cost/Price Narrative", "Basis of estimate, assumptions, and pricing methodology"),
+        ("2.0", "Labor Categories & Rates", "Proposed labor categories, qualifications, and rates"),
+        ("3.0", "CLIN/Task Order Pricing", "Contract Line Item pricing breakdown"),
+        ("4.0", "Subcontractor Costs", "Subcontractor pricing and rationale"),
+        ("5.0", "Other Direct Costs", "ODCs, travel, materials, and other costs"),
+    ],
+    VolumeType.STAFFING: [
+        ("1.0", "Organizational Structure", "Proposed organization chart and reporting relationships"),
+        ("2.0", "Key Personnel", "Key personnel qualifications, availability, and commitment"),
+        ("3.0", "Resume Section", "Detailed resumes for proposed key personnel"),
+        ("4.0", "Staffing Plan", "Staffing levels, phase-in, and surge capacity"),
+    ],
+    VolumeType.SMALL_BUSINESS: [
+        ("1.0", "Small Business Participation", "Small business participation commitment and goals"),
+        ("2.0", "Subcontracting Plan", "Detailed subcontracting plan per FAR 19.704"),
+        ("3.0", "Mentor-Protégé Agreements", "Existing mentor-protégé relationships if applicable"),
+    ],
+    VolumeType.EXPERIENCE: [
+        ("1.0", "Corporate Experience", "Overview of organizational experience and capabilities"),
+        ("2.0", "Relevant Projects", "Detailed descriptions of similar completed projects"),
+        ("3.0", "Lessons Learned", "Knowledge gained and process improvements"),
+    ],
+    VolumeType.ADMINISTRATIVE: [
+        ("1.0", "Administrative Compliance", "Certifications, representations, and administrative forms"),
+        ("2.0", "Required Forms", "Completed required forms and attachments"),
+    ],
+    VolumeType.OTHER: [
+        ("1.0", "Section Overview", "Overview of this proposal section"),
+        ("2.0", "Requirements Response", "Detailed response to section requirements"),
+    ],
+}
+
+
 @dataclass
 class ProposalSection:
     """A section within a proposal volume"""
@@ -469,21 +529,61 @@ class SmartOutlineGenerator:
         return volumes
     
     def _create_default_volumes(self, rfp_format: str, section_m: List[Dict]) -> List[ProposalVolume]:
-        """Create default volumes if none were extracted"""
-        
+        """
+        Create default volumes if none were extracted.
+
+        MASTER ARCHITECT FIX: Each volume now gets volume-type-specific sections
+        instead of cloning the Technical volume structure.
+        """
         if rfp_format in ["GSA_BPA", "GSA_RFQ"]:
-            return [
-                ProposalVolume(id="VOL-1", name="Technical Approach", volume_type=VolumeType.TECHNICAL, order=0),
-                ProposalVolume(id="VOL-2", name="Past Performance", volume_type=VolumeType.PAST_PERFORMANCE, order=1),
-                ProposalVolume(id="VOL-3", name="Price", volume_type=VolumeType.COST_PRICE, order=2),
+            volume_configs = [
+                ("VOL-1", "Technical Approach", VolumeType.TECHNICAL, 0),
+                ("VOL-2", "Past Performance", VolumeType.PAST_PERFORMANCE, 1),
+                ("VOL-3", "Price", VolumeType.COST_PRICE, 2),
             ]
         else:
-            return [
-                ProposalVolume(id="VOL-TECH", name="Technical Proposal", volume_type=VolumeType.TECHNICAL, order=0),
-                ProposalVolume(id="VOL-MGMT", name="Management Proposal", volume_type=VolumeType.MANAGEMENT, order=1),
-                ProposalVolume(id="VOL-PP", name="Past Performance", volume_type=VolumeType.PAST_PERFORMANCE, order=2),
-                ProposalVolume(id="VOL-COST", name="Cost/Price Proposal", volume_type=VolumeType.COST_PRICE, order=3),
+            volume_configs = [
+                ("VOL-TECH", "Technical Proposal", VolumeType.TECHNICAL, 0),
+                ("VOL-MGMT", "Management Proposal", VolumeType.MANAGEMENT, 1),
+                ("VOL-PP", "Past Performance", VolumeType.PAST_PERFORMANCE, 2),
+                ("VOL-COST", "Cost/Price Proposal", VolumeType.COST_PRICE, 3),
             ]
+
+        volumes = []
+        for vol_id, vol_name, vol_type, order in volume_configs:
+            # Create volume with type-specific sections
+            sections = self._create_sections_for_volume_type(vol_type)
+
+            volume = ProposalVolume(
+                id=vol_id,
+                name=vol_name,
+                volume_type=vol_type,
+                order=order,
+                sections=sections
+            )
+            volumes.append(volume)
+
+        return volumes
+
+    def _create_sections_for_volume_type(self, volume_type: VolumeType) -> List[ProposalSection]:
+        """
+        Create volume-type-specific sections using VOLUME_SECTION_TEMPLATES.
+
+        This ensures Past Performance volumes get PP sections,
+        Cost volumes get pricing sections, etc.
+        """
+        template = VOLUME_SECTION_TEMPLATES.get(volume_type, VOLUME_SECTION_TEMPLATES[VolumeType.OTHER])
+
+        sections = []
+        for sec_id, sec_name, sec_desc in template:
+            section = ProposalSection(
+                id=sec_id,
+                name=sec_name,
+                requirements=[sec_desc]  # Description becomes initial requirement guidance
+            )
+            sections.append(section)
+
+        return sections
     
     def _classify_volume_type(self, name: str) -> VolumeType:
         """Classify volume type from name"""

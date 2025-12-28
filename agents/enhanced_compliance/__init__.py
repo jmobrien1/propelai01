@@ -185,3 +185,20 @@ except ImportError as e:
     AnnotatedOutlineExporter = None
     AnnotatedOutlineConfig = None
     generate_annotated_outline = None
+
+# =============================================================================
+# Requirement Injector (Master Architect v1.0)
+# =============================================================================
+try:
+    from .requirement_injector import (
+        RequirementInjector,
+        create_requirement_injector,
+        inject_requirements_into_outline,
+    )
+    REQUIREMENT_INJECTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Requirement Injector not available: {e}")
+    REQUIREMENT_INJECTOR_AVAILABLE = False
+    RequirementInjector = None
+    create_requirement_injector = None
+    inject_requirements_into_outline = None

@@ -1116,26 +1116,60 @@ function createBoilerplateGuidance() {
 
 /**
  * Build placeholder section when no structure detected
+ * MASTER ARCHITECT FIX: Uses volume-type-specific section templates
  */
 function buildPlaceholderSection(volume, requirements, data, usedReqIds = new Set()) {
     const children = [];
     const allWinThemes = data.winThemes || [];
 
-    // Create generic technical sections with factor type mapping
-    const defaultSections = [
-        { name: "Executive Summary", desc: "High-level overview demonstrating understanding and approach", factorType: "technical" },
-        { name: "Technical Approach", desc: "Detailed methodology and solution design", factorType: "technical" },
-        { name: "Management Approach", desc: "Project management, staffing, quality assurance", factorType: "management" },
-        { name: "Past Performance", desc: "Relevant experience and references", factorType: "past_performance" },
-        { name: "Staffing Plan", desc: "Key personnel qualifications and org chart", factorType: "personnel" }
-    ];
+    // Volume-type-specific section templates (mirrors Python VOLUME_SECTION_TEMPLATES)
+    const volumeSectionTemplates = {
+        "technical": [
+            { name: "Executive Summary", desc: "High-level overview demonstrating understanding of requirements and proposed solution", factorType: "technical" },
+            { name: "Technical Approach", desc: "Detailed methodology, tools, technologies, and technical solution design", factorType: "technical" },
+            { name: "Management Approach", desc: "Project management methodology, schedule, risk mitigation, QA/QC processes", factorType: "management" },
+            { name: "Transition Plan", desc: "Transition-in approach, Day 1 readiness, knowledge transfer", factorType: "technical" }
+        ],
+        "management": [
+            { name: "Management Philosophy", desc: "Overall management approach and organizational structure", factorType: "management" },
+            { name: "Program Management", desc: "Program/project management methodology and tools", factorType: "management" },
+            { name: "Quality Assurance", desc: "QA/QC processes, continuous improvement, metrics", factorType: "management" },
+            { name: "Risk Management", desc: "Risk identification, mitigation strategies, contingency planning", factorType: "management" },
+            { name: "Staffing Approach", desc: "Recruitment, retention, training, and development", factorType: "personnel" }
+        ],
+        "past_performance": [
+            { name: "Past Performance Summary", desc: "Overview of relevant contract experience and qualifications", factorType: "past_performance" },
+            { name: "Contract Reference 1", desc: "Detailed description of most relevant prior contract", factorType: "past_performance" },
+            { name: "Contract Reference 2", desc: "Second relevant contract with comparable scope", factorType: "past_performance" },
+            { name: "Contract Reference 3", desc: "Third relevant contract demonstrating capability", factorType: "past_performance" },
+            { name: "Past Performance Questionnaires", desc: "PPQ submission instructions and references", factorType: "past_performance" }
+        ],
+        "cost_price": [
+            { name: "Cost/Price Narrative", desc: "Basis of estimate, assumptions, and pricing methodology", factorType: "cost" },
+            { name: "Labor Categories & Rates", desc: "Proposed labor categories, qualifications, and rates", factorType: "cost" },
+            { name: "CLIN/Task Order Pricing", desc: "Contract Line Item pricing breakdown", factorType: "cost" },
+            { name: "Subcontractor Costs", desc: "Subcontractor pricing and rationale", factorType: "cost" },
+            { name: "Other Direct Costs", desc: "ODCs, travel, materials, and other costs", factorType: "cost" }
+        ],
+        "staffing": [
+            { name: "Organizational Structure", desc: "Proposed organization chart and reporting relationships", factorType: "personnel" },
+            { name: "Key Personnel", desc: "Key personnel qualifications, availability, and commitment", factorType: "personnel" },
+            { name: "Resume Section", desc: "Detailed resumes for proposed key personnel", factorType: "personnel" },
+            { name: "Staffing Plan", desc: "Staffing levels, phase-in, and surge capacity", factorType: "personnel" }
+        ]
+    };
 
-    // Factor profiles for semantic matching (subset for placeholder sections)
+    // Determine volume type from volume object
+    const volumeType = (volume.volume_type || volume.type || "technical").toLowerCase();
+    const defaultSections = volumeSectionTemplates[volumeType] || volumeSectionTemplates["technical"];
+
+    // Factor profiles for semantic matching
     const factorKeywords = {
         "technical": ["technical", "approach", "methodology", "solution", "design", "implement"],
         "management": ["management", "project", "program", "plan", "schedule", "quality"],
-        "past_performance": ["past performance", "experience", "prior", "similar", "cpars"],
-        "personnel": ["personnel", "staff", "team", "key", "qualifications", "expertise"]
+        "past_performance": ["past performance", "experience", "prior", "similar", "cpars", "contract"],
+        "personnel": ["personnel", "staff", "team", "key", "qualifications", "expertise", "resume"],
+        "cost": ["cost", "price", "labor", "rate", "clin", "estimate", "budget"]
     };
 
     defaultSections.forEach((sec, idx) => {
