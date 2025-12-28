@@ -149,17 +149,19 @@ class SmartOutlineGenerator:
         section_l_requirements: List[Dict],
         section_m_requirements: List[Dict],
         technical_requirements: List[Dict],
-        stats: Dict
+        stats: Dict,
+        company_library_data: Optional[Dict] = None
     ) -> ProposalOutline:
         """
         Generate proposal outline from compliance matrix data.
-        
+
         Args:
             section_l_requirements: Extracted Section L requirements
             section_m_requirements: Extracted Section M/evaluation requirements
             technical_requirements: Extracted technical/SOW requirements
             stats: Extraction statistics
-            
+            company_library_data: Optional company library data for win theme generation
+
         Returns:
             ProposalOutline with volumes, eval factors, format requirements
         """
