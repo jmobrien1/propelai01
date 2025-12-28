@@ -5363,6 +5363,161 @@ async def validate_single_requirement(
     }
 
 
+# ============== Word Integration API (v5.0 Section 4.2) ==============
+
+class WordContextRequest(BaseModel):
+    """Request body for Word context awareness endpoint"""
+    rfp_id: str = Field(..., description="RFP ID to query against")
+    current_text: str = Field(..., description="Current text selection or paragraph from Word")
+    section_heading: Optional[str] = Field(None, description="Current section heading in Word")
+    document_context: Optional[str] = Field(None, description="Additional document context (e.g., volume name)")
+    max_results: int = Field(5, ge=1, le=20, description="Maximum number of matching requirements")
+
+
+class WordContextResponse(BaseModel):
+    """Response for Word context awareness endpoint"""
+    rfp_id: str
+    matching_requirements: List[Dict]
+    section_context: Optional[Dict]
+    compliance_status: Optional[Dict]
+    suggestions: List[str]
+
+
+@app.post("/api/word/context", tags=["Word Integration"])
+async def get_word_context(request: WordContextRequest):
+    """
+    v5.0 Word Integration: Context Awareness Endpoint
+
+    This endpoint allows a Word Add-in to query the Compliance Matrix
+    based on the current document context. It returns relevant requirements,
+    compliance status, and suggestions for the current section.
+
+    Use cases:
+    - Show relevant requirements for current paragraph
+    - Verify compliance while writing
+    - Suggest content improvements based on RFP requirements
+
+    Args:
+        request: WordContextRequest with rfp_id, current_text, and optional context
+
+    Returns:
+        WordContextResponse with matching requirements and suggestions
+    """
+    rfp = store.get(request.rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail=f"RFP '{request.rfp_id}' not found")
+
+    requirements = rfp.get("requirements", [])
+
+    # Find matching requirements based on text similarity
+    matching_reqs = []
+
+    # Simple keyword-based matching (can be enhanced with semantic search)
+    query_words = set(request.current_text.lower().split())
+    query_words = {w for w in query_words if len(w) > 3}  # Filter short words
+
+    for req in requirements:
+        req_text = req.get("text", "").lower()
+        req_words = set(req_text.split())
+
+        # Calculate simple Jaccard similarity
+        if query_words:
+            intersection = len(query_words & req_words)
+            union = len(query_words | req_words)
+            similarity = intersection / union if union > 0 else 0
+        else:
+            similarity = 0
+
+        if similarity > 0.1:  # Threshold for relevance
+            matching_reqs.append({
+                "id": req.get("id"),
+                "text": req.get("text"),
+                "type": req.get("type"),
+                "section": req.get("section"),
+                "priority": req.get("priority"),
+                "similarity_score": round(similarity, 3),
+            })
+
+    # Sort by similarity and limit results
+    matching_reqs.sort(key=lambda x: x["similarity_score"], reverse=True)
+    matching_reqs = matching_reqs[:request.max_results]
+
+    # Get section context if heading provided
+    section_context = None
+    if request.section_heading:
+        # Try to find matching section in outline
+        outline = rfp.get("outline", {})
+        for volume in outline.get("volumes", []):
+            for section in volume.get("sections", []):
+                if request.section_heading.lower() in section.get("title", "").lower():
+                    section_context = {
+                        "volume": volume.get("name"),
+                        "section_id": section.get("id"),
+                        "section_title": section.get("title"),
+                        "page_limit": section.get("page_limit"),
+                        "requirements": section.get("requirements", []),
+                    }
+                    break
+            if section_context:
+                break
+
+    # Generate compliance status for matched requirements
+    compliance_status = None
+    if matching_reqs:
+        addressed = sum(1 for r in matching_reqs if r.get("priority") != "high")
+        total = len(matching_reqs)
+        compliance_status = {
+            "requirements_found": total,
+            "addressed_count": addressed,
+            "compliance_rate": round(addressed / total * 100, 1) if total > 0 else 100,
+        }
+
+    # Generate suggestions based on context
+    suggestions = []
+    if matching_reqs:
+        high_priority = [r for r in matching_reqs if r.get("priority") == "high"]
+        if high_priority:
+            suggestions.append(f"Address {len(high_priority)} high-priority requirements in this section")
+
+        unaddressed_types = set(r.get("type") for r in matching_reqs)
+        if "evaluation_criterion" in unaddressed_types:
+            suggestions.append("Include evidence addressing evaluation criteria")
+
+    if not matching_reqs:
+        suggestions.append("No matching requirements found. Consider adding more specific content.")
+
+    return {
+        "rfp_id": request.rfp_id,
+        "matching_requirements": matching_reqs,
+        "section_context": section_context,
+        "compliance_status": compliance_status,
+        "suggestions": suggestions,
+    }
+
+
+@app.get("/api/word/rfps", tags=["Word Integration"])
+async def list_available_rfps():
+    """
+    v5.0 Word Integration: List available RFPs for Word Add-in
+
+    Returns a list of processed RFPs that can be queried from Word.
+    """
+    rfps = []
+    for rfp_id, rfp_data in store.data.items():
+        if isinstance(rfp_data, dict) and rfp_data.get("requirements"):
+            rfps.append({
+                "id": rfp_id,
+                "title": rfp_data.get("title", rfp_id),
+                "requirements_count": len(rfp_data.get("requirements", [])),
+                "created_at": rfp_data.get("created_at"),
+            })
+
+    return {
+        "rfps": rfps,
+        "count": len(rfps),
+    }
+
+
 # ============== F-B-P Drafting Workflow ==============
 
 @app.post("/api/rfp/{rfp_id}/draft/section/{section_id}")

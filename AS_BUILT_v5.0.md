@@ -26,6 +26,7 @@
 16. [Iron Triangle Graph & Validation (v5.0)](#16-iron-triangle-graph--validation-v50)
     - [16.7 Click-to-Verify UI](#167-click-to-verify-ui-fr-12)
     - [16.8 War Room Dashboard](#168-war-room-dashboard-section-41)
+    - [16.9 Word Integration API](#169-word-integration-api-section-42)
 
 ---
 
@@ -54,6 +55,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Validation Engine | Deterministic L-M-C consistency checking | v5.0 |
 | Click-to-Verify UI | Split-screen PDF viewer with multi-page highlights | v5.0 |
 | War Room Dashboard | Iron Triangle visualization with CCS score and orphan panel | v5.0 |
+| Word Integration API | Context awareness endpoint for Word Add-in | v5.0 |
 
 ### 1.3 Technology Stack
 
@@ -1457,7 +1459,7 @@ LogEntry = {
 | v4.0 | 2024 | Trust Gate (PDF coordinates), strategy agent, drafting workflow |
 | v4.1 | 2024-12 | Persistent storage: PostgreSQL + Render Disk |
 | v4.2 | 2024-12 | Master Architect Workflow: F-B-P Drafting + Red Team Review |
-| v5.0 | 2024-12 | **Iron Triangle DAG + Validation + Click-to-Verify + War Room** |
+| v5.0 | 2024-12 | **Iron Triangle + Click-to-Verify + War Room + Word API** |
 
 ### v5.0 Changes (Current)
 
@@ -1546,6 +1548,24 @@ LogEntry = {
     - "War Room" tab in sidebar navigation
     - Triangle icon for menu item
     - Enabled after RFP processing
+
+**Phase 4: Word Integration API (Section 4.2)**
+
+15. **POST /api/word/context Endpoint**
+    - Context awareness for Word Add-in
+    - Keyword-based requirement matching (Jaccard similarity)
+    - Section context lookup from outline
+    - Compliance status calculation
+    - Intelligent suggestions generation
+
+16. **GET /api/word/rfps Endpoint**
+    - List available RFPs for Word Add-in
+    - Returns RFP metadata and requirements count
+
+17. **WordContextRequest/Response Models**
+    - Pydantic models for type-safe API
+    - Configurable max_results (1-20)
+    - Optional section_heading and document_context
 
 ### v4.2 Changes
 
@@ -3307,6 +3327,102 @@ The orphan panel displays requirements without proper Iron Triangle links:
 | `.graph-canvas` | SVG graph viewport |
 | `.orphan-panel` | Sidebar for orphans |
 | `.orphan-item` | Individual orphan card |
+
+### 16.9 Word Integration API (Section 4.2)
+
+**Location:** `api/main.py`
+
+The Word Integration API provides context awareness for a future Microsoft Word Add-in, enabling real-time compliance verification while writing proposals.
+
+#### POST /api/word/context
+
+Query the Compliance Matrix based on current document context.
+
+**Request:**
+```json
+{
+    "rfp_id": "RFP-A1B2C3D4",
+    "current_text": "The contractor shall provide experienced project managers...",
+    "section_heading": "Management Approach",
+    "document_context": "Technical Volume",
+    "max_results": 5
+}
+```
+
+**Response:**
+```json
+{
+    "rfp_id": "RFP-A1B2C3D4",
+    "matching_requirements": [
+        {
+            "id": "REQ-C-042",
+            "text": "The contractor shall provide qualified project management...",
+            "type": "performance",
+            "section": "C.3.2",
+            "priority": "high",
+            "similarity_score": 0.421
+        }
+    ],
+    "section_context": {
+        "volume": "Technical Volume",
+        "section_id": "SEC-2.1",
+        "section_title": "Management Approach",
+        "page_limit": 15,
+        "requirements": ["REQ-C-042", "REQ-C-043"]
+    },
+    "compliance_status": {
+        "requirements_found": 3,
+        "addressed_count": 2,
+        "compliance_rate": 66.7
+    },
+    "suggestions": [
+        "Address 1 high-priority requirements in this section",
+        "Include evidence addressing evaluation criteria"
+    ]
+}
+```
+
+#### GET /api/word/rfps
+
+List available RFPs for Word Add-in integration.
+
+**Response:**
+```json
+{
+    "rfps": [
+        {
+            "id": "RFP-A1B2C3D4",
+            "title": "IT Services RFP",
+            "requirements_count": 156,
+            "created_at": "2024-12-28T10:00:00Z"
+        }
+    ],
+    "count": 1
+}
+```
+
+#### Matching Algorithm
+
+Requirements are matched using Jaccard similarity:
+
+```python
+# Filter short words (< 4 chars)
+query_words = {w for w in text.lower().split() if len(w) > 3}
+
+# Calculate Jaccard similarity
+intersection = len(query_words & req_words)
+union = len(query_words | req_words)
+similarity = intersection / union if union > 0 else 0
+
+# Threshold: 0.1 for relevance
+```
+
+#### Use Cases
+
+1. **Real-time Compliance Check**: Show relevant requirements as user types
+2. **Section Navigation**: Jump to specific RFP requirements from Word
+3. **Compliance Status**: Visual indicator of addressed vs. unaddressed requirements
+4. **Suggestion Generation**: Context-aware writing suggestions
 
 ---
 
