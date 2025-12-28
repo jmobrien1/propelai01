@@ -4774,6 +4774,275 @@ async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
         raise HTTPException(status_code=500, detail=f"Failed to generate annotated outline: {str(e)}")
 
 
+# ============== Master Architect 4-Phase Workflow ==============
+
+@app.post("/api/rfp/{rfp_id}/master-architect")
+async def run_master_architect_workflow(
+    rfp_id: str,
+    phase: Optional[int] = None,  # None = run all, 1-4 = specific phase
+    include_company_library: bool = True
+):
+    """
+    Execute the Master Architect 4-phase workflow for proposal development.
+
+    Based on the PEARL Framework (Plan-and-Execute) and Shipley/Lohfeld methodologies.
+
+    **Phases:**
+    - Phase 1: Iron Triangle Analysis → Compliance Matrix (L-M-C linkage)
+    - Phase 2: Generate RFP-Specific Annotated Outline (volume-specific templates)
+    - Phase 3: Inject Requirements & Generate Win Themes (Company Library)
+    - Phase 4: Calculate Page Allocations (Section M weights)
+
+    **Query Parameters:**
+    - `phase`: Run specific phase (1-4) or all phases if None
+    - `include_company_library`: Include Company Library data for win themes
+
+    **Returns:** Phase results with outline, compliance matrix, and traceability.
+    """
+    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements = rfp.get("requirements", [])
+    stats = rfp.get("stats", {})
+
+    if not requirements:
+        raise HTTPException(
+            status_code=400,
+            detail="No compliance matrix data. Process RFP first using /process-best-practices"
+        )
+
+    results = {
+        "rfp_id": rfp_id,
+        "phases_completed": [],
+        "warnings": [],
+    }
+
+    try:
+        # Categorize requirements for Iron Triangle
+        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
+                     or r.get("section", "").upper() == "L"]
+        section_m = [r for r in requirements if r.get("category") == "EVALUATION"
+                     or r.get("section", "").upper() == "M"]
+        section_c = [r for r in requirements if r.get("category") == "TECHNICAL"
+                     or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
+
+        # VA Commercial RFPs fix: Section E.2 may contain evaluation factors
+        import re
+        va_eval_patterns = [
+            r'factor\s*[1-4]', r'52\.212-2', r'evaluation.*?factor',
+            r'comparative\s+evaluation', r'technical\s+experience',
+            r'past\s+performance\s+(?:factor|evaluat)',
+        ]
+        for req in requirements:
+            section = req.get("section", "").upper()
+            category = req.get("category", "")
+            text = (req.get("text", "") or "").lower()
+            if section == "E" or category == "INSPECTION":
+                for pattern in va_eval_patterns:
+                    if re.search(pattern, text, re.IGNORECASE):
+                        if req not in section_m:
+                            section_m.append(req)
+                        break
+
+        # GSA/BPA format handling
+        if not section_l and section_m:
+            section_l = section_m
+
+        # =====================================================================
+        # PHASE 1: Iron Triangle Analysis
+        # =====================================================================
+        if phase is None or phase == 1:
+            phase1_result = {
+                "phase": 1,
+                "name": "Iron Triangle Analysis",
+                "section_l_count": len(section_l),
+                "section_m_count": len(section_m),
+                "section_c_count": len(section_c),
+                "iron_triangle": {
+                    "L_instructions": [r.get("text", "")[:200] for r in section_l[:5]],
+                    "M_evaluation": [r.get("text", "")[:200] for r in section_m[:5]],
+                    "C_technical": [r.get("text", "")[:200] for r in section_c[:5]],
+                }
+            }
+            results["phases_completed"].append(phase1_result)
+            results["iron_triangle"] = phase1_result["iron_triangle"]
+
+        # =====================================================================
+        # PHASE 2: Generate RFP-Specific Annotated Outline
+        # =====================================================================
+        if phase is None or phase == 2:
+            generator = SmartOutlineGenerator()
+
+            # Get Company Library data if available
+            company_library_data = None
+            if include_company_library and COMPANY_LIBRARY_AVAILABLE and company_library:
+                try:
+                    company_library_data = company_library.get_profile()
+                except Exception as e:
+                    results["warnings"].append(f"Company Library unavailable: {str(e)}")
+
+            outline_obj = generator.generate_from_compliance_matrix(
+                section_l_requirements=section_l,
+                section_m_requirements=section_m,
+                technical_requirements=section_c,
+                stats=stats,
+                company_library_data=company_library_data
+            )
+            outline = generator.to_json(outline_obj)
+
+            phase2_result = {
+                "phase": 2,
+                "name": "Annotated Outline Generation",
+                "volumes_created": len(outline.get("volumes", [])),
+                "eval_factors_detected": len(outline.get("evaluation_factors", [])),
+                "format_requirements": outline.get("format_requirements", {}),
+            }
+            results["phases_completed"].append(phase2_result)
+            results["outline"] = outline
+
+            # Store outline
+            store.update(rfp_id, {"outline": outline})
+
+        # =====================================================================
+        # PHASE 3: Requirement Injection (L/M/C into sections)
+        # =====================================================================
+        if phase is None or phase == 3:
+            # Import RequirementInjector if available
+            try:
+                from agents.enhanced_compliance.requirement_injector import (
+                    RequirementInjector, create_traceability_matrix
+                )
+                INJECTOR_AVAILABLE = True
+            except ImportError:
+                INJECTOR_AVAILABLE = False
+
+            if INJECTOR_AVAILABLE:
+                injector = RequirementInjector()
+                outline = results.get("outline") or rfp.get("outline", {})
+
+                injected_outline = injector.inject_requirements(
+                    outline_data=outline,
+                    requirements=requirements,
+                    compliance_matrix=None  # Can pass existing CTM if available
+                )
+
+                # Create traceability matrix
+                traceability = create_traceability_matrix(injected_outline)
+
+                phase3_result = {
+                    "phase": 3,
+                    "name": "Requirement Injection",
+                    "sections_enriched": sum(
+                        len(v.get("sections", []))
+                        for v in injected_outline.get("volumes", [])
+                    ),
+                    "traceability_entries": len(traceability),
+                }
+                results["phases_completed"].append(phase3_result)
+                results["outline"] = injected_outline
+                results["traceability_matrix"] = traceability[:20]  # First 20 entries
+
+                # Store updated outline
+                store.update(rfp_id, {"outline": injected_outline})
+            else:
+                results["warnings"].append("RequirementInjector not available - skipping Phase 3")
+
+        # =====================================================================
+        # PHASE 4: Win Theme & Page Allocation Summary
+        # =====================================================================
+        if phase is None or phase == 4:
+            outline = results.get("outline") or rfp.get("outline", {})
+
+            # Summarize win themes and page allocations
+            volumes = outline.get("volumes", [])
+            win_theme_summary = []
+            page_allocation_summary = []
+
+            for vol in volumes:
+                vol_pages = 0
+                vol_themes = 0
+                for sec in vol.get("sections", []):
+                    sec_themes = sec.get("win_themes", [])
+                    sec_pages = sec.get("page_allocation", 0)
+                    vol_themes += len([t for t in sec_themes if not t.startswith("[WIN THEME:")])
+                    vol_pages += sec_pages or 0
+
+                win_theme_summary.append({
+                    "volume": vol.get("name", ""),
+                    "themes_count": vol_themes,
+                })
+                page_allocation_summary.append({
+                    "volume": vol.get("name", ""),
+                    "total_pages": vol_pages,
+                    "page_limit": vol.get("page_limit"),
+                })
+
+            phase4_result = {
+                "phase": 4,
+                "name": "Win Themes & Page Allocations",
+                "win_theme_summary": win_theme_summary,
+                "page_allocation_summary": page_allocation_summary,
+                "total_pages_allocated": sum(p["total_pages"] for p in page_allocation_summary),
+            }
+            results["phases_completed"].append(phase4_result)
+            results["win_theme_summary"] = win_theme_summary
+            results["page_allocation_summary"] = page_allocation_summary
+
+        results["status"] = "completed"
+        results["message"] = f"Master Architect workflow completed: {len(results['phases_completed'])} phases"
+
+        return results
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Master Architect workflow failed: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/master-architect/status")
+async def get_master_architect_status(rfp_id: str):
+    """
+    Get the status of the Master Architect workflow for an RFP.
+
+    Returns which phases have been completed and any available results.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    outline = rfp.get("outline", {})
+    requirements = rfp.get("requirements", [])
+
+    phases_status = {
+        "phase_1_iron_triangle": len(requirements) > 0,
+        "phase_2_outline": bool(outline.get("volumes")),
+        "phase_3_injection": any(
+            sec.get("l_requirements") or sec.get("m_requirements")
+            for vol in outline.get("volumes", [])
+            for sec in vol.get("sections", [])
+        ),
+        "phase_4_win_themes": any(
+            sec.get("win_themes") and not sec["win_themes"][0].startswith("[WIN")
+            for vol in outline.get("volumes", [])
+            for sec in vol.get("sections", [])
+            if sec.get("win_themes")
+        ),
+    }
+
+    return {
+        "rfp_id": rfp_id,
+        "phases": phases_status,
+        "all_complete": all(phases_status.values()),
+        "requirements_count": len(requirements),
+        "volumes_count": len(outline.get("volumes", [])),
+    }
+
 
 # ============== Company Library API ==============
 
