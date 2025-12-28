@@ -1146,14 +1146,21 @@
                                 <Icon name="GitBranch" />
                                 <span>Amendments</span>
                             </div>
-                            <div 
+                            <div
                                 className={`nav-item ${currentView === 'outline' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
                                 onClick={() => stats && setCurrentView('outline')}
                             >
                                 <Icon name="FileText" />
                                 <span>Proposal Outline</span>
                             </div>
-                            
+                            <div
+                                className={`nav-item ${currentView === 'drafting' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
+                                onClick={() => stats && setCurrentView('drafting')}
+                            >
+                                <Icon name="Edit3" />
+                                <span>Draft & Review</span>
+                            </div>
+
                             <div className="nav-label" style={{ marginTop: 24 }}>Company Library</div>
                             <div 
                                 className={`nav-item ${currentView === 'library' ? 'active' : ''}`}
@@ -1303,7 +1310,11 @@
                         {currentView === 'outline' && stats && (
                             <OutlineView rfpId={currentRfpId} />
                         )}
-                        
+
+                        {currentView === 'drafting' && stats && (
+                            <DraftingView rfpId={currentRfpId} />
+                        )}
+
                         {currentView === 'library' && (
                             <LibraryView />
                         )}
@@ -3614,7 +3625,471 @@
                 </div>
             );
         }
-        
+
+        // Drafting & Red Team Review View
+        function DraftingView({ rfpId }) {
+            const [outline, setOutline] = useState(null);
+            const [drafts, setDrafts] = useState({});
+            const [redTeamResults, setRedTeamResults] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [selectedSection, setSelectedSection] = useState(null);
+            const [drafting, setDrafting] = useState(false);
+            const [reviewing, setReviewing] = useState(false);
+            const [activeTab, setActiveTab] = useState('drafts'); // 'drafts' | 'redteam'
+
+            useEffect(() => {
+                if (rfpId) {
+                    loadData();
+                }
+            }, [rfpId]);
+
+            const loadData = async () => {
+                setLoading(true);
+                try {
+                    const [outlineRes, draftsRes] = await Promise.all([
+                        api.getOutline(rfpId).catch(() => ({ outline: null })),
+                        fetch(`/api/rfp/${rfpId}/drafts`).then(r => r.json()).catch(() => ({ drafts: [] }))
+                    ]);
+                    setOutline(outlineRes.outline);
+
+                    // Convert drafts array to object keyed by section_id
+                    const draftsMap = {};
+                    (draftsRes.drafts || []).forEach(d => {
+                        draftsMap[d.section_id] = d;
+                    });
+                    setDrafts(draftsMap);
+
+                    // Load red team history
+                    const rtRes = await fetch(`/api/rfp/${rfpId}/red-team/history`).then(r => r.json()).catch(() => ({ latest: null }));
+                    setRedTeamResults(rtRes.latest);
+                } catch (e) {
+                    console.error('Failed to load drafting data:', e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const draftSection = async (sectionId, sectionName) => {
+                setDrafting(true);
+                setSelectedSection(sectionId);
+                try {
+                    const res = await fetch(`/api/rfp/${rfpId}/draft/section/${encodeURIComponent(sectionId)}?target_word_count=300`, {
+                        method: 'POST'
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        setDrafts(prev => ({
+                            ...prev,
+                            [sectionId]: {
+                                section_id: sectionId,
+                                word_count: data.word_count,
+                                quality_score: data.quality_scores?.overall || 0,
+                                draft_text: data.draft_text,
+                                approved: data.approved || false,
+                                revision_count: 0
+                            }
+                        }));
+                    }
+                } catch (e) {
+                    console.error('Drafting failed:', e);
+                } finally {
+                    setDrafting(false);
+                    setSelectedSection(null);
+                }
+            };
+
+            const runRedTeamReview = async () => {
+                setReviewing(true);
+                try {
+                    const res = await fetch(`/api/rfp/${rfpId}/red-team`, {
+                        method: 'POST'
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        setRedTeamResults(data);
+                    }
+                } catch (e) {
+                    console.error('Red Team review failed:', e);
+                } finally {
+                    setReviewing(false);
+                }
+            };
+
+            const getScoreColor = (score) => {
+                if (score === 'blue' || score >= 90) return '#3B82F6';
+                if (score === 'green' || score >= 70) return '#10B981';
+                if (score === 'yellow' || score >= 50) return '#F59E0B';
+                return '#EF4444';
+            };
+
+            const getScoreLabel = (score) => {
+                if (score === 'blue' || score >= 90) return 'BLUE - Exceptional';
+                if (score === 'green' || score >= 70) return 'GREEN - Acceptable';
+                if (score === 'yellow' || score >= 50) return 'YELLOW - Marginal';
+                return 'RED - Unacceptable';
+            };
+
+            if (loading) {
+                return (
+                    <div className="animate-in" style={{ textAlign: 'center', padding: 60 }}>
+                        <div className="spinner"></div>
+                        <p style={{ marginTop: 16, color: 'var(--text-muted)' }}>Loading drafting workspace...</p>
+                    </div>
+                );
+            }
+
+            if (!outline?.volumes?.length) {
+                return (
+                    <div className="animate-in">
+                        <div className="page-header">
+                            <h2>Draft & Review</h2>
+                            <p>Generate drafts and run Red Team review</p>
+                        </div>
+                        <div className="card" style={{ textAlign: 'center', padding: 60 }}>
+                            <Icon name="FileText" size={48} />
+                            <h3 style={{ marginTop: 16, marginBottom: 8 }}>Generate Outline First</h3>
+                            <p style={{ color: 'var(--text-muted)' }}>
+                                Go to Proposal Outline tab to generate the outline before drafting sections.
+                            </p>
+                        </div>
+                    </div>
+                );
+            }
+
+            const allSections = outline.volumes.flatMap(v =>
+                (v.sections || []).map(s => ({ ...s, volumeName: v.name, volumeType: v.type }))
+            );
+            const draftedCount = Object.keys(drafts).length;
+
+            return (
+                <div className="animate-in">
+                    <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                            <h2>Draft & Review</h2>
+                            <p>Generate section drafts using F-B-P framework and run Red Team review</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={runRedTeamReview}
+                                disabled={reviewing || draftedCount === 0}
+                            >
+                                {reviewing ? (
+                                    <><span className="spinner" style={{ width: 16, height: 16 }}></span> Reviewing...</>
+                                ) : (
+                                    <><Icon name="Shield" /> Red Team Review</>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="stats-grid" style={{ marginBottom: 24 }}>
+                        <div className="stat-card">
+                            <div className="label">Sections</div>
+                            <div className="value">{allSections.length}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Drafted</div>
+                            <div className="value" style={{ color: 'var(--accent-green)' }}>{draftedCount}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Pending</div>
+                            <div className="value" style={{ color: 'var(--accent-amber)' }}>{allSections.length - draftedCount}</div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="label">Red Team Score</div>
+                            <div className="value" style={{
+                                color: redTeamResults ? getScoreColor(redTeamResults.overall_score || redTeamResults.overall_numeric) : 'var(--text-muted)'
+                            }}>
+                                {redTeamResults ? (
+                                    typeof redTeamResults.overall_numeric === 'number'
+                                        ? `${redTeamResults.overall_numeric.toFixed(0)}%`
+                                        : redTeamResults.overall_score?.toUpperCase()
+                                ) : '—'}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                        <button
+                            className={`btn ${activeTab === 'drafts' ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setActiveTab('drafts')}
+                        >
+                            <Icon name="Edit3" /> Section Drafts
+                        </button>
+                        <button
+                            className={`btn ${activeTab === 'redteam' ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setActiveTab('redteam')}
+                        >
+                            <Icon name="Shield" /> Red Team Results
+                        </button>
+                    </div>
+
+                    {/* Drafts Tab */}
+                    {activeTab === 'drafts' && (
+                        <div className="card">
+                            <div className="card-header">
+                                <h3 className="card-title">Section Drafts</h3>
+                                <span className="badge badge-blue">{draftedCount} / {allSections.length}</span>
+                            </div>
+                            <div className="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Section</th>
+                                            <th>Volume</th>
+                                            <th>Words</th>
+                                            <th>Quality</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {allSections.map((section) => {
+                                            const draft = drafts[section.id];
+                                            const qualityPct = draft ? (draft.quality_score * 100).toFixed(0) : 0;
+                                            return (
+                                                <tr key={section.id}>
+                                                    <td style={{ fontWeight: 500 }}>{section.title || section.name}</td>
+                                                    <td style={{ color: 'var(--text-muted)' }}>{section.volumeName}</td>
+                                                    <td>{draft?.word_count || '—'}</td>
+                                                    <td>
+                                                        {draft ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                                <div style={{
+                                                                    width: 60,
+                                                                    height: 6,
+                                                                    background: 'var(--bg-tertiary)',
+                                                                    borderRadius: 3,
+                                                                    overflow: 'hidden'
+                                                                }}>
+                                                                    <div style={{
+                                                                        width: `${qualityPct}%`,
+                                                                        height: '100%',
+                                                                        background: qualityPct >= 75 ? 'var(--accent-green)' :
+                                                                            qualityPct >= 50 ? 'var(--accent-amber)' : 'var(--accent-red)',
+                                                                        transition: 'width 0.3s'
+                                                                    }} />
+                                                                </div>
+                                                                <span style={{ fontSize: 12 }}>{qualityPct}%</span>
+                                                            </div>
+                                                        ) : '—'}
+                                                    </td>
+                                                    <td>
+                                                        {draft ? (
+                                                            draft.approved ? (
+                                                                <span className="badge badge-green">Approved</span>
+                                                            ) : (
+                                                                <span className="badge badge-amber">Draft</span>
+                                                            )
+                                                        ) : (
+                                                            <span className="badge badge-gray">Not Started</span>
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        <button
+                                                            className="btn btn-sm btn-secondary"
+                                                            onClick={() => draftSection(section.id, section.name)}
+                                                            disabled={drafting && selectedSection === section.id}
+                                                        >
+                                                            {drafting && selectedSection === section.id ? (
+                                                                <><span className="spinner" style={{ width: 12, height: 12 }}></span></>
+                                                            ) : draft ? (
+                                                                <><Icon name="RefreshCw" size={14} /> Redraft</>
+                                                            ) : (
+                                                                <><Icon name="Zap" size={14} /> Draft</>
+                                                            )}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Red Team Tab */}
+                    {activeTab === 'redteam' && (
+                        <div>
+                            {redTeamResults ? (
+                                <>
+                                    {/* Overall Score Card */}
+                                    <div className="card" style={{
+                                        marginBottom: 24,
+                                        background: `linear-gradient(135deg, ${getScoreColor(redTeamResults.overall_score || redTeamResults.overall_numeric)}15, transparent)`,
+                                        borderColor: getScoreColor(redTeamResults.overall_score || redTeamResults.overall_numeric)
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 24 }}>
+                                            <div>
+                                                <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 8 }}>OVERALL EVALUATION</div>
+                                                <div style={{
+                                                    fontSize: 28,
+                                                    fontWeight: 700,
+                                                    color: getScoreColor(redTeamResults.overall_score || redTeamResults.overall_numeric)
+                                                }}>
+                                                    {getScoreLabel(redTeamResults.overall_score || redTeamResults.overall_numeric)}
+                                                </div>
+                                                <div style={{ fontSize: 14, marginTop: 8 }}>
+                                                    Recommendation: <strong style={{ textTransform: 'uppercase' }}>
+                                                        {redTeamResults.recommendation?.replace('_', ' ') || 'N/A'}
+                                                    </strong>
+                                                </div>
+                                            </div>
+                                            <div style={{
+                                                width: 100,
+                                                height: 100,
+                                                borderRadius: '50%',
+                                                border: `6px solid ${getScoreColor(redTeamResults.overall_score || redTeamResults.overall_numeric)}`,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: 28,
+                                                fontWeight: 700,
+                                                color: getScoreColor(redTeamResults.overall_score || redTeamResults.overall_numeric)
+                                            }}>
+                                                {typeof redTeamResults.overall_numeric === 'number'
+                                                    ? redTeamResults.overall_numeric.toFixed(0)
+                                                    : '—'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Section Scores */}
+                                    {redTeamResults.section_scores?.length > 0 && (
+                                        <div className="card" style={{ marginBottom: 24 }}>
+                                            <div className="card-header">
+                                                <h3 className="card-title">Section Scores</h3>
+                                            </div>
+                                            {redTeamResults.section_scores.map((sec, idx) => (
+                                                <div key={idx} style={{
+                                                    padding: 16,
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}>
+                                                    <div>
+                                                        <div style={{ fontWeight: 500 }}>{sec.section_id}</div>
+                                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                            Compliance: {(sec.compliance_rate * 100).toFixed(0)}%
+                                                        </div>
+                                                    </div>
+                                                    <div style={{
+                                                        padding: '6px 12px',
+                                                        borderRadius: 6,
+                                                        background: getScoreColor(sec.color_score || sec.numeric_score),
+                                                        color: 'white',
+                                                        fontWeight: 600,
+                                                        fontSize: 13
+                                                    }}>
+                                                        {sec.color_score?.toUpperCase() || `${sec.numeric_score?.toFixed(0)}%`}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Findings */}
+                                    {redTeamResults.findings?.length > 0 && (
+                                        <div className="card" style={{ marginBottom: 24 }}>
+                                            <div className="card-header">
+                                                <h3 className="card-title">Findings</h3>
+                                                <span className="badge badge-amber">{redTeamResults.findings.length}</span>
+                                            </div>
+                                            {redTeamResults.findings.map((finding, idx) => (
+                                                <div key={idx} style={{
+                                                    padding: 16,
+                                                    borderBottom: '1px solid var(--border-color)'
+                                                }}>
+                                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                                        <span className={`badge ${finding.type === 'weakness' ? 'badge-red' : 'badge-amber'}`}>
+                                                            {finding.type}
+                                                        </span>
+                                                        {finding.section && (
+                                                            <span className="badge badge-gray">{finding.section}</span>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ marginBottom: 8 }}>{finding.description}</div>
+                                                    {finding.remediation && (
+                                                        <div style={{ fontSize: 13, color: 'var(--accent-green)' }}>
+                                                            <strong>Remediation:</strong> {finding.remediation}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Remediation Plan */}
+                                    {redTeamResults.remediation_plan?.length > 0 && (
+                                        <div className="card">
+                                            <div className="card-header">
+                                                <h3 className="card-title">Remediation Plan</h3>
+                                            </div>
+                                            {redTeamResults.remediation_plan.map((item, idx) => (
+                                                <div key={idx} style={{
+                                                    padding: 16,
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    display: 'flex',
+                                                    gap: 12
+                                                }}>
+                                                    <div style={{
+                                                        width: 24,
+                                                        height: 24,
+                                                        borderRadius: '50%',
+                                                        background: item.priority === 'CRITICAL' ? 'var(--accent-red)' :
+                                                            item.priority === 'HIGH' ? 'var(--accent-amber)' : 'var(--accent-blue)',
+                                                        color: 'white',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        fontSize: 12,
+                                                        fontWeight: 600,
+                                                        flexShrink: 0
+                                                    }}>
+                                                        {idx + 1}
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontWeight: 500 }}>{item.action}</div>
+                                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                            Section: {item.section} · Priority: {item.priority}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="card" style={{ textAlign: 'center', padding: 60 }}>
+                                    <Icon name="Shield" size={48} />
+                                    <h3 style={{ marginTop: 16, marginBottom: 8 }}>No Red Team Review Yet</h3>
+                                    <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>
+                                        Draft some sections first, then run Red Team review to evaluate compliance and quality.
+                                    </p>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={runRedTeamReview}
+                                        disabled={reviewing || draftedCount === 0}
+                                    >
+                                        {reviewing ? (
+                                            <><span className="spinner" style={{ width: 16, height: 16 }}></span> Reviewing...</>
+                                        ) : (
+                                            <><Icon name="Shield" /> Run Red Team Review</>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         // Company Library View
         function LibraryView() {
             const [library, setLibrary] = useState(null);
