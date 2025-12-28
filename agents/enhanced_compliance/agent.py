@@ -101,7 +101,7 @@ class EnhancedComplianceAgent:
             # Fallback: process raw text (like v1.0)
             result = self.process_text(rfp_raw_text)
         else:
-            return self._error_result("No RFP content to process", start_time)
+            return self._error_result("No RFP content to process", start_time, state)
         
         # Calculate duration
         duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -123,6 +123,9 @@ class EnhancedComplianceAgent:
             ]
         }
         
+        # Accumulate trace logs
+        existing_trace = state.get("agent_trace_log", [])
+
         # Return state update (compatible with orchestrator)
         return {
             "current_phase": ProposalPhase.SHRED.value,
@@ -142,7 +145,7 @@ class EnhancedComplianceAgent:
             },
             "extraction_stats": result.stats,
             "extraction_warnings": result.warnings,
-            "agent_trace_log": [trace_log],
+            "agent_trace_log": existing_trace + [trace_log],
             "updated_at": datetime.now().isoformat(),
         }
     
@@ -467,11 +470,12 @@ class EnhancedComplianceAgent:
             "notes": row.notes,
         }
     
-    def _error_result(self, message: str, start_time: datetime) -> Dict[str, Any]:
+    def _error_result(self, message: str, start_time: datetime, state: ProposalState) -> Dict[str, Any]:
         """Generate error result"""
+        existing_trace = state.get("agent_trace_log", [])
         return {
             "error_state": message,
-            "agent_trace_log": [{
+            "agent_trace_log": existing_trace + [{
                 "timestamp": start_time.isoformat(),
                 "agent_name": "enhanced_compliance_agent",
                 "action": "shred_rfp_bundle",

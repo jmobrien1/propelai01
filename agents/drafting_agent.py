@@ -107,9 +107,10 @@ class DraftingAgent:
         existing_drafts = state.get("draft_sections", {})
         
         if not annotated_outline:
+            existing_trace = state.get("agent_trace_log", [])
             return {
                 "error_state": "No annotated outline found - run strategy agent first",
-                "agent_trace_log": [{
+                "agent_trace_log": existing_trace + [{
                     "timestamp": start_time.isoformat(),
                     "agent_name": "drafting_agent",
                     "action": "generate_drafts",
@@ -189,10 +190,13 @@ class DraftingAgent:
             # All sections drafted, ready for review
             next_phase = ProposalPhase.REVIEW.value
         
+        # Accumulate trace logs
+        existing_trace = state.get("agent_trace_log", [])
+
         return {
             "current_phase": next_phase,
             "draft_sections": draft_sections,
-            "agent_trace_log": [trace_log],
+            "agent_trace_log": existing_trace + [trace_log],
             "updated_at": datetime.now().isoformat()
         }
     
@@ -559,9 +563,12 @@ class ResearchAgent:
             "output_summary": f"Found {len(research_results)} evidence items",
             "reasoning_trace": "Queried vector store for relevant past performance and capabilities"
         }
-        
+
+        # Accumulate trace logs
+        existing_trace = state.get("agent_trace_log", [])
+
         return {
-            "agent_trace_log": [trace_log],
+            "agent_trace_log": existing_trace + [trace_log],
             "updated_at": datetime.now().isoformat()
         }
     

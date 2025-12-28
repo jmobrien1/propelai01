@@ -134,9 +134,10 @@ class ComplianceAgent:
         rfp_text = state.get("rfp_raw_text", "")
         
         if not rfp_text:
+            existing_trace = state.get("agent_trace_log", [])
             return {
                 "error_state": "No RFP content to process",
-                "agent_trace_log": [{
+                "agent_trace_log": existing_trace + [{
                     "timestamp": start_time.isoformat(),
                     "agent_name": "compliance_agent",
                     "action": "shred_rfp",
@@ -186,6 +187,9 @@ class ComplianceAgent:
             ]
         }
         
+        # Accumulate trace logs
+        existing_trace = state.get("agent_trace_log", [])
+
         return {
             "current_phase": ProposalPhase.SHRED.value,
             "requirements": [self._requirement_to_dict(r) for r in requirements],
@@ -199,7 +203,7 @@ class ComplianceAgent:
                 "sections_found": list(sections.keys()),
                 "processed_at": start_time.isoformat(),
             },
-            "agent_trace_log": [trace_log],
+            "agent_trace_log": existing_trace + [trace_log],
             "updated_at": datetime.now().isoformat()
         }
     

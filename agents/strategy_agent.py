@@ -97,9 +97,10 @@ class StrategyAgent:
         rfp_metadata = state.get("rfp_metadata", {})
         
         if not evaluation_criteria:
+            existing_trace = state.get("agent_trace_log", [])
             return {
                 "error_state": "No evaluation criteria found - run compliance shred first",
-                "agent_trace_log": [{
+                "agent_trace_log": existing_trace + [{
                     "timestamp": start_time.isoformat(),
                     "agent_name": "strategy_agent",
                     "action": "develop_strategy",
@@ -165,12 +166,15 @@ class StrategyAgent:
             ]
         }
         
+        # Accumulate trace logs
+        existing_trace = state.get("agent_trace_log", [])
+
         return {
             "current_phase": ProposalPhase.STRATEGY.value,
             "win_themes": [self._win_theme_to_dict(t) for t in win_themes],
             "competitor_analysis": competitor_analysis,
             "annotated_outline": annotated_outline,
-            "agent_trace_log": [trace_log],
+            "agent_trace_log": existing_trace + [trace_log],
             "updated_at": datetime.now().isoformat()
         }
     
