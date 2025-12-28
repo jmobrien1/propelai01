@@ -1,0 +1,51 @@
+# PropelAI - Development Dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Include production dependencies
+-r requirements.txt
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-xdist>=3.3.0  # Parallel test execution
+pytest-mock>=3.11.0
+hypothesis>=6.82.0  # Property-based testing
+faker>=19.0.0  # Fake data generation
+httpx>=0.24.0  # Async test client for FastAPI
+respx>=0.20.0  # Mock HTTP requests
+
+# Code Quality
+black>=23.7.0  # Code formatter
+isort>=5.12.0  # Import sorter
+flake8>=6.1.0  # Linter
+mypy>=1.4.0  # Type checker
+pylint>=2.17.0  # Advanced linter
+bandit>=1.7.5  # Security linter
+safety>=2.3.0  # Dependency vulnerability scanner
+
+# Type Stubs
+types-redis>=4.6.0
+types-requests>=2.31.0
+types-python-dateutil>=2.8.0
+
+# Documentation
+mkdocs>=1.5.0
+mkdocs-material>=9.2.0
+mkdocstrings[python]>=0.22.0
+
+# Development Tools
+ipython>=8.14.0
+ipdb>=0.13.0  # IPython debugger
+watchfiles>=0.19.0  # File watcher for auto-reload
+pre-commit>=3.3.0  # Git hooks
+
+# Profiling & Debugging
+py-spy>=0.3.0  # Sampling profiler
+memory-profiler>=0.61.0
+line-profiler>=4.0.0
+snakeviz>=2.2.0  # Profile visualization
+
+# Database Tools
+alembic>=1.11.0  # Database migrations
+sqlalchemy-utils>=0.41.0

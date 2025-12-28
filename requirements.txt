@@ -1,52 +1,63 @@
-# PropelAI v5.0 - Production Dependencies
+# PropelAI - Production Dependencies
 
 # API Framework
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
 python-multipart>=0.0.6
 pydantic>=2.0.0
+pydantic-settings>=2.0.0  # v4.1: Settings management
+email-validator>=2.0.0  # v4.1: Email validation for Pydantic
 
 # Database
-sqlalchemy[asyncio]>=2.0.0
-asyncpg>=0.29.0
-pgvector>=0.2.4
-alembic>=1.13.0
-
-# Authentication
-pyjwt>=2.8.0
-passlib[bcrypt]>=1.7.4
-
-# Storage
-boto3>=1.34.0
-botocore>=1.34.0
+sqlalchemy[asyncio]>=2.0.0  # v4.1: Async ORM
+asyncpg>=0.28.0  # v4.1: PostgreSQL async driver
+psycopg2-binary>=2.9.0  # v4.1: PostgreSQL sync driver (fallback)
+pgvector>=0.2.0  # v4.0: Vector embeddings for semantic search
 
 # Document Processing
 pypdf>=3.0.0
+pdfplumber>=0.10.0  # v4.0 Phase 1: Coordinate extraction for Trust Gate
 python-docx>=0.8.11
 openpyxl>=3.0.10
-PyMuPDF>=1.24.0
 
-# AI/ML
-google-generativeai>=0.3.0
-openai>=1.0.0
-anthropic>=0.18.0
+# Security & Authentication
+PyJWT>=2.8.0  # v4.1: JWT token authentication
+bcrypt>=4.0.0  # v4.1: Password hashing
+passlib[bcrypt]>=1.7.4  # v4.1: Password hashing utilities
+pyotp>=2.9.0  # v4.1: TOTP-based two-factor authentication
+cryptography>=41.0.0  # v4.1: Cryptographic operations
 
-# LangChain/LangGraph
-langgraph>=0.2.0
-langchain>=0.1.0
-langchain-google-genai>=1.0.0
-
-# Vector Embeddings & RAG
-tiktoken>=0.5.0
-sentence-transformers>=2.2.0
-numpy>=1.24.0
-
-# Utils
+# HTTP & Networking
 httpx>=0.24.0
-python-dateutil>=2.8.0
-tenacity>=8.2.0
+aiohttp>=3.9.0  # v4.1: Async HTTP client for webhook delivery
+requests>=2.31.0  # v4.1: Sync HTTP client (fallback)
 
-# Development
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-rich>=13.0.0
+# Caching & Rate Limiting
+redis>=5.0.0  # v4.1: Redis-based rate limiting and session storage
+cachetools>=5.3.0  # v4.1: In-memory caching utilities
+
+# Image Processing
+Pillow>=10.0.0  # v4.1: Image processing for QR codes
+qrcode>=7.4.0  # v4.1: QR code generation for 2FA setup
+
+# Email
+sendgrid>=6.10.0  # v4.1: SendGrid email API
+aiosmtplib>=3.0.0  # v4.1: Async SMTP client
+
+# AI/ML (Optional - for LangGraph workflows)
+# Uncomment these if using AI features:
+# openai>=1.0.0
+# langchain>=0.1.0
+# langgraph>=0.0.20
+# tiktoken>=0.5.0
+
+# Monitoring & Observability
+python-json-logger>=2.0.0  # v4.1: JSON structured logging
+sentry-sdk[fastapi]>=1.29.0  # v4.1: Error tracking (optional)
+
+# Data Validation & Serialization
+orjson>=3.9.0  # v4.1: Fast JSON serialization
+python-dateutil>=2.8.0  # v4.1: Date parsing utilities
+
+# Background Tasks
+celery>=5.3.0  # v4.1: Distributed task queue (optional)
