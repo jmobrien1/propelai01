@@ -3960,49 +3960,139 @@
                 };
             }, [graphData, orphans]);
 
-            // Simple force-directed layout for graph nodes
+            // Force-directed layout algorithm for graph nodes (v5.0.2)
             const graphLayout = useMemo(() => {
                 if (!graphData?.nodes || graphData.nodes.length === 0) {
                     return { nodes: [], edges: [] };
                 }
 
+                // Canvas dimensions
+                const width = 600;
+                const height = 450;
+                const padding = 40;
+
+                // Section target positions (Iron Triangle layout)
+                const sectionTargets = {
+                    'C': { x: 150, y: 300 },
+                    'SOW': { x: 150, y: 300 },
+                    'PWS': { x: 150, y: 300 },
+                    'L': { x: 450, y: 300 },
+                    'M': { x: 300, y: 100 },
+                    'OTHER': { x: 300, y: 380 }
+                };
+
+                // Initialize nodes with positions near section targets
                 const nodes = graphData.nodes.map((node, idx) => {
-                    // Position nodes by section in a triangular layout
                     const section = (node.section || '').toUpperCase();
-                    let baseX, baseY;
+                    const target = sectionTargets[section] || sectionTargets['OTHER'];
 
-                    if (section === 'C' || section === 'SOW' || section === 'PWS') {
-                        baseX = 150;
-                        baseY = 300;
-                    } else if (section === 'L') {
-                        baseX = 450;
-                        baseY = 300;
-                    } else if (section === 'M') {
-                        baseX = 300;
-                        baseY = 100;
-                    } else {
-                        baseX = 300;
-                        baseY = 400;
-                    }
-
-                    // Add some random offset for visual separation
-                    const offsetX = (Math.random() - 0.5) * 120;
-                    const offsetY = (Math.random() - 0.5) * 80;
+                    // Start with some spread around target
+                    const angle = (idx / graphData.nodes.length) * Math.PI * 2;
+                    const radius = 50 + Math.random() * 30;
 
                     return {
                         ...node,
-                        x: baseX + offsetX,
-                        y: baseY + offsetY,
+                        x: target.x + Math.cos(angle) * radius,
+                        y: target.y + Math.sin(angle) * radius,
+                        vx: 0,
+                        vy: 0,
                         isOrphan: orphans.some(o => o.id === node.id),
+                        sectionTarget: target
                     };
                 });
 
+                // Build edge list and adjacency for force calculation
                 const nodeMap = new Map(nodes.map(n => [n.id, n]));
                 const edges = (graphData.edges || []).map(edge => ({
                     ...edge,
                     sourceNode: nodeMap.get(edge.source),
                     targetNode: nodeMap.get(edge.target),
                 })).filter(e => e.sourceNode && e.targetNode);
+
+                // Force-directed simulation parameters
+                const iterations = 100;
+                const repulsionStrength = 800;   // Node-node repulsion
+                const attractionStrength = 0.05; // Edge attraction
+                const sectionPull = 0.15;        // Pull toward section target
+                const damping = 0.9;             // Velocity damping
+                const minDistance = 25;          // Minimum node distance
+
+                // Run simulation
+                for (let iter = 0; iter < iterations; iter++) {
+                    const alpha = 1 - iter / iterations; // Cooling factor
+
+                    // Apply repulsion between all node pairs
+                    for (let i = 0; i < nodes.length; i++) {
+                        for (let j = i + 1; j < nodes.length; j++) {
+                            const nodeA = nodes[i];
+                            const nodeB = nodes[j];
+
+                            let dx = nodeB.x - nodeA.x;
+                            let dy = nodeB.y - nodeA.y;
+                            let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+                            if (dist < minDistance) dist = minDistance;
+
+                            const force = (repulsionStrength * alpha) / (dist * dist);
+                            const fx = (dx / dist) * force;
+                            const fy = (dy / dist) * force;
+
+                            nodeA.vx -= fx;
+                            nodeA.vy -= fy;
+                            nodeB.vx += fx;
+                            nodeB.vy += fy;
+                        }
+                    }
+
+                    // Apply attraction along edges
+                    for (const edge of edges) {
+                        const source = edge.sourceNode;
+                        const target = edge.targetNode;
+
+                        const dx = target.x - source.x;
+                        const dy = target.y - source.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+                        const force = dist * attractionStrength * alpha;
+                        const fx = (dx / dist) * force;
+                        const fy = (dy / dist) * force;
+
+                        source.vx += fx;
+                        source.vy += fy;
+                        target.vx -= fx;
+                        target.vy -= fy;
+                    }
+
+                    // Apply section clustering force (pull toward section target)
+                    for (const node of nodes) {
+                        const target = node.sectionTarget;
+                        const dx = target.x - node.x;
+                        const dy = target.y - node.y;
+
+                        node.vx += dx * sectionPull * alpha;
+                        node.vy += dy * sectionPull * alpha;
+                    }
+
+                    // Update positions with velocity
+                    for (const node of nodes) {
+                        node.vx *= damping;
+                        node.vy *= damping;
+
+                        node.x += node.vx;
+                        node.y += node.vy;
+
+                        // Constrain to canvas bounds
+                        node.x = Math.max(padding, Math.min(width - padding, node.x));
+                        node.y = Math.max(padding, Math.min(height - padding, node.y));
+                    }
+                }
+
+                // Clean up temporary properties
+                nodes.forEach(n => {
+                    delete n.vx;
+                    delete n.vy;
+                    delete n.sectionTarget;
+                });
 
                 return { nodes, edges };
             }, [graphData, orphans]);

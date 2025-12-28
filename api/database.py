@@ -608,6 +608,82 @@ class WebhookDeliveryModel(Base):
         }
 
 
+class AgentTraceLogModel(Base):
+    """
+    Agent Trace Log (NFR-2.3) - Foundation for Data Flywheel
+
+    Logs every agent action: Input → Output → Human Correction
+    This enables:
+    - Time-travel debugging
+    - Human correction feedback loop
+    - Training data collection for model improvement
+    """
+    __tablename__ = "agent_trace_logs"
+
+    id = Column(String(50), primary_key=True)
+    rfp_id = Column(String(50), ForeignKey("rfps.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Agent identification
+    agent_name = Column(String(100), nullable=False)  # e.g., "ComplianceAgent", "StrategyAgent"
+    action = Column(String(100), nullable=False)  # e.g., "extract_requirements", "classify_section"
+
+    # Input/Output (the core of the trace)
+    input_data = Column(JSONB, nullable=False)  # What was given to the agent
+    output_data = Column(JSONB, nullable=True)  # What the agent produced
+    confidence_score = Column(Float, nullable=True)  # Agent's confidence (0.0-1.0)
+
+    # Human correction (for Data Flywheel)
+    human_correction = Column(JSONB, nullable=True)  # Corrected output if any
+    correction_type = Column(String(50), nullable=True)  # "accepted", "modified", "rejected"
+    correction_reason = Column(Text, nullable=True)  # Why the correction was made
+    corrected_by = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    corrected_at = Column(DateTime, nullable=True)
+
+    # Execution metadata
+    duration_ms = Column(Integer, nullable=True)  # How long the agent took
+    model_name = Column(String(100), nullable=True)  # LLM model used
+    token_count = Column(Integer, nullable=True)  # Tokens consumed
+
+    # Status
+    status = Column(String(20), default="completed")  # pending, completed, failed, corrected
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_agent_trace_logs_rfp_id', 'rfp_id'),
+        Index('idx_agent_trace_logs_agent_name', 'agent_name'),
+        Index('idx_agent_trace_logs_action', 'action'),
+        Index('idx_agent_trace_logs_created_at', 'created_at'),
+        Index('idx_agent_trace_logs_status', 'status'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "rfp_id": self.rfp_id,
+            "user_id": self.user_id,
+            "agent_name": self.agent_name,
+            "action": self.action,
+            "input_data": self.input_data,
+            "output_data": self.output_data,
+            "confidence_score": self.confidence_score,
+            "human_correction": self.human_correction,
+            "correction_type": self.correction_type,
+            "correction_reason": self.correction_reason,
+            "corrected_by": self.corrected_by,
+            "corrected_at": self.corrected_at.isoformat() if self.corrected_at else None,
+            "duration_ms": self.duration_ms,
+            "model_name": self.model_name,
+            "token_count": self.token_count,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 # ============== Database Connection ==============
 
 # Engine and session factory (initialized lazily)

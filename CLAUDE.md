@@ -696,6 +696,55 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 - `WarRoomView`: CCS header, SVG Iron Triangle graph, orphan sidebar
 - `MatrixView`: Split-screen mode toggle with `splitScreenMode` state
 
+### Force-Directed Graph Layout (v5.0.2)
+**Goal:** Replace random node positioning with physics-based simulation for better visualization.
+
+**Algorithm:**
+- 100 iterations with cooling factor (simulated annealing)
+- **Repulsion force:** Nodes push apart (inverse square law)
+- **Attraction force:** Connected nodes pull together along edges
+- **Section clustering:** Nodes gravitate toward their section target (C/L/M triangle)
+- **Bounds constraint:** Keeps nodes within canvas
+
+**Parameters:**
+```javascript
+repulsionStrength: 800   // Node-node repulsion
+attractionStrength: 0.05 // Edge attraction
+sectionPull: 0.15        // Pull toward section target
+damping: 0.9             // Velocity damping
+minDistance: 25          // Minimum node distance
+```
+
+### Agent Trace Log (NFR-2.3 Data Flywheel)
+**Goal:** Log every agent action (Input → Output → Human Correction) for debugging and training.
+
+**Database Model** (`api/database.py`):
+```python
+class AgentTraceLogModel(Base):
+    id: str                    # trace-{uuid}
+    rfp_id: str               # Associated RFP
+    agent_name: str           # e.g., "ComplianceAgent"
+    action: str               # e.g., "extract_requirements"
+    input_data: JSONB         # What was given to agent
+    output_data: JSONB        # What agent produced
+    confidence_score: float   # 0.0-1.0
+    human_correction: JSONB   # Corrected output if any
+    correction_type: str      # "accepted", "modified", "rejected"
+    status: str               # pending, completed, failed, corrected
+```
+
+**API Endpoints:**
+- `POST /api/trace-logs` - Create trace log entry
+- `GET /api/trace-logs` - List logs with filters (rfp_id, agent_name, action, status)
+- `GET /api/trace-logs/{trace_id}` - Get specific log
+- `POST /api/trace-logs/{trace_id}/correct` - Submit human correction
+- `GET /api/trace-logs/stats/summary` - Get correction rate statistics
+
+**Use Cases:**
+- Time-travel debugging (replay agent decisions)
+- Human-in-the-loop correction feedback
+- Training data collection for model improvement (Data Flywheel)
+
 ## 13. v5.0 Phase 2: The Strategy Engine (ROADMAP)
 **Status:** Planned - Transform Compliance Matrix into strategic Annotated Outline
 **Target Users:** "Charles" (Executive Strategist) & "Brenda" (Proposal Manager)

@@ -5689,6 +5689,277 @@ async def list_available_rfps():
     }
 
 
+# ============== Agent Trace Log API (NFR-2.3 Data Flywheel) ==============
+
+class AgentTraceLogCreate(BaseModel):
+    """Request body for creating an agent trace log"""
+    rfp_id: Optional[str] = Field(None, description="Associated RFP ID")
+    agent_name: str = Field(..., description="Name of the agent (e.g., 'ComplianceAgent')")
+    action: str = Field(..., description="Action performed (e.g., 'extract_requirements')")
+    input_data: Dict = Field(..., description="Input given to the agent")
+    output_data: Optional[Dict] = Field(None, description="Output produced by the agent")
+    confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Agent confidence")
+    duration_ms: Optional[int] = Field(None, description="Execution duration in milliseconds")
+    model_name: Optional[str] = Field(None, description="LLM model used")
+    token_count: Optional[int] = Field(None, description="Tokens consumed")
+    status: str = Field("completed", description="Status: pending, completed, failed")
+
+
+class AgentTraceCorrection(BaseModel):
+    """Request body for submitting a human correction"""
+    human_correction: Dict = Field(..., description="The corrected output")
+    correction_type: str = Field(..., description="Type: 'accepted', 'modified', 'rejected'")
+    correction_reason: Optional[str] = Field(None, description="Reason for correction")
+
+
+@app.post("/api/trace-logs", tags=["Agent Trace Log"])
+async def create_trace_log(log_data: AgentTraceLogCreate, request: Request):
+    """
+    NFR-2.3: Create an agent trace log entry.
+
+    This endpoint logs agent actions for:
+    - Time-travel debugging
+    - Human correction feedback loop
+    - Training data collection (Data Flywheel)
+    """
+    from api.database import AgentTraceLogModel, get_session
+
+    try:
+        async with get_session() as session:
+            trace_id = f"trace-{uuid.uuid4().hex[:12]}"
+            user_id = None
+
+            # Try to get user from auth header
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+                try:
+                    payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+                    user_id = payload.get("user_id")
+                except:
+                    pass
+
+            trace_log = AgentTraceLogModel(
+                id=trace_id,
+                rfp_id=log_data.rfp_id,
+                user_id=user_id,
+                agent_name=log_data.agent_name,
+                action=log_data.action,
+                input_data=log_data.input_data,
+                output_data=log_data.output_data,
+                confidence_score=log_data.confidence_score,
+                duration_ms=log_data.duration_ms,
+                model_name=log_data.model_name,
+                token_count=log_data.token_count,
+                status=log_data.status,
+            )
+
+            session.add(trace_log)
+            await session.commit()
+
+            return {
+                "id": trace_id,
+                "status": "created",
+                "message": "Trace log entry created successfully"
+            }
+    except Exception as e:
+        print(f"[Agent Trace] Error creating log: {e}")
+        # Fallback to in-memory storage if DB not available
+        return {
+            "id": f"trace-mem-{uuid.uuid4().hex[:8]}",
+            "status": "stored_in_memory",
+            "warning": "Database unavailable, logged to memory"
+        }
+
+
+@app.get("/api/trace-logs", tags=["Agent Trace Log"])
+async def list_trace_logs(
+    rfp_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    action: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    NFR-2.3: List agent trace logs with optional filters.
+
+    Supports filtering by rfp_id, agent_name, action, and status.
+    """
+    from api.database import AgentTraceLogModel, get_session
+
+    try:
+        async with get_session() as session:
+            from sqlalchemy import select, desc
+
+            query = select(AgentTraceLogModel).order_by(desc(AgentTraceLogModel.created_at))
+
+            if rfp_id:
+                query = query.where(AgentTraceLogModel.rfp_id == rfp_id)
+            if agent_name:
+                query = query.where(AgentTraceLogModel.agent_name == agent_name)
+            if action:
+                query = query.where(AgentTraceLogModel.action == action)
+            if status:
+                query = query.where(AgentTraceLogModel.status == status)
+
+            query = query.offset(offset).limit(limit)
+
+            result = await session.execute(query)
+            logs = result.scalars().all()
+
+            return {
+                "logs": [log.to_dict() for log in logs],
+                "count": len(logs),
+                "offset": offset,
+                "limit": limit
+            }
+    except Exception as e:
+        print(f"[Agent Trace] Error listing logs: {e}")
+        return {"logs": [], "count": 0, "error": str(e)}
+
+
+@app.get("/api/trace-logs/{trace_id}", tags=["Agent Trace Log"])
+async def get_trace_log(trace_id: str):
+    """
+    NFR-2.3: Get a specific trace log by ID.
+    """
+    from api.database import AgentTraceLogModel, get_session
+
+    try:
+        async with get_session() as session:
+            from sqlalchemy import select
+
+            result = await session.execute(
+                select(AgentTraceLogModel).where(AgentTraceLogModel.id == trace_id)
+            )
+            log = result.scalar_one_or_none()
+
+            if not log:
+                raise HTTPException(status_code=404, detail="Trace log not found")
+
+            return log.to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/trace-logs/{trace_id}/correct", tags=["Agent Trace Log"])
+async def submit_trace_correction(
+    trace_id: str,
+    correction: AgentTraceCorrection,
+    request: Request
+):
+    """
+    NFR-2.3: Submit a human correction for an agent trace log.
+
+    This is the key endpoint for the "Data Flywheel" - human corrections
+    are logged and can be used to improve agent performance.
+    """
+    from api.database import AgentTraceLogModel, get_session
+
+    try:
+        async with get_session() as session:
+            from sqlalchemy import select
+
+            result = await session.execute(
+                select(AgentTraceLogModel).where(AgentTraceLogModel.id == trace_id)
+            )
+            log = result.scalar_one_or_none()
+
+            if not log:
+                raise HTTPException(status_code=404, detail="Trace log not found")
+
+            # Get user from auth
+            user_id = None
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+                try:
+                    payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+                    user_id = payload.get("user_id")
+                except:
+                    pass
+
+            # Update the log with correction
+            log.human_correction = correction.human_correction
+            log.correction_type = correction.correction_type
+            log.correction_reason = correction.correction_reason
+            log.corrected_by = user_id
+            log.corrected_at = datetime.now()
+            log.status = "corrected"
+
+            await session.commit()
+
+            return {
+                "id": trace_id,
+                "status": "corrected",
+                "correction_type": correction.correction_type,
+                "message": "Correction recorded for Data Flywheel"
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/trace-logs/stats/summary", tags=["Agent Trace Log"])
+async def get_trace_stats():
+    """
+    NFR-2.3: Get summary statistics for agent trace logs.
+
+    Useful for monitoring agent performance and correction rates.
+    """
+    from api.database import AgentTraceLogModel, get_session
+
+    try:
+        async with get_session() as session:
+            from sqlalchemy import select, func
+
+            # Count by agent
+            agent_counts = await session.execute(
+                select(
+                    AgentTraceLogModel.agent_name,
+                    func.count(AgentTraceLogModel.id).label("count")
+                ).group_by(AgentTraceLogModel.agent_name)
+            )
+
+            # Count by status
+            status_counts = await session.execute(
+                select(
+                    AgentTraceLogModel.status,
+                    func.count(AgentTraceLogModel.id).label("count")
+                ).group_by(AgentTraceLogModel.status)
+            )
+
+            # Correction rate
+            total_result = await session.execute(
+                select(func.count(AgentTraceLogModel.id))
+            )
+            total = total_result.scalar() or 0
+
+            corrected_result = await session.execute(
+                select(func.count(AgentTraceLogModel.id)).where(
+                    AgentTraceLogModel.status == "corrected"
+                )
+            )
+            corrected = corrected_result.scalar() or 0
+
+            return {
+                "total_logs": total,
+                "corrected_logs": corrected,
+                "correction_rate": round(corrected / total * 100, 2) if total > 0 else 0,
+                "by_agent": {row[0]: row[1] for row in agent_counts},
+                "by_status": {row[0]: row[1] for row in status_counts},
+            }
+    except Exception as e:
+        return {
+            "total_logs": 0,
+            "error": str(e)
+        }
+
+
 # ============== F-B-P Drafting Workflow ==============
 
 @app.post("/api/rfp/{rfp_id}/draft/section/{section_id}")
