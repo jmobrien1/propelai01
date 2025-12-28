@@ -330,17 +330,70 @@ class BoundingBox:
 
 
 @dataclass
+class VisualRect:
+    """
+    A single visual rectangle on a specific page.
+    Used for multi-page spanning requirements (FR-1.3).
+    """
+    page_number: int
+    bounding_box: BoundingBox
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            "page_number": self.page_number,
+            "bounding_box": self.bounding_box.to_dict(),
+            "normalized_box": self.bounding_box.to_normalized(),
+        }
+
+
+@dataclass
 class SourceCoordinate:
     """
     Links a requirement to its exact location in the source document.
     Used by the Trust Gate to enable one-click verification.
+
+    v5.0 Enhancement (FR-1.3): Supports multi-page spanning via visual_rects.
     """
     document_id: str
-    page_number: int
-    bounding_box: BoundingBox
+    page_number: int  # Primary page (first page of spanning content)
+    bounding_box: BoundingBox  # Primary bounding box (for backwards compatibility)
     text_snippet: str = ""
     extraction_method: str = "pdfplumber"  # pdfplumber, pypdf, ocr
     confidence: float = 1.0
+    # v5.0: Multi-page spanning support
+    visual_rects: List["VisualRect"] = field(default_factory=list)
+    spans_pages: bool = False
+
+    def __post_init__(self):
+        """Initialize visual_rects from primary bounding box if empty"""
+        if not self.visual_rects:
+            self.visual_rects = [
+                VisualRect(
+                    page_number=self.page_number,
+                    bounding_box=self.bounding_box
+                )
+            ]
+        self.spans_pages = len(self.visual_rects) > 1 or (
+            len(self.visual_rects) == 1 and
+            self.visual_rects[0].page_number != self.page_number
+        )
+
+    def add_visual_rect(self, page_number: int, bbox: BoundingBox) -> None:
+        """Add an additional visual rectangle (for multi-page spanning)"""
+        self.visual_rects.append(VisualRect(page_number=page_number, bounding_box=bbox))
+        self.spans_pages = len(set(vr.page_number for vr in self.visual_rects)) > 1
+
+    def get_all_pages(self) -> List[int]:
+        """Get list of all pages this coordinate spans"""
+        return sorted(set(vr.page_number for vr in self.visual_rects))
+
+    def get_rects_for_page(self, page_number: int) -> List[BoundingBox]:
+        """Get all bounding boxes for a specific page"""
+        return [
+            vr.bounding_box for vr in self.visual_rects
+            if vr.page_number == page_number
+        ]
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API response"""
@@ -352,4 +405,8 @@ class SourceCoordinate:
             "text_snippet": self.text_snippet,
             "extraction_method": self.extraction_method,
             "confidence": self.confidence,
+            # v5.0: Multi-page spanning fields
+            "spans_pages": self.spans_pages,
+            "visual_rects": [vr.to_dict() for vr in self.visual_rects],
+            "all_pages": self.get_all_pages(),
         }

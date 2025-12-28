@@ -5044,6 +5044,325 @@ async def get_master_architect_status(rfp_id: str):
     }
 
 
+# ============== Iron Triangle Graph & Validation (v5.0) ==============
+
+@app.get("/api/rfp/{rfp_id}/graph")
+async def get_requirements_graph(
+    rfp_id: str,
+    auto_link: bool = True,
+    similarity_threshold: float = 0.3
+):
+    """
+    Get the Iron Triangle requirements graph for an RFP.
+
+    The graph shows dependencies between Section C (Performance),
+    Section L (Instructions), and Section M (Evaluation) requirements.
+
+    Args:
+        rfp_id: RFP identifier
+        auto_link: Automatically build Iron Triangle edges (default: True)
+        similarity_threshold: Threshold for automatic linking (default: 0.3)
+
+    Returns:
+        Graph with nodes, edges, and analysis including orphan detection.
+    """
+    try:
+        from agents.enhanced_compliance.requirements_graph import (
+            RequirementsDAG, NETWORKX_AVAILABLE
+        )
+        from agents.enhanced_compliance.models import (
+            RequirementNode, SourceLocation, DocumentType,
+            RequirementType as ModelRequirementType, ConfidenceLevel
+        )
+    except ImportError as e:
+        raise HTTPException(
+            status_code=501,
+            detail=f"Requirements graph not available: {str(e)}"
+        )
+
+    if not NETWORKX_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="NetworkX library not installed. Install with: pip install networkx>=3.0"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements_data = rfp.get("requirements", [])
+    if not requirements_data:
+        return {
+            "rfp_id": rfp_id,
+            "message": "No requirements found. Process RFP first.",
+            "nodes": [],
+            "edges": [],
+            "analysis": {},
+            "orphans": [],
+        }
+
+    # Convert requirement dicts to RequirementNode objects
+    requirement_nodes = []
+    for req in requirements_data:
+        # Build source location if available
+        source = None
+        if req.get("source_doc") or req.get("source_page"):
+            source = SourceLocation(
+                document_name=req.get("source_doc", "unknown"),
+                document_type=DocumentType.MAIN_SOLICITATION,
+                page_number=req.get("source_page", 1),
+                section_id=req.get("section", "") or req.get("rfp_reference", ""),
+            )
+
+        # Map requirement type
+        req_type_str = req.get("type", "performance").lower()
+        type_map = {
+            "performance": ModelRequirementType.PERFORMANCE,
+            "proposal_instruction": ModelRequirementType.PROPOSAL_INSTRUCTION,
+            "evaluation_criterion": ModelRequirementType.EVALUATION_CRITERION,
+            "deliverable": ModelRequirementType.DELIVERABLE,
+            "format": ModelRequirementType.FORMAT,
+            "compliance": ModelRequirementType.COMPLIANCE,
+        }
+        req_type = type_map.get(req_type_str, ModelRequirementType.PERFORMANCE)
+
+        # Map confidence
+        conf_str = req.get("confidence_level", "medium").lower()
+        conf_map = {
+            "high": ConfidenceLevel.HIGH,
+            "medium": ConfidenceLevel.MEDIUM,
+            "low": ConfidenceLevel.LOW,
+        }
+        confidence = conf_map.get(conf_str, ConfidenceLevel.MEDIUM)
+
+        node = RequirementNode(
+            id=req.get("id", f"REQ-{len(requirement_nodes)+1}"),
+            text=req.get("text", ""),
+            requirement_type=req_type,
+            confidence=confidence,
+            source=source,
+            keywords=req.get("keywords", []),
+        )
+        requirement_nodes.append(node)
+
+    # Build the DAG
+    dag = RequirementsDAG.from_requirements(
+        requirement_nodes,
+        auto_link=auto_link,
+        similarity_threshold=similarity_threshold
+    )
+
+    # Get graph export
+    graph_data = dag.to_dict()
+
+    return {
+        "rfp_id": rfp_id,
+        **graph_data
+    }
+
+
+@app.get("/api/rfp/{rfp_id}/graph/orphans")
+async def get_orphan_requirements(rfp_id: str):
+    """
+    Get orphaned requirements that lack proper Iron Triangle links.
+
+    Orphan types:
+    - C without L: Performance requirement with no instruction link
+    - C without M: Performance requirement with no evaluation link
+    - L without M: Instruction with no evaluation link
+    - M without C/L: Evaluation criterion that doesn't reference anything
+    """
+    # Reuse graph endpoint logic
+    graph_response = await get_requirements_graph(rfp_id)
+    return {
+        "rfp_id": rfp_id,
+        "orphan_count": graph_response.get("analysis", {}).get("orphan_count", 0),
+        "orphans": graph_response.get("orphans", []),
+        "iron_triangle_coverage": graph_response.get("analysis", {}).get("iron_triangle_coverage", {}),
+    }
+
+
+@app.post("/api/rfp/{rfp_id}/validate")
+async def validate_rfp_requirements(rfp_id: str):
+    """
+    Validate RFP requirements for Iron Triangle compliance.
+
+    Checks:
+    - Section placement (content in correct section)
+    - Coverage completeness (L-M-C triangle coverage)
+    - Logical consistency (no conflicts or circular refs)
+    - Format compliance (volume restrictions)
+
+    Returns compliance score and list of violations.
+    """
+    try:
+        from agents.enhanced_compliance.validation_engine import (
+            ValidationEngine, validate_requirements, VALIDATION_ENGINE_AVAILABLE
+        )
+        from agents.enhanced_compliance.models import (
+            RequirementNode, SourceLocation, DocumentType,
+            RequirementType as ModelRequirementType, ConfidenceLevel
+        )
+    except ImportError as e:
+        raise HTTPException(
+            status_code=501,
+            detail=f"Validation engine not available: {str(e)}"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements_data = rfp.get("requirements", [])
+    if not requirements_data:
+        return {
+            "rfp_id": rfp_id,
+            "is_valid": True,
+            "message": "No requirements to validate",
+            "compliance_score": 100.0,
+            "violations": [],
+        }
+
+    # Convert to RequirementNode objects
+    requirement_nodes = []
+    for req in requirements_data:
+        source = None
+        if req.get("source_doc") or req.get("section"):
+            source = SourceLocation(
+                document_name=req.get("source_doc", "unknown"),
+                document_type=DocumentType.MAIN_SOLICITATION,
+                page_number=req.get("source_page", 1),
+                section_id=req.get("section", "") or req.get("rfp_reference", ""),
+            )
+
+        req_type_str = req.get("type", "performance").lower()
+        type_map = {
+            "performance": ModelRequirementType.PERFORMANCE,
+            "proposal_instruction": ModelRequirementType.PROPOSAL_INSTRUCTION,
+            "evaluation_criterion": ModelRequirementType.EVALUATION_CRITERION,
+            "deliverable": ModelRequirementType.DELIVERABLE,
+            "format": ModelRequirementType.FORMAT,
+            "compliance": ModelRequirementType.COMPLIANCE,
+        }
+        req_type = type_map.get(req_type_str, ModelRequirementType.PERFORMANCE)
+
+        node = RequirementNode(
+            id=req.get("id", f"REQ-{len(requirement_nodes)+1}"),
+            text=req.get("text", ""),
+            requirement_type=req_type,
+            source=source,
+        )
+        requirement_nodes.append(node)
+
+    # Get graph data for validation
+    graph_data = None
+    try:
+        graph_response = await get_requirements_graph(rfp_id)
+        graph_data = graph_response
+    except:
+        pass  # Continue without graph
+
+    # Get outline for volume validation
+    outline = rfp.get("outline")
+
+    # Run validation
+    engine = ValidationEngine()
+    result = engine.validate(requirement_nodes, graph_data, outline)
+
+    return {
+        "rfp_id": rfp_id,
+        **result.to_dict()
+    }
+
+
+@app.post("/api/rfp/{rfp_id}/validate/requirement")
+async def validate_single_requirement(
+    rfp_id: str,
+    requirement_id: str,
+    target_section: Optional[str] = None,
+    target_volume: Optional[str] = None
+):
+    """
+    Validate a single requirement for placement.
+
+    Used for real-time UI validation when a user manually adds or moves
+    a requirement. Returns immediate feedback on whether the placement
+    violates Iron Triangle rules.
+    """
+    try:
+        from agents.enhanced_compliance.validation_engine import ValidationEngine
+        from agents.enhanced_compliance.models import (
+            RequirementNode, SourceLocation, DocumentType,
+            RequirementType as ModelRequirementType
+        )
+    except ImportError as e:
+        raise HTTPException(
+            status_code=501,
+            detail=f"Validation engine not available: {str(e)}"
+        )
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements_data = rfp.get("requirements", [])
+
+    # Find the requirement
+    req_data = next((r for r in requirements_data if r.get("id") == requirement_id), None)
+    if not req_data:
+        raise HTTPException(status_code=404, detail=f"Requirement '{requirement_id}' not found")
+
+    # Build RequirementNode
+    source = None
+    if target_section or req_data.get("section"):
+        source = SourceLocation(
+            document_name=req_data.get("source_doc", "unknown"),
+            document_type=DocumentType.MAIN_SOLICITATION,
+            page_number=req_data.get("source_page", 1),
+            section_id=target_section or req_data.get("section", ""),
+        )
+
+    req_type_str = req_data.get("type", "performance").lower()
+    type_map = {
+        "performance": ModelRequirementType.PERFORMANCE,
+        "proposal_instruction": ModelRequirementType.PROPOSAL_INSTRUCTION,
+        "evaluation_criterion": ModelRequirementType.EVALUATION_CRITERION,
+    }
+
+    requirement = RequirementNode(
+        id=requirement_id,
+        text=req_data.get("text", ""),
+        requirement_type=type_map.get(req_type_str, ModelRequirementType.PERFORMANCE),
+        source=source,
+    )
+
+    # Build existing requirements for duplicate check
+    existing_nodes = [
+        RequirementNode(
+            id=r.get("id", ""),
+            text=r.get("text", ""),
+            requirement_type=type_map.get(r.get("type", "performance").lower(), ModelRequirementType.PERFORMANCE),
+        )
+        for r in requirements_data
+        if r.get("id") != requirement_id
+    ]
+
+    # Validate
+    engine = ValidationEngine()
+    violations = engine.validate_single_requirement(
+        requirement,
+        existing_nodes,
+        target_section,
+        target_volume
+    )
+
+    return {
+        "requirement_id": requirement_id,
+        "is_valid": len(violations) == 0,
+        "violations": [v.to_dict() for v in violations],
+    }
+
+
 # ============== F-B-P Drafting Workflow ==============
 
 @app.post("/api/rfp/{rfp_id}/draft/section/{section_id}")

@@ -1,6 +1,6 @@
-# PropelAI v4.2 As-Built Technical Document
+# PropelAI v5.0 As-Built Technical Document
 
-**Version:** 4.2.0
+**Version:** 5.0.0
 **Date:** December 2024
 **Classification:** Technical Architecture Documentation
 
@@ -23,6 +23,7 @@
 13. [Version History](#13-version-history)
 14. [Team Workspaces (v4.1)](#14-team-workspaces-v41)
 15. [Master Architect Workflow (v4.2)](#15-master-architect-workflow-v42)
+16. [Iron Triangle Graph & Validation (v5.0)](#16-iron-triangle-graph--validation-v50)
 
 ---
 
@@ -46,6 +47,9 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Master Architect | 6-phase proposal development workflow | v4.2 |
 | F-B-P Drafting | Feature-Benefit-Proof content generation | v4.2 |
 | Red Team Review | Government evaluator simulation with color ratings | v4.2 |
+| NetworkX DAG | Iron Triangle dependency graph with orphan detection | v5.0 |
+| Multi-Page Spanning | SourceCoordinate with visual_rects for spanning requirements | v5.0 |
+| Validation Engine | Deterministic L-M-C consistency checking | v5.0 |
 
 ### 1.3 Technology Stack
 
@@ -1448,9 +1452,39 @@ LogEntry = {
 | v3.2 | 2024 | Improved outline generation |
 | v4.0 | 2024 | Trust Gate (PDF coordinates), strategy agent, drafting workflow |
 | v4.1 | 2024-12 | Persistent storage: PostgreSQL + Render Disk |
-| v4.2 | 2024-12 | **Master Architect Workflow: F-B-P Drafting + Red Team Review** |
+| v4.2 | 2024-12 | Master Architect Workflow: F-B-P Drafting + Red Team Review |
+| v5.0 | 2024-12 | **Iron Triangle DAG + Validation Engine (PRD v5.0 Phase 1)** |
 
-### v4.2 Changes (Current)
+### v5.0 Changes (Current)
+
+1. **NetworkX Requirements DAG (FR-2.2)**
+   - Directed acyclic graph for requirements dependencies
+   - Iron Triangle edges: C ↔ L ↔ M relationships
+   - Automatic edge building based on text similarity
+   - Orphan detection with suggestions
+
+2. **Multi-Page Spanning (FR-1.3)**
+   - SourceCoordinate extended with visual_rects list
+   - Support for requirements spanning multiple pages
+   - Backwards compatible with single bounding box
+
+3. **Validation Engine (FR-2.3)**
+   - Deterministic L-M-C consistency checking
+   - Section placement validation
+   - Volume restriction enforcement
+   - Duplicate detection
+   - Compliance score calculation (0-100)
+
+4. **New API Endpoints**
+   - `GET /api/rfp/{id}/graph` - Get Iron Triangle graph
+   - `GET /api/rfp/{id}/graph/orphans` - Get orphan requirements
+   - `POST /api/rfp/{id}/validate` - Validate all requirements
+   - `POST /api/rfp/{id}/validate/requirement` - Validate single requirement
+
+5. **New Dependencies**
+   - NetworkX >= 3.0 for graph operations
+
+### v4.2 Changes
 
 1. **Master Architect Workflow**
    - 6-phase proposal development orchestration
@@ -2721,6 +2755,299 @@ function buildSectionContent(section, data, sectionNum) {
 
 ---
 
+## 16. Iron Triangle Graph & Validation (v5.0)
+
+### 16.1 Overview
+
+The v5.0 release implements PRD requirements for deterministic compliance through the Iron Triangle dependency graph and validation engine.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         IRON TRIANGLE ARCHITECTURE                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                              Section M                                       │
+│                            (Evaluation)                                      │
+│                           ╱           ╲                                      │
+│                          ╱   EVALUATES  ╲                                    │
+│                         ╱                 ╲                                  │
+│                        ▼                   ▼                                 │
+│                   Section L ◄───────── Section C                             │
+│                 (Instructions)  INSTRUCTS  (Performance)                     │
+│                                                                              │
+│   Legend:                                                                    │
+│   • Section C: What contractor must DO (SOW/PWS requirements)               │
+│   • Section L: What offeror must WRITE (proposal instructions)              │
+│   • Section M: How government will EVALUATE (evaluation criteria)           │
+│                                                                              │
+│   A complete requirement should have:                                        │
+│   • C linked to L (how to write about it)                                   │
+│   • C linked to M (how it will be scored)                                   │
+│   • L linked to M (what the instruction addresses)                          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.2 NetworkX Requirements DAG
+
+**Location:** `agents/enhanced_compliance/requirements_graph.py`
+
+The RequirementsDAG class provides a directed acyclic graph for requirements dependency mapping.
+
+```python
+from agents.enhanced_compliance.requirements_graph import (
+    RequirementsDAG,
+    EdgeType,
+    NodeSection,
+    OrphanReport,
+    GraphAnalysis,
+)
+
+# Create DAG from requirements
+dag = RequirementsDAG.from_requirements(
+    requirements=requirement_nodes,
+    auto_link=True,
+    similarity_threshold=0.3
+)
+
+# Get orphan requirements
+orphans = dag.find_orphans()
+
+# Get graph analysis
+analysis = dag.analyze()
+print(f"Coverage: {analysis.iron_triangle_coverage}")
+```
+
+**Edge Types:**
+
+| EdgeType | Description |
+|----------|-------------|
+| `REFERENCES` | Generic reference between requirements |
+| `INSTRUCTS` | L instructs how to address C |
+| `EVALUATES` | M evaluates C or L content |
+| `DELIVERS` | Deliverable fulfills requirement |
+| `PARENT_OF` | Hierarchical parent relationship |
+| `AMENDS` | Amendment modifies original |
+| `CONFLICTS` | Conflicting requirements |
+
+**Orphan Detection:**
+
+```python
+@dataclass
+class OrphanReport:
+    orphan_id: str
+    section: NodeSection  # C, L, M, or OTHER
+    requirement_type: RequirementType
+    reason: str  # Why it's an orphan
+    suggestion: str  # How to fix
+```
+
+### 16.3 Multi-Page Spanning (FR-1.3)
+
+**Location:** `agents/enhanced_compliance/models.py`
+
+SourceCoordinate now supports requirements that span multiple pages.
+
+```python
+@dataclass
+class VisualRect:
+    """A single visual rectangle on a specific page"""
+    page_number: int
+    bounding_box: BoundingBox
+
+@dataclass
+class SourceCoordinate:
+    """Links requirement to exact PDF location(s)"""
+    document_id: str
+    page_number: int  # Primary page
+    bounding_box: BoundingBox  # Primary box (backwards compatible)
+    visual_rects: List[VisualRect] = []  # All rectangles
+    spans_pages: bool = False
+
+    def get_all_pages(self) -> List[int]:
+        """Get list of all pages this coordinate spans"""
+
+    def get_rects_for_page(self, page_number: int) -> List[BoundingBox]:
+        """Get all bounding boxes for a specific page"""
+```
+
+### 16.4 Validation Engine (FR-2.3)
+
+**Location:** `agents/enhanced_compliance/validation_engine.py`
+
+The ValidationEngine enforces Iron Triangle consistency rules.
+
+```python
+from agents.enhanced_compliance.validation_engine import (
+    ValidationEngine,
+    ValidationResult,
+    ViolationType,
+    Severity,
+    validate_requirements,
+)
+
+# Full validation
+engine = ValidationEngine()
+result = engine.validate(
+    requirements=requirement_nodes,
+    graph=graph_data,  # From RequirementsDAG.to_dict()
+    outline=outline_dict  # For volume validation
+)
+
+print(f"Valid: {result.is_valid}")
+print(f"Compliance Score: {result.compliance_score}")
+print(f"Critical Violations: {result.critical_count}")
+```
+
+**Violation Types:**
+
+| ViolationType | Severity | Description |
+|---------------|----------|-------------|
+| `WRONG_SECTION` | WARNING | Content in wrong section |
+| `ORPHAN_PERFORMANCE` | CRITICAL | C without L or M links |
+| `ORPHAN_INSTRUCTION` | WARNING | L without M link |
+| `ORPHAN_EVALUATION` | WARNING | M without targets |
+| `DUPLICATE_REQUIREMENT` | WARNING | Same text in multiple places |
+| `VOLUME_RESTRICTION` | CRITICAL | Content in wrong volume |
+| `CIRCULAR_REFERENCE` | CRITICAL | A -> B -> A dependency |
+
+**Volume Placement Rules:**
+
+```python
+VOLUME_SECTION_RULES = {
+    "technical": ["C", "SOW", "PWS"],
+    "management": ["C", "SOW"],
+    "past_performance": ["L"],
+    "cost": ["B", "PRICING"],
+    "administrative": ["K", "L"],
+}
+```
+
+### 16.5 API Endpoints
+
+#### Get Requirements Graph
+
+```
+GET /api/rfp/{rfp_id}/graph?auto_link=true&similarity_threshold=0.3
+
+Response:
+{
+  "rfp_id": "RFP-A1B2C3D4",
+  "nodes": [
+    {
+      "id": "REQ-001",
+      "text": "The contractor shall...",
+      "section": "C",
+      "req_type": "performance",
+      "confidence": "high"
+    }
+  ],
+  "edges": [
+    {
+      "source": "REQ-M-001",
+      "target": "REQ-001",
+      "edge_type": "evaluates",
+      "weight": 0.85
+    }
+  ],
+  "analysis": {
+    "total_nodes": 156,
+    "total_edges": 234,
+    "orphan_count": 12,
+    "section_counts": {"C": 89, "L": 45, "M": 22},
+    "connected_components": 3,
+    "iron_triangle_coverage": {
+      "c_with_l": 0.82,
+      "c_with_m": 0.91,
+      "l_with_m": 0.78,
+      "overall": 0.84
+    },
+    "dependency_depth": 4
+  },
+  "orphans": [...]
+}
+```
+
+#### Get Orphan Requirements
+
+```
+GET /api/rfp/{rfp_id}/graph/orphans
+
+Response:
+{
+  "rfp_id": "RFP-A1B2C3D4",
+  "orphan_count": 12,
+  "orphans": [
+    {
+      "id": "REQ-C-023",
+      "section": "C",
+      "type": "performance",
+      "reason": "Section C requirement has no Section L instruction link",
+      "suggestion": "Add proposal instruction that addresses this requirement"
+    }
+  ],
+  "iron_triangle_coverage": {...}
+}
+```
+
+#### Validate Requirements
+
+```
+POST /api/rfp/{rfp_id}/validate
+
+Response:
+{
+  "rfp_id": "RFP-A1B2C3D4",
+  "is_valid": false,
+  "total_violations": 8,
+  "critical_count": 2,
+  "warning_count": 5,
+  "info_count": 1,
+  "compliance_score": 78.5,
+  "violations": [
+    {
+      "id": "VIO-0001",
+      "type": "volume_restriction",
+      "severity": "critical",
+      "requirement_id": "REQ-C-045",
+      "message": "Section C content cannot be placed in past_performance volume",
+      "suggestion": "Move to technical volume"
+    }
+  ]
+}
+```
+
+#### Validate Single Requirement
+
+```
+POST /api/rfp/{rfp_id}/validate/requirement
+    ?requirement_id=REQ-001
+    &target_section=L.4.2
+    &target_volume=technical
+
+Response:
+{
+  "requirement_id": "REQ-001",
+  "is_valid": false,
+  "violations": [
+    {
+      "type": "wrong_section",
+      "severity": "critical",
+      "message": "Cannot place performance requirement in Section L",
+      "suggestion": "This type belongs in: C, SOW"
+    }
+  ]
+}
+```
+
+### 16.6 Dependencies
+
+```
+networkx>=3.0  # v5.0: Requirements dependency graph
+```
+
+---
+
 ## Appendix A: Dependencies
 
 **requirements.txt:**
@@ -2782,4 +3109,4 @@ httpx>=0.24.0
 ---
 
 *Document generated: December 2024*
-*PropelAI v4.2.0*
+*PropelAI v5.0.0*

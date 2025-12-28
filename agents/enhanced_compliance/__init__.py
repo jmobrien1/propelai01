@@ -202,3 +202,41 @@ except ImportError as e:
     RequirementInjector = None
     create_requirement_injector = None
     inject_requirements_into_outline = None
+
+# =============================================================================
+# Requirements Graph with NetworkX DAG (v5.0 Iron Triangle)
+# =============================================================================
+try:
+    from .requirements_graph import (
+        RequirementsDAG,
+        EdgeType,
+        NodeSection,
+        GraphEdge,
+        OrphanReport,
+        GraphAnalysis,
+    )
+    REQUIREMENTS_GRAPH_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Requirements Graph not available: {e}")
+    REQUIREMENTS_GRAPH_AVAILABLE = False
+    RequirementsDAG = None
+    EdgeType = NodeSection = GraphEdge = OrphanReport = GraphAnalysis = None
+
+# =============================================================================
+# Validation Engine (v5.0 Deterministic Validation)
+# =============================================================================
+try:
+    from .validation_engine import (
+        ValidationEngine,
+        ValidationResult,
+        ValidationViolation,
+        ViolationType,
+        Severity,
+        validate_requirements,
+    )
+    VALIDATION_ENGINE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Validation Engine not available: {e}")
+    VALIDATION_ENGINE_AVAILABLE = False
+    ValidationEngine = ValidationResult = ValidationViolation = None
+    ViolationType = Severity = validate_requirements = None
