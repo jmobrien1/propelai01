@@ -683,6 +683,248 @@
             50% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
         }
 
+        /* War Room Dashboard (v5.0 Iron Triangle) */
+        .war-room-container {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+            height: calc(100vh - 180px);
+        }
+
+        .ccs-header {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px 24px;
+        }
+
+        .ccs-score {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .ccs-score-value {
+            font-size: 36px;
+            font-weight: 700;
+        }
+
+        .ccs-score-value.high { color: var(--accent-green); }
+        .ccs-score-value.medium { color: var(--accent-amber); }
+        .ccs-score-value.low { color: var(--accent-red); }
+
+        .ccs-score-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        .ccs-breakdown {
+            display: flex;
+            gap: 32px;
+        }
+
+        .ccs-metric {
+            text-align: center;
+        }
+
+        .ccs-metric-value {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .ccs-metric-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .iron-triangle-graph {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .graph-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .graph-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .graph-legend {
+            display: flex;
+            gap: 16px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.section-c { background: #3b82f6; }
+        .legend-dot.section-l { background: #22c55e; }
+        .legend-dot.section-m { background: #f59e0b; }
+        .legend-dot.orphan { background: #ef4444; }
+
+        .graph-canvas {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+        }
+
+        .graph-svg {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+        }
+
+        .graph-node {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .graph-node:hover {
+            filter: brightness(1.2);
+        }
+
+        .graph-node.selected {
+            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
+        }
+
+        .graph-edge {
+            stroke: var(--border-color);
+            stroke-width: 1.5;
+            fill: none;
+        }
+
+        .graph-edge.evaluates { stroke: #f59e0b; stroke-dasharray: 4 2; }
+        .graph-edge.instructs { stroke: #22c55e; }
+        .graph-edge.references { stroke: #6b7280; stroke-dasharray: 2 2; }
+
+        .orphan-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .orphan-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .orphan-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .orphan-count {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .orphan-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        .orphan-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .orphan-item:hover {
+            border-color: var(--accent-red);
+            background: rgba(239, 68, 68, 0.05);
+        }
+
+        .orphan-item-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .orphan-item-id {
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .orphan-item-section {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .orphan-item-section.section-c { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+        .orphan-item-section.section-l { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        .orphan-item-section.section-m { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+
+        .orphan-item-text {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .orphan-item-suggestion {
+            font-size: 11px;
+            color: var(--accent-amber);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
         .pdf-sidebar {
             width: 320px;
             background: var(--bg-card);
@@ -1261,6 +1503,13 @@
                                 <Icon name="Edit3" />
                                 <span>Draft & Review</span>
                             </div>
+                            <div
+                                className={`nav-item ${currentView === 'warroom' ? 'active' : ''} ${!stats ? 'disabled' : ''}`}
+                                onClick={() => stats && setCurrentView('warroom')}
+                            >
+                                <Icon name="Triangle" />
+                                <span>War Room</span>
+                            </div>
 
                             <div className="nav-label" style={{ marginTop: 24 }}>Company Library</div>
                             <div 
@@ -1418,6 +1667,10 @@
 
                         {currentView === 'drafting' && stats && (
                             <DraftingView rfpId={currentRfpId} />
+                        )}
+
+                        {currentView === 'warroom' && stats && (
+                            <WarRoomView rfpId={currentRfpId} onViewSource={handleViewSource} />
                         )}
 
                         {currentView === 'library' && (
@@ -3640,20 +3893,350 @@
                 </div>
             );
         }
-        
+
+        // War Room View (v5.0 Iron Triangle Dashboard)
+        function WarRoomView({ rfpId, onViewSource }) {
+            const [graphData, setGraphData] = useState(null);
+            const [orphans, setOrphans] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [selectedNode, setSelectedNode] = useState(null);
+
+            // Fetch graph and orphan data
+            useEffect(() => {
+                if (!rfpId) return;
+
+                const loadData = async () => {
+                    setLoading(true);
+                    setError(null);
+                    try {
+                        // Fetch graph data and orphans in parallel
+                        const [graphRes, orphansRes] = await Promise.all([
+                            fetch(`/api/rfp/${rfpId}/graph?auto_link=true`),
+                            fetch(`/api/rfp/${rfpId}/graph/orphans`)
+                        ]);
+
+                        if (graphRes.ok) {
+                            const graph = await graphRes.json();
+                            setGraphData(graph);
+                        }
+
+                        if (orphansRes.ok) {
+                            const orphanData = await orphansRes.json();
+                            setOrphans(orphanData.orphans || []);
+                        }
+                    } catch (err) {
+                        console.error('Error loading graph data:', err);
+                        setError('Failed to load Iron Triangle data');
+                    }
+                    setLoading(false);
+                };
+
+                loadData();
+            }, [rfpId]);
+
+            // Calculate Compliance Certainty Score
+            const ccs = useMemo(() => {
+                if (!graphData?.analysis) {
+                    return { score: 0, level: 'low', breakdown: {} };
+                }
+
+                const coverage = graphData.analysis.iron_triangle_coverage || {};
+                const overall = coverage.overall || 0;
+                const score = Math.round(overall * 100);
+
+                return {
+                    score,
+                    level: score >= 85 ? 'high' : score >= 60 ? 'medium' : 'low',
+                    breakdown: {
+                        cWithL: Math.round((coverage.c_with_l || 0) * 100),
+                        cWithM: Math.round((coverage.c_with_m || 0) * 100),
+                        lWithM: Math.round((coverage.l_with_m || 0) * 100),
+                    },
+                    sectionCounts: graphData.analysis.section_counts || {},
+                    totalNodes: graphData.analysis.total_nodes || 0,
+                    totalEdges: graphData.analysis.total_edges || 0,
+                    orphanCount: graphData.analysis.orphan_count || orphans.length,
+                };
+            }, [graphData, orphans]);
+
+            // Simple force-directed layout for graph nodes
+            const graphLayout = useMemo(() => {
+                if (!graphData?.nodes || graphData.nodes.length === 0) {
+                    return { nodes: [], edges: [] };
+                }
+
+                const nodes = graphData.nodes.map((node, idx) => {
+                    // Position nodes by section in a triangular layout
+                    const section = (node.section || '').toUpperCase();
+                    let baseX, baseY;
+
+                    if (section === 'C' || section === 'SOW' || section === 'PWS') {
+                        baseX = 150;
+                        baseY = 300;
+                    } else if (section === 'L') {
+                        baseX = 450;
+                        baseY = 300;
+                    } else if (section === 'M') {
+                        baseX = 300;
+                        baseY = 100;
+                    } else {
+                        baseX = 300;
+                        baseY = 400;
+                    }
+
+                    // Add some random offset for visual separation
+                    const offsetX = (Math.random() - 0.5) * 120;
+                    const offsetY = (Math.random() - 0.5) * 80;
+
+                    return {
+                        ...node,
+                        x: baseX + offsetX,
+                        y: baseY + offsetY,
+                        isOrphan: orphans.some(o => o.id === node.id),
+                    };
+                });
+
+                const nodeMap = new Map(nodes.map(n => [n.id, n]));
+                const edges = (graphData.edges || []).map(edge => ({
+                    ...edge,
+                    sourceNode: nodeMap.get(edge.source),
+                    targetNode: nodeMap.get(edge.target),
+                })).filter(e => e.sourceNode && e.targetNode);
+
+                return { nodes, edges };
+            }, [graphData, orphans]);
+
+            const getSectionColor = (section) => {
+                const s = (section || '').toUpperCase();
+                if (s === 'C' || s === 'SOW' || s === 'PWS') return '#3b82f6';
+                if (s === 'L') return '#22c55e';
+                if (s === 'M') return '#f59e0b';
+                return '#6b7280';
+            };
+
+            if (loading) {
+                return (
+                    <div className="animate-in" style={{ textAlign: 'center', padding: 60 }}>
+                        <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto 16px' }} />
+                        <p style={{ color: 'var(--text-muted)' }}>Loading Iron Triangle analysis...</p>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="animate-in" style={{ textAlign: 'center', padding: 60 }}>
+                        <Icon name="AlertCircle" size={48} style={{ color: 'var(--accent-red)', marginBottom: 16 }} />
+                        <h3>{error}</h3>
+                        <p style={{ color: 'var(--text-muted)' }}>
+                            Make sure the RFP has been processed first.
+                        </p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="animate-in">
+                    <div className="page-header">
+                        <h2>
+                            <Icon name="Triangle" size={24} style={{ marginRight: 8 }} />
+                            War Room
+                        </h2>
+                        <p>Iron Triangle dependency analysis and compliance verification</p>
+                    </div>
+
+                    <div className="war-room-container">
+                        {/* CCS Header */}
+                        <div className="ccs-header">
+                            <div className="ccs-score">
+                                <div>
+                                    <div className={`ccs-score-value ${ccs.level}`}>{ccs.score}%</div>
+                                    <div className="ccs-score-label">Compliance Certainty Score</div>
+                                </div>
+                            </div>
+
+                            <div className="ccs-breakdown">
+                                <div className="ccs-metric">
+                                    <div className="ccs-metric-value" style={{ color: '#3b82f6' }}>
+                                        {ccs.breakdown.cWithL || 0}%
+                                    </div>
+                                    <div className="ccs-metric-label">C → L Coverage</div>
+                                </div>
+                                <div className="ccs-metric">
+                                    <div className="ccs-metric-value" style={{ color: '#f59e0b' }}>
+                                        {ccs.breakdown.cWithM || 0}%
+                                    </div>
+                                    <div className="ccs-metric-label">C → M Coverage</div>
+                                </div>
+                                <div className="ccs-metric">
+                                    <div className="ccs-metric-value" style={{ color: '#22c55e' }}>
+                                        {ccs.breakdown.lWithM || 0}%
+                                    </div>
+                                    <div className="ccs-metric-label">L → M Coverage</div>
+                                </div>
+                                <div className="ccs-metric">
+                                    <div className="ccs-metric-value">{ccs.totalNodes}</div>
+                                    <div className="ccs-metric-label">Total Nodes</div>
+                                </div>
+                                <div className="ccs-metric">
+                                    <div className="ccs-metric-value">{ccs.totalEdges}</div>
+                                    <div className="ccs-metric-label">Edges</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Graph Visualization */}
+                        <div className="iron-triangle-graph">
+                            <div className="graph-header">
+                                <h3>
+                                    <Icon name="GitBranch" size={18} />
+                                    Iron Triangle Graph
+                                </h3>
+                                <div className="graph-legend">
+                                    <div className="legend-item">
+                                        <div className="legend-dot section-c"></div>
+                                        Section C ({ccs.sectionCounts.C || 0})
+                                    </div>
+                                    <div className="legend-item">
+                                        <div className="legend-dot section-l"></div>
+                                        Section L ({ccs.sectionCounts.L || 0})
+                                    </div>
+                                    <div className="legend-item">
+                                        <div className="legend-dot section-m"></div>
+                                        Section M ({ccs.sectionCounts.M || 0})
+                                    </div>
+                                    <div className="legend-item">
+                                        <div className="legend-dot orphan"></div>
+                                        Orphan ({ccs.orphanCount})
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="graph-canvas">
+                                {graphLayout.nodes.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                                        <Icon name="Network" size={48} style={{ marginBottom: 16, opacity: 0.5 }} />
+                                        <p>No requirements graph available.</p>
+                                        <p style={{ fontSize: 13 }}>Process an RFP to see the Iron Triangle visualization.</p>
+                                    </div>
+                                ) : (
+                                    <svg className="graph-svg" viewBox="0 0 600 450">
+                                        {/* Draw edges first (behind nodes) */}
+                                        {graphLayout.edges.map((edge, idx) => (
+                                            <line
+                                                key={idx}
+                                                className={`graph-edge ${edge.edge_type || 'references'}`}
+                                                x1={edge.sourceNode.x}
+                                                y1={edge.sourceNode.y}
+                                                x2={edge.targetNode.x}
+                                                y2={edge.targetNode.y}
+                                            />
+                                        ))}
+
+                                        {/* Draw nodes */}
+                                        {graphLayout.nodes.map((node, idx) => (
+                                            <g
+                                                key={node.id}
+                                                className={`graph-node ${selectedNode === node.id ? 'selected' : ''}`}
+                                                transform={`translate(${node.x}, ${node.y})`}
+                                                onClick={() => setSelectedNode(selectedNode === node.id ? null : node.id)}
+                                            >
+                                                <circle
+                                                    r={node.isOrphan ? 10 : 8}
+                                                    fill={node.isOrphan ? '#ef4444' : getSectionColor(node.section)}
+                                                    stroke={selectedNode === node.id ? 'white' : 'none'}
+                                                    strokeWidth={2}
+                                                />
+                                                {selectedNode === node.id && (
+                                                    <text
+                                                        y={-14}
+                                                        textAnchor="middle"
+                                                        fill="white"
+                                                        fontSize="10"
+                                                        fontWeight="600"
+                                                    >
+                                                        {node.id}
+                                                    </text>
+                                                )}
+                                            </g>
+                                        ))}
+
+                                        {/* Triangle labels */}
+                                        <text x="150" y="380" textAnchor="middle" fill="var(--text-muted)" fontSize="12">
+                                            Section C (Performance)
+                                        </text>
+                                        <text x="450" y="380" textAnchor="middle" fill="var(--text-muted)" fontSize="12">
+                                            Section L (Instructions)
+                                        </text>
+                                        <text x="300" y="50" textAnchor="middle" fill="var(--text-muted)" fontSize="12">
+                                            Section M (Evaluation)
+                                        </text>
+                                    </svg>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Orphan Panel */}
+                        <div className="orphan-panel">
+                            <div className="orphan-header">
+                                <h3>
+                                    <Icon name="AlertTriangle" size={16} />
+                                    Orphan Requirements
+                                </h3>
+                                <span className="orphan-count">{orphans.length}</span>
+                            </div>
+
+                            <div className="orphan-list">
+                                {orphans.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                                        <Icon name="CheckCircle" size={32} style={{ color: 'var(--accent-green)', marginBottom: 8 }} />
+                                        <p style={{ fontSize: 13 }}>No orphan requirements!</p>
+                                        <p style={{ fontSize: 12 }}>All requirements have proper Iron Triangle links.</p>
+                                    </div>
+                                ) : (
+                                    orphans.map((orphan, idx) => (
+                                        <div
+                                            key={orphan.id || idx}
+                                            className="orphan-item"
+                                            onClick={() => onViewSource && onViewSource({ id: orphan.id, text: orphan.reason })}
+                                        >
+                                            <div className="orphan-item-header">
+                                                <span className="orphan-item-id">{orphan.id}</span>
+                                                <span className={`orphan-item-section section-${(orphan.section || '').toLowerCase()}`}>
+                                                    {orphan.section || 'Unknown'}
+                                                </span>
+                                            </div>
+                                            <div className="orphan-item-text">{orphan.reason}</div>
+                                            {orphan.suggestion && (
+                                                <div className="orphan-item-suggestion">
+                                                    <Icon name="Lightbulb" size={12} />
+                                                    {orphan.suggestion}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // Outline View
         function OutlineView({ rfpId }) {
             const [outline, setOutline] = useState(null);
             const [loading, setLoading] = useState(true);
             const [generating, setGenerating] = useState(false);
             const [activeVolume, setActiveVolume] = useState(null);
-            
+
             useEffect(() => {
                 if (rfpId) {
                     loadOutline();
                 }
             }, [rfpId]);
-            
+
             const loadOutline = async () => {
                 setLoading(true);
                 try {

@@ -25,6 +25,7 @@
 15. [Master Architect Workflow (v4.2)](#15-master-architect-workflow-v42)
 16. [Iron Triangle Graph & Validation (v5.0)](#16-iron-triangle-graph--validation-v50)
     - [16.7 Click-to-Verify UI](#167-click-to-verify-ui-fr-12)
+    - [16.8 War Room Dashboard](#168-war-room-dashboard-section-41)
 
 ---
 
@@ -52,6 +53,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Multi-Page Spanning | SourceCoordinate with visual_rects for spanning requirements | v5.0 |
 | Validation Engine | Deterministic L-M-C consistency checking | v5.0 |
 | Click-to-Verify UI | Split-screen PDF viewer with multi-page highlights | v5.0 |
+| War Room Dashboard | Iron Triangle visualization with CCS score and orphan panel | v5.0 |
 
 ### 1.3 Technology Stack
 
@@ -1455,7 +1457,7 @@ LogEntry = {
 | v4.0 | 2024 | Trust Gate (PDF coordinates), strategy agent, drafting workflow |
 | v4.1 | 2024-12 | Persistent storage: PostgreSQL + Render Disk |
 | v4.2 | 2024-12 | Master Architect Workflow: F-B-P Drafting + Red Team Review |
-| v5.0 | 2024-12 | **Iron Triangle DAG + Validation Engine + Click-to-Verify UI** |
+| v5.0 | 2024-12 | **Iron Triangle DAG + Validation + Click-to-Verify + War Room** |
 
 ### v5.0 Changes (Current)
 
@@ -1513,6 +1515,37 @@ LogEntry = {
    - `MatrixContent` extracted for reuse
    - Selected row visual indicator
    - Dynamic table height in split mode
+
+**Phase 3: War Room Dashboard (Section 4.1)**
+
+10. **War Room View Component**
+    - Iron Triangle visualization with SVG graph
+    - C-L-M node positioning in triangular layout
+    - Edge rendering with type-based styling
+    - Interactive node selection
+
+11. **Compliance Certainty Score (CCS)**
+    - Real-time score calculation from graph coverage
+    - Color-coded score display (high/medium/low)
+    - Breakdown metrics: C→L, C→M, L→M coverage
+    - Node and edge count display
+
+12. **Orphan Requirements Panel**
+    - Sidebar listing orphan requirements
+    - Section-based color coding
+    - Suggestion display for resolution
+    - Click to view source integration
+
+13. **Graph Visualization**
+    - SVG-based node graph
+    - Section C (blue), L (green), M (amber) coloring
+    - Orphan nodes highlighted in red
+    - Edge types: instructs, evaluates, references
+
+14. **Navigation Integration**
+    - "War Room" tab in sidebar navigation
+    - Triangle icon for menu item
+    - Enabled after RFP processing
 
 ### v4.2 Changes
 
@@ -3168,6 +3201,112 @@ The UI shows page indicators (dots) for requirements spanning multiple pages:
 | Shift+Click "Source" | Open popup modal instead |
 | Click page dot | Navigate to that page |
 | Click "Close Viewer" | Exit split-screen mode |
+
+### 16.8 War Room Dashboard (Section 4.1)
+
+**Location:** `web/index.html` - WarRoomView
+
+The War Room provides a unified dashboard for Iron Triangle dependency analysis and compliance verification.
+
+#### Component Structure
+
+```javascript
+function WarRoomView({ rfpId, onViewSource }) {
+    // Fetch graph from /api/rfp/{rfpId}/graph
+    // Fetch orphans from /api/rfp/{rfpId}/graph/orphans
+    // Calculate CCS from graph coverage metrics
+
+    return (
+        <div className="war-room-container">
+            {/* CCS Header - Compliance Certainty Score */}
+            {/* Iron Triangle Graph - SVG visualization */}
+            {/* Orphan Panel - Sidebar with orphan requirements */}
+        </div>
+    );
+}
+```
+
+#### Compliance Certainty Score (CCS)
+
+The CCS is calculated from Iron Triangle coverage metrics:
+
+| Metric | Description | Target |
+|--------|-------------|--------|
+| C → L Coverage | Section C requirements linked to Section L instructions | >85% |
+| C → M Coverage | Section C requirements linked to Section M evaluation | >85% |
+| L → M Coverage | Section L instructions linked to Section M criteria | >85% |
+| Overall CCS | Weighted average of all coverage metrics | >85% |
+
+**Score Levels:**
+- **High (85%+):** Green - Excellent coverage
+- **Medium (60-84%):** Amber - Needs attention
+- **Low (<60%):** Red - Critical gaps
+
+#### Graph Visualization
+
+SVG-based visualization with triangular layout:
+
+```
+            Section M (Evaluation)
+                    ⚪
+                   / \
+                  /   \
+                 /     \
+         Section C ——— Section L
+       (Performance)  (Instructions)
+```
+
+**Node Colors:**
+| Section | Color | Hex Code |
+|---------|-------|----------|
+| C (SOW/PWS) | Blue | #3b82f6 |
+| L | Green | #22c55e |
+| M | Amber | #f59e0b |
+| Orphan | Red | #ef4444 |
+
+**Edge Types:**
+| Type | Style | Description |
+|------|-------|-------------|
+| instructs | Solid green | L instructs how to address C |
+| evaluates | Dashed amber | M evaluates C or L content |
+| references | Dotted gray | Generic reference |
+
+#### Orphan Panel
+
+The orphan panel displays requirements without proper Iron Triangle links:
+
+```jsx
+<div className="orphan-panel">
+    <div className="orphan-header">
+        <h3>Orphan Requirements</h3>
+        <span className="orphan-count">{count}</span>
+    </div>
+    <div className="orphan-list">
+        {orphans.map(orphan => (
+            <div className="orphan-item">
+                <span className="orphan-item-id">{orphan.id}</span>
+                <span className="orphan-item-section">{orphan.section}</span>
+                <div className="orphan-item-text">{orphan.reason}</div>
+                <div className="orphan-item-suggestion">{orphan.suggestion}</div>
+            </div>
+        ))}
+    </div>
+</div>
+```
+
+#### CSS Classes
+
+| Class | Description |
+|-------|-------------|
+| `.war-room-container` | Grid layout for dashboard |
+| `.ccs-header` | Score header spanning full width |
+| `.ccs-score-value` | Large score display |
+| `.ccs-breakdown` | Coverage metrics row |
+| `.iron-triangle-graph` | Main graph container |
+| `.graph-legend` | Node type legend |
+| `.graph-canvas` | SVG graph viewport |
+| `.orphan-panel` | Sidebar for orphans |
+| `.orphan-item` | Individual orphan card |
 
 ---
 
