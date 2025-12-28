@@ -608,14 +608,20 @@ function buildSectionOutline(section, secIndex, volume, requirements, data, used
         ]
     }));
 
-    // Page allocation
-    if (section.page_limit) {
+    // Page allocation (from RFP page limit OR calculated from Section M weights)
+    const pageCount = section.page_allocation || section.page_limit;
+    const pageSource = section.page_allocation
+        ? "(calculated from Section M weights)"
+        : (section.page_limit ? "(from RFP)" : "");
+
+    if (pageCount) {
         children.push(new Paragraph({
             spacing: { after: 100 },
             shading: { fill: "FFF2CC", type: ShadingType.CLEAR },
             children: [
                 new TextRun({ text: "📄 PAGE ALLOCATION: ", bold: true, size: 20 }),
-                new TextRun({ text: `${section.page_limit} pages`, bold: true, size: 20, color: COLORS.SECTION_L })
+                new TextRun({ text: `${pageCount} pages `, bold: true, size: 20, color: COLORS.SECTION_L }),
+                new TextRun({ text: pageSource, size: 18, italics: true, color: COLORS.DARK_GRAY })
             ]
         }));
     }
@@ -899,68 +905,88 @@ function buildSectionOutline(section, secIndex, volume, requirements, data, used
         ));
     }
 
-    // === WIN THEMES (GREEN) - Populated from Company Library ===
-    // Filter win themes by mapped_factors or by semantic matching to factor type
-    const allWinThemes = data.winThemes || [];
-    const sectionWinThemes = allWinThemes.filter(wt => {
-        // First check explicit factor mapping
-        if (wt.mapped_factors && wt.mapped_factors.length > 0) {
-            // Check if any mapped factor matches this section's factor
-            const factorMatches = wt.mapped_factors.some(mf => {
-                const mfLower = (mf || '').toLowerCase();
-                return mfLower.includes(factorType) ||
-                       (factorNum && mfLower.includes(factorNum.toLowerCase()));
-            });
-            if (factorMatches) return true;
-        }
+    // === WIN THEMES (GREEN) - From Python generator (Company Library) or legacy winThemes ===
+    // Priority 1: Use section.win_themes if populated by Python generator
+    // Priority 2: Fall back to legacy winThemes matching
+    let winThemeContent = [];
+    let hasWinThemes = false;
 
-        // Fallback: semantic matching using factorProfiles keywords
-        if (factorType && factorProfiles[factorType]) {
-            const wtText = ((wt.discriminator || '') + ' ' + (wt.benefit_statement || '')).toLowerCase();
-            const profile = factorProfiles[factorType];
-            return profile.keywords.slice(0, 8).some(kw => wtText.includes(kw.toLowerCase()));
-        }
+    if (section.win_themes && section.win_themes.length > 0) {
+        // Use win themes directly from Python generator
+        winThemeContent = section.win_themes;
+        hasWinThemes = !winThemeContent.every(wt => wt.startsWith('[WIN THEME:'));
+    } else {
+        // Legacy: Filter win themes by mapped_factors or semantic matching
+        const allWinThemes = data.winThemes || [];
+        const sectionWinThemes = allWinThemes.filter(wt => {
+            // First check explicit factor mapping
+            if (wt.mapped_factors && wt.mapped_factors.length > 0) {
+                const factorMatches = wt.mapped_factors.some(mf => {
+                    const mfLower = (mf || '').toLowerCase();
+                    return mfLower.includes(factorType) ||
+                           (factorNum && mfLower.includes(factorNum.toLowerCase()));
+                });
+                if (factorMatches) return true;
+            }
 
-        return false;
-    });
+            // Fallback: semantic matching using factorProfiles keywords
+            if (factorType && factorProfiles[factorType]) {
+                const wtText = ((wt.discriminator || '') + ' ' + (wt.benefit_statement || '')).toLowerCase();
+                const profile = factorProfiles[factorType];
+                return profile.keywords.slice(0, 8).some(kw => wtText.includes(kw.toLowerCase()));
+            }
 
-    // Build win theme content
-    const winThemeContent = sectionWinThemes.length > 0
-        ? sectionWinThemes.map(wt => {
-            const discriminator = wt.discriminator || '';
-            const benefit = wt.benefit_statement || '';
-            return benefit
-                ? `${discriminator} → ${benefit}`
-                : discriminator;
-        })
-        : ["[Add differentiators to Company Library for auto-population]"];
+            return false;
+        });
+
+        hasWinThemes = sectionWinThemes.length > 0;
+        winThemeContent = hasWinThemes
+            ? sectionWinThemes.map(wt => {
+                const discriminator = wt.discriminator || '';
+                const benefit = wt.benefit_statement || '';
+                return benefit ? `${discriminator} → ${benefit}` : discriminator;
+            })
+            : ["[Add differentiators to Company Library for auto-population]"];
+    }
 
     children.push(createAnnotationBlock(
         "WIN THEMES & DISCRIMINATORS",
         winThemeContent,
         COLORS.WIN_THEME,
         ANNOTATION_SHADING.STRATEGY,
-        sectionWinThemes.length === 0  // Only placeholder styling if empty
+        !hasWinThemes  // Only placeholder styling if empty
     ));
 
-    // === PROOF POINTS (ORANGE) - Populated from win theme proof_points ===
-    // Gather proof points from the matched win themes
-    const proofPoints = sectionWinThemes
-        .flatMap(wt => wt.proof_points || [])
-        .filter(pp => pp && pp.trim().length > 0)
-        .slice(0, 5);  // Top 5 proof points
+    // === PROOF POINTS (ORANGE) - From Python generator or legacy winThemes ===
+    // Priority 1: Use section.proof_points if populated by Python generator
+    // Priority 2: Fall back to legacy win theme proof_points
+    let proofPointContent = [];
+    let hasProofPoints = false;
 
-    // Build proof point content
-    const proofPointContent = proofPoints.length > 0
-        ? proofPoints
-        : ["[Add past performance evidence to Company Library]"];
+    if (section.proof_points && section.proof_points.length > 0) {
+        // Use proof points directly from Python generator
+        proofPointContent = section.proof_points;
+        hasProofPoints = !proofPointContent.every(pp => pp.startsWith('[PROOF POINT:'));
+    } else {
+        // Legacy: Gather proof points from matched win themes
+        const allWinThemes = data.winThemes || [];
+        const legacyProofPoints = allWinThemes
+            .flatMap(wt => wt.proof_points || [])
+            .filter(pp => pp && pp.trim().length > 0)
+            .slice(0, 5);
+
+        hasProofPoints = legacyProofPoints.length > 0;
+        proofPointContent = hasProofPoints
+            ? legacyProofPoints
+            : ["[Add past performance evidence to Company Library]"];
+    }
 
     children.push(createAnnotationBlock(
         "PROOF POINTS REQUIRED",
         proofPointContent,
         COLORS.PROOF_POINT,
         ANNOTATION_SHADING.PROOF,
-        proofPoints.length === 0  // Only placeholder styling if empty
+        !hasProofPoints  // Only placeholder styling if empty
     ));
 
     // === GRAPHICS PLACEHOLDER ===

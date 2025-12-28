@@ -99,8 +99,11 @@ class ProposalSection:
     id: str
     name: str
     page_limit: Optional[int] = None
+    page_allocation: Optional[int] = None  # Calculated from M weights
     requirements: List[str] = field(default_factory=list)
     eval_criteria: List[str] = field(default_factory=list)
+    win_themes: List[str] = field(default_factory=list)  # Generated from Company Library
+    proof_points: List[str] = field(default_factory=list)  # Evidence from past performance
     subsections: List['ProposalSection'] = field(default_factory=list)
 
 
@@ -285,10 +288,16 @@ class SmartOutlineGenerator:
         for vol in volumes:
             if not vol.page_limit:
                 warnings.append(f"No page limit found for: {vol.name}")
-        
+
         # Calculate total pages
         total_pages = sum(v.page_limit or 0 for v in volumes) or None
-        
+
+        # P1: Generate win themes from Company Library
+        self._generate_win_themes_for_sections(volumes, company_library_data, eval_factors)
+
+        # P1: Calculate page allocations from Section M weights
+        self._calculate_page_allocations(volumes, eval_factors, total_pages)
+
         return ProposalOutline(
             rfp_format=rfp_format,
             volumes=volumes,
@@ -816,9 +825,338 @@ class SmartOutlineGenerator:
                             volume.page_limit = page_limit
                             break
     
+    # =============================================================================
+    # P1: Win Theme Generation from Company Library
+    # =============================================================================
+
+    def _generate_win_themes_for_sections(
+        self,
+        volumes: List[ProposalVolume],
+        company_library_data: Optional[Dict],
+        eval_factors: List[EvaluationFactor]
+    ) -> None:
+        """
+        Generate win themes by matching Company Library data to sections.
+
+        Matches:
+        - Capabilities to section requirements
+        - Past performance to relevant sections
+        - Differentiators to hot buttons
+        - Key personnel to staffing sections
+        """
+        if not company_library_data:
+            # Add actionable placeholders when no library data
+            for volume in volumes:
+                for section in volume.sections:
+                    section.win_themes = [
+                        "[WIN THEME: Upload Company Library to generate targeted win themes]"
+                    ]
+            return
+
+        capabilities = company_library_data.get("capabilities", [])
+        past_performance = company_library_data.get("past_performance", [])
+        differentiators = company_library_data.get("differentiators", [])
+        key_personnel = company_library_data.get("key_personnel", [])
+
+        for volume in volumes:
+            for section in volume.sections:
+                themes = []
+                proofs = []
+
+                section_name_lower = section.name.lower()
+                section_reqs = " ".join(section.requirements).lower()
+
+                # Match capabilities to section
+                for cap in capabilities:
+                    cap_name = cap.get("name", "").lower()
+                    cap_desc = cap.get("description", "").lower()
+                    cap_keywords = cap.get("keywords", [])
+
+                    # Check if capability matches section
+                    if self._capability_matches_section(cap, section_name_lower, section_reqs):
+                        theme = f"Our {cap.get('name', 'capability')} delivers {cap.get('benefit', cap.get('description', 'proven results'))}"
+                        themes.append(theme)
+
+                # Match past performance to section
+                for pp in past_performance:
+                    pp_relevance = pp.get("relevance_keywords", [])
+                    pp_scope = pp.get("scope", "").lower()
+
+                    if self._past_performance_matches_section(pp, section_name_lower, section_reqs):
+                        proof = f"Proven on {pp.get('contract_name', 'similar contract')}: {pp.get('key_achievement', pp.get('description', ''))}"
+                        proofs.append(proof)
+
+                # Match differentiators to section
+                for diff in differentiators:
+                    if self._differentiator_matches_section(diff, section_name_lower, section_reqs):
+                        theme = f"[DIFFERENTIATOR] {diff.get('description', diff.get('name', ''))}"
+                        themes.append(theme)
+
+                # Match key personnel to staffing sections
+                if volume.volume_type == VolumeType.STAFFING or "personnel" in section_name_lower or "staff" in section_name_lower:
+                    for person in key_personnel:
+                        proof = f"{person.get('name', 'Key Person')}: {person.get('qualifications', person.get('experience', ''))}"
+                        proofs.append(proof)
+
+                # If no matches found, add actionable placeholder
+                if not themes:
+                    themes.append(f"[WIN THEME: Add capabilities relevant to {section.name} in Company Library]")
+
+                if not proofs and volume.volume_type != VolumeType.COST_PRICE:
+                    proofs.append(f"[PROOF POINT: Add past performance relevant to {section.name}]")
+
+                section.win_themes = themes
+                section.proof_points = proofs
+
+    def _capability_matches_section(
+        self,
+        capability: Dict,
+        section_name: str,
+        section_reqs: str
+    ) -> bool:
+        """Check if a capability matches a section based on keywords"""
+        cap_name = capability.get("name", "").lower()
+        cap_keywords = [kw.lower() for kw in capability.get("keywords", [])]
+        cap_category = capability.get("category", "").lower()
+
+        # Direct name match
+        if cap_name and cap_name in section_name:
+            return True
+        if cap_name and cap_name in section_reqs:
+            return True
+
+        # Keyword match
+        for kw in cap_keywords:
+            if kw in section_name or kw in section_reqs:
+                return True
+
+        # Category match
+        category_section_map = {
+            "technical": ["technical", "approach", "solution", "methodology"],
+            "management": ["management", "project", "program", "risk"],
+            "transition": ["transition", "phase-in", "implementation"],
+            "quality": ["quality", "qc", "qa", "assurance"],
+            "security": ["security", "cybersecurity", "compliance"],
+            "staffing": ["personnel", "staff", "team", "resources"],
+        }
+
+        for cat, keywords in category_section_map.items():
+            if cap_category == cat:
+                for kw in keywords:
+                    if kw in section_name:
+                        return True
+
+        return False
+
+    def _past_performance_matches_section(
+        self,
+        past_perf: Dict,
+        section_name: str,
+        section_reqs: str
+    ) -> bool:
+        """Check if past performance matches section"""
+        pp_keywords = [kw.lower() for kw in past_perf.get("relevance_keywords", [])]
+        pp_scope = past_perf.get("scope", "").lower()
+        pp_type = past_perf.get("contract_type", "").lower()
+
+        # Keyword match
+        for kw in pp_keywords:
+            if kw in section_name or kw in section_reqs:
+                return True
+
+        # Scope match
+        if any(word in section_name for word in pp_scope.split()):
+            return True
+
+        return False
+
+    def _differentiator_matches_section(
+        self,
+        differentiator: Dict,
+        section_name: str,
+        section_reqs: str
+    ) -> bool:
+        """Check if differentiator applies to section"""
+        diff_category = differentiator.get("category", "").lower()
+        diff_keywords = [kw.lower() for kw in differentiator.get("keywords", [])]
+
+        # Category match
+        if diff_category in section_name:
+            return True
+
+        # Keyword match
+        for kw in diff_keywords:
+            if kw in section_name or kw in section_reqs:
+                return True
+
+        # Generic differentiators apply to executive summary
+        if "summary" in section_name.lower() and differentiator.get("is_primary", False):
+            return True
+
+        return False
+
+    # =============================================================================
+    # P1: Page Allocation Calculation from Section M Weights
+    # =============================================================================
+
+    def _calculate_page_allocations(
+        self,
+        volumes: List[ProposalVolume],
+        eval_factors: List[EvaluationFactor],
+        total_pages: Optional[int]
+    ) -> None:
+        """
+        Calculate page allocations based on Section M evaluation weights.
+
+        Formula: section_pages = total_pages * (factor_weight / total_weight)
+
+        Weight interpretation:
+        - "Most Important" / "Primary" = 0.35
+        - "Important" / "Significant" = 0.25
+        - "Less Important" / "Secondary" = 0.15
+        - Numeric weights (e.g., "30%", "300 points") are normalized
+        """
+        if not total_pages:
+            return
+
+        # Build weight map from eval factors
+        factor_weights = {}
+        total_weight = 0.0
+
+        for factor in eval_factors:
+            weight = self._parse_importance_weight(factor.weight, factor.importance)
+            factor_weights[factor.name.lower()] = weight
+            factor_weights[factor.id.lower()] = weight
+            total_weight += weight
+
+        # Normalize if total_weight is 0
+        if total_weight == 0:
+            total_weight = len(eval_factors) if eval_factors else 1.0
+            for key in factor_weights:
+                factor_weights[key] = 1.0
+
+        # Allocate pages to volumes and sections
+        for volume in volumes:
+            volume_weight = 0.0
+
+            # Sum weights for this volume's factors
+            for factor_name in volume.eval_factors:
+                factor_weight = factor_weights.get(factor_name.lower(), 0.15)
+                volume_weight += factor_weight
+
+            # If no explicit factors, assign default based on volume type
+            if volume_weight == 0:
+                volume_weight = self._get_default_volume_weight(volume.volume_type)
+
+            # Calculate volume page budget
+            vol_pages = max(1, int(total_pages * (volume_weight / max(total_weight, 1.0))))
+
+            # Distribute to sections within volume
+            if volume.sections:
+                pages_per_section = max(1, vol_pages // len(volume.sections))
+                remaining = vol_pages - (pages_per_section * len(volume.sections))
+
+                for i, section in enumerate(volume.sections):
+                    # Give extra pages to first section (usually exec summary)
+                    extra = 1 if i == 0 and remaining > 0 else 0
+                    section.page_allocation = pages_per_section + extra
+
+                    # Match section to eval factor for more precise allocation
+                    matched_weight = self._find_section_eval_weight(section, eval_factors, factor_weights)
+                    if matched_weight > 0:
+                        # Adjust based on matched weight
+                        adjusted_pages = max(1, int(vol_pages * (matched_weight / max(volume_weight, 1.0))))
+                        section.page_allocation = adjusted_pages
+
+    def _parse_importance_weight(
+        self,
+        weight: Optional[str],
+        importance: Optional[str] = None
+    ) -> float:
+        """
+        Parse weight/importance string to numeric value.
+
+        Returns float between 0.0 and 1.0
+        """
+        text = (weight or importance or "").lower()
+
+        if not text:
+            return 0.2  # Default weight
+
+        # Numeric percentage
+        pct_match = re.search(r"(\d+)\s*%", text)
+        if pct_match:
+            return float(pct_match.group(1)) / 100.0
+
+        # Numeric points (normalize assuming 1000 max)
+        pts_match = re.search(r"(\d+)\s*points?", text)
+        if pts_match:
+            return min(float(pts_match.group(1)) / 1000.0, 1.0)
+
+        # Qualitative importance
+        importance_map = {
+            "most important": 0.35,
+            "primary": 0.35,
+            "critical": 0.35,
+            "important": 0.25,
+            "significant": 0.25,
+            "equally important": 0.20,
+            "equal": 0.20,
+            "less important": 0.15,
+            "secondary": 0.15,
+            "minor": 0.10,
+        }
+
+        for phrase, val in importance_map.items():
+            if phrase in text:
+                return val
+
+        # Check for descending order mention
+        if "descending order" in text:
+            return 0.25  # Middle weight for unspecified position
+
+        return 0.2  # Default
+
+    def _get_default_volume_weight(self, volume_type: VolumeType) -> float:
+        """Get default weight for volume type when no eval factors specified"""
+        default_weights = {
+            VolumeType.TECHNICAL: 0.40,
+            VolumeType.MANAGEMENT: 0.20,
+            VolumeType.PAST_PERFORMANCE: 0.20,
+            VolumeType.COST_PRICE: 0.15,
+            VolumeType.STAFFING: 0.10,
+            VolumeType.EXPERIENCE: 0.15,
+            VolumeType.SMALL_BUSINESS: 0.05,
+            VolumeType.ADMINISTRATIVE: 0.02,
+            VolumeType.OTHER: 0.10,
+        }
+        return default_weights.get(volume_type, 0.10)
+
+    def _find_section_eval_weight(
+        self,
+        section: ProposalSection,
+        eval_factors: List[EvaluationFactor],
+        factor_weights: Dict[str, float]
+    ) -> float:
+        """Find matching eval factor weight for a section"""
+        section_name_lower = section.name.lower()
+
+        for factor in eval_factors:
+            factor_name_lower = factor.name.lower()
+
+            # Check for keyword overlap
+            section_words = set(section_name_lower.split())
+            factor_words = set(factor_name_lower.split())
+
+            common = section_words & factor_words
+            if len(common) >= 2 or (len(common) == 1 and any(w in ["technical", "management", "performance", "cost", "price"] for w in common)):
+                return factor_weights.get(factor_name_lower, 0.2)
+
+        return 0.0
+
     def to_json(self, outline: ProposalOutline) -> Dict[str, Any]:
         """Convert outline to JSON format for API"""
-        
+
         return {
             "rfp_format": outline.rfp_format,
             "total_pages": outline.total_pages,
@@ -836,8 +1174,12 @@ class SmartOutlineGenerator:
                             "title": sec.name,  # UI expects 'title' not 'name'
                             "name": sec.name,   # Keep both for compatibility
                             "page_limit": sec.page_limit,
+                            "page_allocation": sec.page_allocation,  # P1: Calculated from M weights
                             "content_requirements": sec.requirements,  # UI expects this name
                             "requirements": sec.requirements,
+                            "win_themes": sec.win_themes,  # P1: From Company Library
+                            "proof_points": sec.proof_points,  # P1: Evidence from past performance
+                            "eval_criteria": sec.eval_criteria,
                             "compliance_checkpoints": [],  # Can be populated later
                             "subsections": [
                                 {"id": sub.id, "title": sub.name, "name": sub.name}
