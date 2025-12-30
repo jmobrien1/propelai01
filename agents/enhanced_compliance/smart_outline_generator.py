@@ -1,6 +1,22 @@
 """
 PropelAI: Smart Proposal Outline Generator v2.10
 
+⚠️  DEPRECATED: This module is deprecated in favor of the v3.0 Decoupled Outline
+    Generation architecture. Use the following instead:
+
+    - OutlineOrchestrator (agents/enhanced_compliance/outline_orchestrator.py)
+    - StrictStructureBuilder (agents/enhanced_compliance/strict_structure_builder.py)
+    - ContentInjector (agents/enhanced_compliance/content_injector.py)
+
+    API Endpoint: POST /api/rfp/{rfp_id}/outline/v3
+
+    The v3.0 architecture fixes the root cause of hallucinated volumes by:
+    1. Building structure ONLY from explicit Section L instructions
+    2. Validating volume count against stated RFP requirements
+    3. Separating structure (skeleton) from content (requirement injection)
+
+    See CLAUDE.md Section 14 for migration guide.
+
 Generates proposal outlines from already-extracted compliance matrix data.
 Unlike the legacy outline_generator.py, this uses the structured requirements
 already parsed from Section L and M rather than re-parsing PDFs.
@@ -11,6 +27,8 @@ Key improvements:
 - Better volume/section detection using actual requirement text
 - Proper evaluation factor mapping
 """
+
+import warnings
 
 import re
 from typing import Dict, List, Optional, Any, Tuple
@@ -167,12 +185,24 @@ class ProposalOutline:
 class SmartOutlineGenerator:
     """
     Generate proposal outlines from compliance matrix data.
-    
+
     This generator uses already-extracted Section L and M data
     rather than re-parsing PDFs, making it more accurate.
+
+    .. deprecated::
+        This class is deprecated. Use OutlineOrchestrator from
+        agents.enhanced_compliance.outline_orchestrator instead.
+        See CLAUDE.md Section 14 for migration guide.
     """
-    
+
     def __init__(self):
+        warnings.warn(
+            "SmartOutlineGenerator is deprecated. Use OutlineOrchestrator from "
+            "agents.enhanced_compliance.outline_orchestrator instead. "
+            "See CLAUDE.md Section 14 for migration guide.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         # Volume detection patterns
         self.volume_patterns = [
             # NIH Factor-based

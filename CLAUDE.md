@@ -1,6 +1,6 @@
 # PropelAI: Autonomous Proposal Operating System
-**Current Status:** v5.0.3 - Trust Gate + Strategy Engine + QA Infrastructure
-**Phase 1 Complete:** Iron Triangle DAG ✓ | Click-to-Verify ✓ | War Room ✓ | Word API ✓ | QA Tests ✓
+**Current Status:** v5.0.4 - Trust Gate + Strategy Engine + QA Infrastructure + Decoupled Outline v3.0
+**Phase 1 Complete:** Iron Triangle DAG ✓ | Click-to-Verify ✓ | War Room ✓ | Word API ✓ | QA Tests ✓ | Outline v3.0 ✓
 **Phase 2 Planned:** Strategy Engine | Annotated Outline | Win Theme Generator
 
 ## 1. Architecture & Tech Stack
@@ -35,6 +35,9 @@
 - `agents/drafting_workflow.py`: LangGraph drafting workflow (F-B-P framework).
 - `agents/enhanced_compliance/pdf_coordinate_extractor.py`: Trust Gate coordinate extraction.
 - `agents/enhanced_compliance/document_types.py`: Guided upload document classification.
+- `agents/enhanced_compliance/strict_structure_builder.py`: v3.0 skeleton builder (Section L only).
+- `agents/enhanced_compliance/content_injector.py`: v3.0 requirement mapper (Section C into skeleton).
+- `agents/enhanced_compliance/outline_orchestrator.py`: v3.0 pipeline coordinator.
 - `web/index.html`: React SPA with guided upload wizard (v4.1 dark theme).
 - `init.sql`: PostgreSQL schema with pgvector extension.
 - `tests/conftest.py`: Shared test fixtures (GoldenRFP, MockEmbeddingGenerator).
@@ -852,3 +855,129 @@ Use GraphRAG (not simple vector search) to traverse knowledge graph for proof po
 - **Outline Generation Time:** 4 days (manual) → <1 hour (AI)
 - **Strategy Alignment Score:** % of Section M factors mapped to outline sections
 - **Requirement Coverage:** 100% of "Shall" statements assigned (no orphans)
+
+## 14. v3.0 Decoupled Outline Generation (IMPLEMENTED)
+**Status:** Complete - Fixes hallucinated volumes in SmartOutlineGenerator
+**Root Cause Fixed:** SmartOutlineGenerator would fallback to hardcoded default volumes (including "Past Performance") when extraction failed.
+
+### Architecture: Two-Phase Pipeline
+
+**Component A: StrictStructureBuilder** (`strict_structure_builder.py`)
+- Builds proposal skeleton from Section L instructions ONLY
+- NO defaults, NO inference from content, NO keyword-based volume detection
+- Validates volume count against stated RFP requirements
+- Raises `StructureValidationError` when validation fails in strict mode
+
+**Component B: ContentInjector** (`content_injector.py`)
+- Maps Section C requirements into the skeleton
+- Skeleton is IMMUTABLE - only fills requirement slots
+- Multi-stage matching: explicit reference → semantic keywords → requirement type
+- Returns `InjectionResult` with confidence levels for each mapping
+
+**Orchestrator** (`outline_orchestrator.py`)
+- Coordinates SectionLParser → StrictStructureBuilder → ContentInjector
+- Main entry point: `generate_outline()` method
+- Integrates with `ProposalState` via `proposal_skeleton` field
+
+### Key Principle
+```
+SECTION L → STRUCTURE (skeleton)
+SECTION C → CONTENT (requirements to inject)
+SECTION M → ALIGNMENT (evaluation criteria for matching)
+```
+
+### Data Models
+
+**SectionL_Schema** (`section_l_schema.py`):
+```python
+class SectionL_Schema(TypedDict):
+    rfp_number: str
+    rfp_title: str
+    volumes: List[VolumeInstruction]
+    sections: List[SectionInstruction]
+    format_rules: FormatInstruction
+    submission_rules: SubmissionInstruction
+    total_page_limit: Optional[int]
+    stated_volume_count: Optional[int]  # For validation
+    parsing_warnings: List[str]
+```
+
+**ProposalSkeleton** (`strict_structure_builder.py`):
+```python
+@dataclass
+class ProposalSkeleton:
+    rfp_number: str
+    rfp_title: str
+    volumes: List[SkeletonVolume]
+    total_page_limit: Optional[int]
+    format_rules: Dict[str, Any]
+    is_valid: bool
+    validation_errors: List[str]
+    validation_warnings: List[str]
+```
+
+### Validation Rules
+1. **Volume count mismatch** → Error if found volumes ≠ stated count
+2. **Page limit overflow** → Error if allocated pages > total limit
+3. **Empty skeleton** → Error if no volumes found in Section L
+4. **Missing structure** → Warning if volume has no sections/page limit
+
+### API Endpoints
+
+**POST /api/rfp/{rfp_id}/outline/v3**
+Generate proposal outline using v3.0 decoupled architecture.
+
+Parameters:
+- `strict_mode: bool = True` - Fail if structure cannot be determined from Section L
+
+Response:
+```json
+{
+  "status": "success",
+  "version": "3.0",
+  "skeleton_valid": true,
+  "volumes_count": 3,
+  "volumes": [
+    {"title": "Technical Approach", "page_limit": 50, "sections_count": 4}
+  ],
+  "requirements_mapped": 45,
+  "requirements_unmapped": 2,
+  "low_confidence_count": 5,
+  "warnings": [],
+  "outline": {...}
+}
+```
+
+**GET /api/rfp/{rfp_id}/skeleton**
+Get the proposal skeleton (structure only, no content).
+
+Response:
+```json
+{
+  "rfp_id": "rfp-123",
+  "skeleton": {...},
+  "validation": {
+    "is_valid": true,
+    "errors": [],
+    "warnings": []
+  }
+}
+```
+
+### Migration from SmartOutlineGenerator
+The legacy `SmartOutlineGenerator` is deprecated. Use the v3.0 endpoints instead:
+
+| Legacy | v3.0 Replacement |
+|--------|------------------|
+| `POST /api/rfp/{rfp_id}/master-architect` | `POST /api/rfp/{rfp_id}/outline/v3` |
+| `SmartOutlineGenerator.generate_from_compliance_matrix()` | `OutlineOrchestrator.generate_outline()` |
+
+### Key Files
+- `agents/enhanced_compliance/section_l_schema.py` - TypedDict definitions
+- `agents/enhanced_compliance/section_l_parser.py` - Parses raw text to schema
+- `agents/enhanced_compliance/strict_structure_builder.py` - Component A
+- `agents/enhanced_compliance/content_injector.py` - Component B
+- `agents/enhanced_compliance/outline_orchestrator.py` - Pipeline coordinator
+- `core/state.py` - Added `proposal_skeleton` field to ProposalState
+- `docs/REFACTORING_PLAN_v3.0.md` - Architecture design document
+- `docs/IMPLEMENTATION_PLAN_StrictStructureBuilder.md` - Implementation guide
