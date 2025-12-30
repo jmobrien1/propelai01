@@ -167,6 +167,15 @@ __all__ = [
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
     # Trust Gate (v4.0)
     "TRUST_GATE_AVAILABLE", "PDFCoordinateExtractor",
+    # v3.0 Decoupled Outline Generation
+    "SectionL_Schema", "VolumeInstruction", "SectionInstruction",
+    "FormatInstruction", "SubmissionInstruction",
+    "SectionLParser",
+    "StrictStructureBuilder", "ProposalSkeleton", "SkeletonVolume", "SkeletonSection",
+    "StructureValidationError",
+    "ContentInjector", "InjectionResult", "MappingConfidence", "RequirementMapping",
+    "OutlineOrchestrator", "generate_outline_v3",
+    "OUTLINE_V3_AVAILABLE",
 ]
 
 # =============================================================================
@@ -240,3 +249,44 @@ except ImportError as e:
     VALIDATION_ENGINE_AVAILABLE = False
     ValidationEngine = ValidationResult = ValidationViolation = None
     ViolationType = Severity = validate_requirements = None
+
+# =============================================================================
+# v3.0 Decoupled Outline Generation (StrictStructureBuilder + ContentInjector)
+# =============================================================================
+try:
+    from .section_l_schema import (
+        SectionL_Schema,
+        VolumeInstruction,
+        SectionInstruction,
+        FormatInstruction,
+        SubmissionInstruction,
+    )
+    from .section_l_parser import SectionLParser
+    from .strict_structure_builder import (
+        StrictStructureBuilder,
+        ProposalSkeleton,
+        SkeletonVolume,
+        SkeletonSection,
+        StructureValidationError,
+    )
+    from .content_injector import (
+        ContentInjector,
+        InjectionResult,
+        MappingConfidence,
+        RequirementMapping,
+    )
+    from .outline_orchestrator import (
+        OutlineOrchestrator,
+        generate_outline_v3,
+    )
+    OUTLINE_V3_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Outline v3.0 components not available: {e}")
+    OUTLINE_V3_AVAILABLE = False
+    SectionL_Schema = VolumeInstruction = SectionInstruction = None
+    FormatInstruction = SubmissionInstruction = None
+    SectionLParser = None
+    StrictStructureBuilder = ProposalSkeleton = SkeletonVolume = SkeletonSection = None
+    StructureValidationError = None
+    ContentInjector = InjectionResult = MappingConfidence = RequirementMapping = None
+    OutlineOrchestrator = generate_outline_v3 = None

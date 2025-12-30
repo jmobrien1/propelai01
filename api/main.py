@@ -5044,6 +5044,159 @@ async def get_master_architect_status(rfp_id: str):
     }
 
 
+# ============== Proposal Outline v3.0 (Decoupled Architecture) ==============
+
+@app.post("/api/rfp/{rfp_id}/outline/v3")
+async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
+    """
+    Generate proposal outline using v3.0 decoupled architecture.
+
+    This endpoint uses the new two-phase pipeline:
+    - Phase 1: StrictStructureBuilder creates skeleton from Section L ONLY
+    - Phase 2: ContentInjector maps Section C requirements into skeleton
+
+    Key Benefits:
+    - No hallucinated volumes (structure comes strictly from Section L)
+    - Clear separation of structure vs content
+    - Validation gate ensures compliance with RFP constraints
+
+    Args:
+        rfp_id: RFP project ID
+        strict_mode: If True, fail if structure cannot be determined from Section L.
+                    If False, continue with warnings (useful for debugging).
+
+    Returns:
+        - skeleton_valid: Whether the skeleton passed validation
+        - volumes_count: Number of volumes found in Section L
+        - requirements_mapped: Number of requirements successfully mapped
+        - requirements_unmapped: Number of requirements that couldn't be mapped
+        - outline: The annotated outline with injected requirements
+    """
+    from agents.enhanced_compliance.outline_orchestrator import OutlineOrchestrator
+    from agents.enhanced_compliance.strict_structure_builder import StructureValidationError
+
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    requirements = rfp.get("requirements", [])
+    if not requirements:
+        raise HTTPException(
+            status_code=400,
+            detail="No requirements extracted. Process RFP first using /process-best-practices."
+        )
+
+    # Separate requirements by category
+    # Section L (instructions) - drives structure
+    instructions = [r for r in requirements
+                   if r.get("category") == "L_COMPLIANCE"
+                   or r.get("section", "").upper().startswith("L")]
+
+    # Section C (technical requirements) - content to inject
+    technical_reqs = [r for r in requirements
+                     if r.get("category") == "TECHNICAL"
+                     or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
+
+    # Section M (evaluation criteria) - for alignment
+    eval_criteria = [r for r in requirements
+                    if r.get("category") == "EVALUATION"
+                    or r.get("section", "").upper().startswith("M")]
+
+    # Build Section L text from instructions
+    section_l_text = "\n\n".join([
+        r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
+        for r in instructions
+        if r.get("text") or r.get("full_text") or r.get("requirement_text")
+    ])
+
+    if not section_l_text:
+        raise HTTPException(
+            status_code=400,
+            detail="No Section L instructions found. Cannot build proposal structure. "
+                   "Ensure the RFP has been processed and contains Section L content."
+        )
+
+    try:
+        orchestrator = OutlineOrchestrator(strict_mode=strict_mode)
+        result = orchestrator.generate_outline(
+            section_l_text=section_l_text,
+            requirements=technical_reqs,
+            evaluation_criteria=eval_criteria,
+            rfp_number=rfp.get("solicitation_number", ""),
+            rfp_title=rfp.get("name", "")
+        )
+
+        # Store results in RFP store
+        store.update(rfp_id, {
+            "proposal_skeleton": result["proposal_skeleton"],
+            "outline": result["annotated_outline"],
+            "outline_version": "3.0",
+            "outline_metadata": result["injection_metadata"]
+        })
+
+        return {
+            "status": "success",
+            "version": "3.0",
+            "skeleton_valid": result["proposal_skeleton"].get("is_valid", False),
+            "volumes_count": len(result["proposal_skeleton"].get("volumes", [])),
+            "volumes": [
+                {
+                    "title": v.get("title"),
+                    "page_limit": v.get("page_limit"),
+                    "sections_count": len(v.get("sections", []))
+                }
+                for v in result["proposal_skeleton"].get("volumes", [])
+            ],
+            "requirements_mapped": result["injection_metadata"]["mapped_count"],
+            "requirements_unmapped": result["injection_metadata"]["unmapped_count"],
+            "low_confidence_count": result["injection_metadata"].get("low_confidence_count", 0),
+            "warnings": result["injection_metadata"]["warnings"],
+            "outline": result["annotated_outline"]
+        }
+
+    except StructureValidationError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Section L structure validation failed: {str(e)}. "
+                   f"Set strict_mode=false to continue with warnings."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Outline generation failed: {str(e)}"
+        )
+
+
+@app.get("/api/rfp/{rfp_id}/skeleton")
+async def get_proposal_skeleton(rfp_id: str):
+    """
+    Get the proposal skeleton (structure only, no content).
+
+    Returns the skeleton created by StrictStructureBuilder, showing
+    the proposal structure derived strictly from Section L.
+    """
+    rfp = store.get(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    skeleton = rfp.get("proposal_skeleton")
+    if not skeleton:
+        raise HTTPException(
+            status_code=404,
+            detail="No skeleton available. Generate outline first using POST /outline/v3"
+        )
+
+    return {
+        "rfp_id": rfp_id,
+        "skeleton": skeleton,
+        "validation": {
+            "is_valid": skeleton.get("is_valid", False),
+            "errors": skeleton.get("validation_errors", []),
+            "warnings": skeleton.get("validation_warnings", [])
+        }
+    }
+
+
 # ============== Iron Triangle Graph & Validation (v5.0) ==============
 
 @app.get("/api/rfp/{rfp_id}/graph")

@@ -1,0 +1,536 @@
+"""
+PropelAI v3.0: ContentInjector - Component B
+
+Injects Section C requirements into proposal skeleton.
+
+This component:
+- Takes skeleton from StrictStructureBuilder (Component A)
+- Takes requirements from compliance matrix
+- Maps requirements to skeleton sections using semantic matching
+- Does NOT modify skeleton structure
+- Produces annotated_outline for ProposalState
+
+Key Principle: The skeleton is IMMUTABLE. We only fill the slots.
+"""
+
+from typing import Dict, List, Optional, Any, Tuple
+from dataclasses import dataclass, field
+from enum import Enum
+import re
+
+
+class MappingConfidence(Enum):
+    """
+    Confidence level of requirement-to-section mapping.
+
+    Used to flag mappings that need human review.
+    """
+    EXPLICIT = "explicit"      # RFP explicitly states location (e.g., "in Volume I")
+    HIGH = "high"              # Clear keyword match between requirement and section
+    MEDIUM = "medium"          # Reasonable inference based on content type
+    LOW = "low"                # Weak match, definitely needs review
+    UNMAPPED = "unmapped"      # Could not map to any section
+
+
+@dataclass
+class RequirementMapping:
+    """
+    A mapping of a requirement to a skeleton section.
+
+    This captures the relationship between a requirement and its
+    target section, along with the confidence level and rationale.
+    """
+    requirement_id: str
+    requirement_text: str
+    target_section_id: str
+    target_volume_id: str
+    confidence: MappingConfidence
+    rationale: str
+
+
+@dataclass
+class InjectionResult:
+    """
+    Result of content injection into skeleton.
+
+    This is the output of ContentInjector and contains the final
+    annotated outline ready for storage in ProposalState.
+    """
+    success: bool
+    annotated_outline: Dict[str, Any]
+    total_requirements: int
+    mapped_count: int
+    unmapped_requirements: List[Dict]
+    low_confidence_mappings: List[RequirementMapping]
+    warnings: List[str]
+
+
+class ContentInjector:
+    """
+    Component B: Injects requirements into skeleton without modifying structure.
+
+    The skeleton is IMMUTABLE. We only fill the requirement slots.
+
+    Usage:
+        injector = ContentInjector()
+        result = injector.inject(
+            skeleton_dict=state['proposal_skeleton'],
+            requirements=state['requirements'],
+            evaluation_criteria=state['evaluation_criteria']
+        )
+        state['annotated_outline'] = result.annotated_outline
+
+    The injector uses a multi-stage matching approach:
+    1. Explicit reference matching (e.g., "Volume I", "Section 2.0")
+    2. Semantic keyword matching
+    3. Requirement type matching
+    """
+
+    def __init__(self):
+        """Initialize the content injector with keyword mappings."""
+        # Keyword mappings for semantic matching
+        # Maps section types to keywords that indicate requirements belong there
+        self.section_keywords = {
+            'technical': [
+                'technical', 'approach', 'methodology', 'solution',
+                'system', 'design', 'architecture', 'implementation'
+            ],
+            'management': [
+                'management', 'project', 'program', 'oversight',
+                'governance', 'control', 'monitor', 'report'
+            ],
+            'staffing': [
+                'staff', 'personnel', 'team', 'key personnel', 'resume',
+                'qualification', 'experience', 'skill', 'labor'
+            ],
+            'experience': [
+                'experience', 'past performance', 'reference', 'similar',
+                'prior', 'previous', 'contract', 'history'
+            ],
+            'cost': [
+                'cost', 'price', 'budget', 'pricing', 'rate',
+                'labor rate', 'estimate', 'financial'
+            ],
+            'quality': [
+                'quality', 'assurance', 'control', 'qa', 'qc',
+                'inspection', 'test', 'verification'
+            ],
+            'transition': [
+                'transition', 'phase-in', 'mobilization', 'startup',
+                'handover', 'knowledge transfer'
+            ],
+            'risk': [
+                'risk', 'mitigation', 'contingency', 'fallback',
+                'backup', 'alternative'
+            ],
+            'security': [
+                'security', 'clearance', 'classified', 'cyber',
+                'protection', 'safeguard', 'access'
+            ],
+        }
+
+    def inject(
+        self,
+        skeleton_dict: Dict[str, Any],
+        requirements: List[Dict],
+        evaluation_criteria: List[Dict]
+    ) -> InjectionResult:
+        """
+        Inject requirements into skeleton sections.
+
+        This method:
+        1. For each requirement, finds the best matching section
+        2. Uses explicit references first (e.g., "see Volume I")
+        3. Falls back to semantic matching
+        4. Flags unmapped requirements for review
+
+        DOES NOT:
+        - Add new sections
+        - Modify page limits
+        - Change section order
+        - Remove sections with no requirements
+
+        Args:
+            skeleton_dict: Skeleton from state['proposal_skeleton']
+            requirements: Requirements from state['requirements'] (Section C)
+            evaluation_criteria: Criteria from state['evaluation_criteria'] (Section M)
+
+        Returns:
+            InjectionResult with annotated_outline for state storage
+        """
+        mappings: List[RequirementMapping] = []
+        unmapped: List[Dict] = []
+        warnings: List[str] = []
+
+        # Validate skeleton
+        if not skeleton_dict.get('volumes'):
+            warnings.append("Skeleton has no volumes - cannot inject requirements")
+            return InjectionResult(
+                success=False,
+                annotated_outline={},
+                total_requirements=len(requirements),
+                mapped_count=0,
+                unmapped_requirements=requirements,
+                low_confidence_mappings=[],
+                warnings=warnings
+            )
+
+        # Build section lookup for efficient matching
+        section_lookup = self._build_section_lookup(skeleton_dict)
+
+        # Map each requirement to a section
+        for req in requirements:
+            mapping = self._map_requirement(req, skeleton_dict, section_lookup)
+            if mapping.confidence == MappingConfidence.UNMAPPED:
+                unmapped.append(req)
+            else:
+                mappings.append(mapping)
+
+        # Build annotated outline
+        annotated_outline = self._build_annotated_outline(
+            skeleton_dict,
+            mappings,
+            evaluation_criteria
+        )
+
+        # Identify low confidence mappings for review
+        low_confidence = [
+            m for m in mappings
+            if m.confidence == MappingConfidence.LOW
+        ]
+
+        if low_confidence:
+            warnings.append(
+                f"{len(low_confidence)} requirements have low confidence mappings "
+                f"and should be reviewed"
+            )
+
+        if unmapped:
+            warnings.append(
+                f"{len(unmapped)} requirements could not be mapped to any section"
+            )
+
+        return InjectionResult(
+            success=True,
+            annotated_outline=annotated_outline,
+            total_requirements=len(requirements),
+            mapped_count=len(mappings),
+            unmapped_requirements=unmapped,
+            low_confidence_mappings=low_confidence,
+            warnings=warnings
+        )
+
+    def _build_section_lookup(self, skeleton: Dict) -> Dict[str, Dict]:
+        """
+        Build lookup table: section_id -> section info.
+
+        This enables O(1) lookup when mapping requirements.
+        """
+        lookup = {}
+        for vol in skeleton.get('volumes', []):
+            for sec in vol.get('sections', []):
+                lookup[sec['id']] = {
+                    'section': sec,
+                    'volume_id': vol['id'],
+                    'volume_title': vol['title']
+                }
+        return lookup
+
+    def _map_requirement(
+        self,
+        requirement: Dict,
+        skeleton: Dict,
+        section_lookup: Dict
+    ) -> RequirementMapping:
+        """
+        Map a single requirement to a skeleton section.
+
+        Uses a multi-stage matching approach:
+        1. Explicit reference (highest confidence)
+        2. Semantic keyword matching
+        3. Requirement type matching
+        """
+        req_id = requirement.get('id', 'unknown')
+        req_text = requirement.get('text', '') or requirement.get('full_text', '')
+
+        # Stage 1: Try explicit reference first (e.g., "Volume I", "Section 2.0")
+        explicit_target = self._find_explicit_target(requirement, skeleton)
+        if explicit_target:
+            return RequirementMapping(
+                requirement_id=req_id,
+                requirement_text=req_text[:200],
+                target_section_id=explicit_target['section_id'],
+                target_volume_id=explicit_target['volume_id'],
+                confidence=MappingConfidence.EXPLICIT,
+                rationale=f"Explicit reference to {explicit_target['reference']}"
+            )
+
+        # Stage 2: Try semantic matching
+        semantic_target, confidence = self._semantic_match(
+            requirement, skeleton, section_lookup
+        )
+        if semantic_target:
+            return RequirementMapping(
+                requirement_id=req_id,
+                requirement_text=req_text[:200],
+                target_section_id=semantic_target['section_id'],
+                target_volume_id=semantic_target['volume_id'],
+                confidence=confidence,
+                rationale=semantic_target['rationale']
+            )
+
+        # Could not map
+        return RequirementMapping(
+            requirement_id=req_id,
+            requirement_text=req_text[:200],
+            target_section_id='',
+            target_volume_id='',
+            confidence=MappingConfidence.UNMAPPED,
+            rationale="No matching section found"
+        )
+
+    def _find_explicit_target(
+        self,
+        requirement: Dict,
+        skeleton: Dict
+    ) -> Optional[Dict]:
+        """
+        Find explicit volume/section reference in requirement.
+
+        Looks for patterns like:
+        - "Volume I" or "Volume 1"
+        - "Section 2.0" or "Section A"
+        - "Technical Proposal"
+        """
+        text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
+
+        # Pattern 1: "Volume I", "Volume 1", etc.
+        vol_match = re.search(r'volume\s*([ivx\d]+)', text, re.IGNORECASE)
+        if vol_match:
+            vol_ref = vol_match.group(1).upper()
+            for vol in skeleton.get('volumes', []):
+                vol_id_upper = vol['id'].upper()
+                vol_title_upper = vol['title'].upper()
+
+                if vol_ref in vol_id_upper or vol_ref in vol_title_upper:
+                    # Return first section of matched volume
+                    if vol.get('sections'):
+                        return {
+                            'section_id': vol['sections'][0]['id'],
+                            'volume_id': vol['id'],
+                            'reference': f"Volume {vol_ref}"
+                        }
+                    # If no sections, use volume itself as target
+                    return {
+                        'section_id': vol['id'],
+                        'volume_id': vol['id'],
+                        'reference': f"Volume {vol_ref}"
+                    }
+
+        # Pattern 2: "Section X.X" references
+        sec_match = re.search(r'section\s*(\d+(?:\.\d+)*)', text, re.IGNORECASE)
+        if sec_match:
+            sec_ref = sec_match.group(1)
+            for vol in skeleton.get('volumes', []):
+                for sec in vol.get('sections', []):
+                    if sec_ref in sec['id']:
+                        return {
+                            'section_id': sec['id'],
+                            'volume_id': vol['id'],
+                            'reference': f"Section {sec_ref}"
+                        }
+
+        # Pattern 3: Volume name reference (e.g., "Technical Proposal")
+        for vol in skeleton.get('volumes', []):
+            vol_title_lower = vol['title'].lower()
+            # Check if volume title appears in requirement text
+            if vol_title_lower in text and len(vol_title_lower) > 5:
+                if vol.get('sections'):
+                    return {
+                        'section_id': vol['sections'][0]['id'],
+                        'volume_id': vol['id'],
+                        'reference': f"Volume '{vol['title']}'"
+                    }
+
+        return None
+
+    def _semantic_match(
+        self,
+        requirement: Dict,
+        skeleton: Dict,
+        section_lookup: Dict
+    ) -> Tuple[Optional[Dict], MappingConfidence]:
+        """
+        Use semantic matching to find best section for requirement.
+
+        Scores each section based on keyword overlap between
+        requirement text and section title/type.
+        """
+        req_text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
+        req_type = requirement.get('requirement_type', '').lower()
+
+        best_match = None
+        best_score = 0
+
+        for vol in skeleton.get('volumes', []):
+            vol_title_lower = vol['title'].lower()
+
+            for sec in vol.get('sections', []):
+                sec_title_lower = sec['title'].lower()
+                score = 0
+                match_reasons = []
+
+                # Score based on keyword overlap
+                for category, keywords in self.section_keywords.items():
+                    # Check if section title matches category
+                    section_matches_category = any(
+                        kw in sec_title_lower for kw in keywords
+                    )
+                    # Check if requirement mentions same keywords
+                    req_matches_category = any(
+                        kw in req_text for kw in keywords
+                    )
+
+                    if section_matches_category and req_matches_category:
+                        score += 10
+                        match_reasons.append(f"{category} keywords")
+
+                    # Bonus if requirement type matches category
+                    if category in req_type and section_matches_category:
+                        score += 15
+                        match_reasons.append(f"type '{req_type}' matches {category}")
+
+                # Boost for requirement type matching volume type
+                if 'technical' in req_type and 'technical' in vol_title_lower:
+                    score += 20
+                    match_reasons.append("technical type matches volume")
+                if 'management' in req_type and 'management' in vol_title_lower:
+                    score += 20
+                    match_reasons.append("management type matches volume")
+                if 'cost' in req_type or 'price' in req_type:
+                    if 'cost' in vol_title_lower or 'price' in vol_title_lower:
+                        score += 20
+                        match_reasons.append("cost/price type matches volume")
+
+                # Direct section title match
+                for word in sec_title_lower.split():
+                    if len(word) > 4 and word in req_text:
+                        score += 5
+                        match_reasons.append(f"title word '{word}'")
+
+                if score > best_score:
+                    best_score = score
+                    best_match = {
+                        'section_id': sec['id'],
+                        'volume_id': vol['id'],
+                        'rationale': f"Keyword match: {', '.join(match_reasons[:3])} (score: {score})"
+                    }
+
+        if best_match:
+            # Determine confidence based on score
+            if best_score >= 25:
+                return best_match, MappingConfidence.HIGH
+            elif best_score >= 15:
+                return best_match, MappingConfidence.MEDIUM
+            elif best_score >= 5:
+                return best_match, MappingConfidence.LOW
+
+        return None, MappingConfidence.UNMAPPED
+
+    def _build_annotated_outline(
+        self,
+        skeleton: Dict,
+        mappings: List[RequirementMapping],
+        evaluation_criteria: List[Dict]
+    ) -> Dict[str, Any]:
+        """
+        Build the final annotated outline for state storage.
+
+        This combines the skeleton structure with injected requirements
+        to produce the complete annotated outline.
+        """
+        # Group mappings by section
+        section_reqs: Dict[str, List[RequirementMapping]] = {}
+        for mapping in mappings:
+            sec_id = mapping.target_section_id
+            if sec_id:
+                if sec_id not in section_reqs:
+                    section_reqs[sec_id] = []
+                section_reqs[sec_id].append(mapping)
+
+        # Build output structure
+        volumes = []
+        for vol in skeleton.get('volumes', []):
+            sections = []
+            for sec in vol.get('sections', []):
+                sec_mappings = section_reqs.get(sec['id'], [])
+
+                section_data = {
+                    'id': sec['id'],
+                    'title': sec['title'],
+                    'page_limit': sec.get('page_limit'),
+                    'order': sec.get('order', 0),
+                    'source_reference': sec.get('source_reference', ''),
+                    # Injected content
+                    'requirements': [
+                        {
+                            'id': m.requirement_id,
+                            'text': m.requirement_text,
+                            'confidence': m.confidence.value,
+                            'rationale': m.rationale
+                        }
+                        for m in sec_mappings
+                    ],
+                    'requirement_count': len(sec_mappings),
+                    # Placeholders for manual completion
+                    'win_themes': [],
+                    'proof_points': [],
+                    'graphics': [],
+                    'compliance_checkpoints': self._generate_checkpoints(sec_mappings)
+                }
+                sections.append(section_data)
+
+            volume_data = {
+                'id': vol['id'],
+                'title': vol['title'],
+                'volume_number': vol.get('volume_number', 0),
+                'page_limit': vol.get('page_limit'),
+                'source_reference': vol.get('source_reference', ''),
+                'sections': sections,
+                'total_requirements': sum(s['requirement_count'] for s in sections)
+            }
+            volumes.append(volume_data)
+
+        return {
+            'rfp_number': skeleton.get('rfp_number', ''),
+            'rfp_title': skeleton.get('rfp_title', ''),
+            'total_page_limit': skeleton.get('total_page_limit'),
+            'format_rules': skeleton.get('format_rules', {}),
+            'submission_rules': skeleton.get('submission_rules', {}),
+            'volumes': volumes,
+            'evaluation_criteria': evaluation_criteria,
+            'generation_metadata': {
+                'total_requirements_mapped': len(mappings),
+                'structure_source': 'Section L (StrictStructureBuilder)',
+                'content_source': 'Section C (ContentInjector)',
+                'version': '3.0'
+            }
+        }
+
+    def _generate_checkpoints(
+        self,
+        mappings: List[RequirementMapping]
+    ) -> List[str]:
+        """
+        Generate compliance checkpoints from injected requirements.
+
+        Creates a checklist of requirements that must be addressed
+        in this section.
+        """
+        checkpoints = []
+        for m in mappings[:10]:  # Limit to first 10 for readability
+            text = m.requirement_text
+            if len(text) > 80:
+                text = text[:77] + "..."
+            checkpoints.append(f"[ ] Address: {text}")
+        return checkpoints
