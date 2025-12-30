@@ -99,6 +99,9 @@ class OutlineOrchestrator:
         logger.info(f"Section L text length: {len(section_l_text)} chars")
         logger.info(f"Requirements count: {len(requirements)}")
 
+        # Debug: Print for Render logs
+        print(f"[v3.0 Parser] Section L text preview (first 500 chars): {section_l_text[:500]}")
+
         # Phase 1: Parse Section L into schema
         logger.info("Phase 1: Parsing Section L into schema...")
         schema = self.parser.parse(
@@ -107,6 +110,11 @@ class OutlineOrchestrator:
             rfp_title=rfp_title,
             attachment_texts=attachment_texts
         )
+
+        # Debug: Print parser results for Render logs
+        print(f"[v3.0 Parser] Found {len(schema.get('volumes', []))} volumes")
+        print(f"[v3.0 Parser] Volume titles: {[v.get('volume_title', 'N/A') for v in schema.get('volumes', [])]}")
+        print(f"[v3.0 Parser] Parsing warnings: {schema.get('parsing_warnings', [])}")
 
         logger.info(f"  Found {len(schema.get('volumes', []))} volumes")
         logger.info(f"  Found {len(schema.get('sections', []))} sections")
