@@ -41,10 +41,15 @@ except ImportError:
 
 # Core models (DocumentType for RFP processing)
 try:
-    from .models import DocumentType, RequirementType as ModelRequirementType, ParsedDocument as ModelParsedDocument
+    from .models import (
+        DocumentType, RequirementType as ModelRequirementType, ParsedDocument as ModelParsedDocument,
+        BoundingBox, SourceCoordinate,  # v4.0 Trust Gate coordinate models
+    )
     MODELS_AVAILABLE = True
 except ImportError:
     MODELS_AVAILABLE = False
+    BoundingBox = None
+    SourceCoordinate = None
     from enum import Enum
     class DocumentType(Enum):
         MAIN_SOLICITATION = "main_solicitation"
@@ -167,6 +172,7 @@ __all__ = [
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
     # Trust Gate (v4.0)
     "TRUST_GATE_AVAILABLE", "PDFCoordinateExtractor",
+    "BoundingBox", "SourceCoordinate",
     # v3.0 Decoupled Outline Generation
     "SectionL_Schema", "VolumeInstruction", "SectionInstruction",
     "FormatInstruction", "SubmissionInstruction",
