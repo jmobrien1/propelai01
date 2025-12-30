@@ -193,7 +193,7 @@ class AnnotatedOutlineExporter:
         elif "eval_factors" in outline_data:
             data["evaluationFactors"] = outline_data["eval_factors"]
         
-        if "format_requirements" in outline_data:
+        if outline_data.get("format_requirements"):
             # Merge with any explicit format requirements
             outline_fmt = outline_data["format_requirements"]
             for key, value in outline_fmt.items():

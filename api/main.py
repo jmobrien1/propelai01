@@ -4514,7 +4514,16 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
                 if r.get("text") or r.get("full_text") or r.get("requirement_text")
             ])
 
+            # Debug logging for v3.0 pipeline
+            print(f"[v3.0 Outline] Section L requirements count: {len(section_l)}")
+            print(f"[v3.0 Outline] Section L text length: {len(section_l_text)} chars")
+            if section_l and not section_l_text:
+                # Log the first requirement to see what fields it has
+                print(f"[v3.0 Outline] First L req keys: {list(section_l[0].keys())}")
+                print(f"[v3.0 Outline] First L req sample: {str(section_l[0])[:500]}")
+
             if section_l_text:
+                print(f"[v3.0 Outline] Starting v3.0 pipeline...")
                 orchestrator = OutlineOrchestrator(strict_mode=False)  # Allow warnings
                 result = orchestrator.generate_outline(
                     section_l_text=section_l_text,
@@ -4536,6 +4545,8 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
                     "outline_metadata": result["injection_metadata"]
                 })
 
+                volumes_count = len(result["proposal_skeleton"].get("volumes", []))
+                print(f"[v3.0 Outline] SUCCESS - Generated {volumes_count} volumes")
                 return {
                     "status": "generated",
                     "version": "3.0",
@@ -4543,11 +4554,13 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
                     "skeleton_valid": result["proposal_skeleton"].get("is_valid", False),
                     "warnings": result["injection_metadata"].get("warnings", [])
                 }
+            else:
+                print(f"[v3.0 Outline] SKIP - No Section L text found, falling back to legacy")
 
         except StructureValidationError as e:
-            print(f"[WARN] v3.0 structure validation failed, falling back to legacy: {e}")
+            print(f"[v3.0 Outline] FAILED - Structure validation error: {e}")
         except Exception as e:
-            print(f"[WARN] v3.0 outline generation failed, falling back to legacy: {e}")
+            print(f"[v3.0 Outline] FAILED - Exception: {e}")
             import traceback
             traceback.print_exc()
 
