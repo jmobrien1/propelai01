@@ -1,0 +1,300 @@
+2025-12-30T19:15:21Z clientIP="71.62.189.24" requestID="51b44794-8930-4b4e" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:15:21.479648784Z [2b63bf55ee1cbd7e] GET /api/health
+2025-12-30T19:15:21.479695525Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:16:21Z clientIP="71.62.189.24" requestID="cc425632-1fd4-4760" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:16:21.589723162Z [43e23bd21eb86e64] GET /api/health
+2025-12-30T19:16:21.589749843Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:17:21Z clientIP="71.62.189.24" requestID="da7b4e20-500e-4088" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:17:21.485584056Z [30cc9814c083d598] GET /api/health
+2025-12-30T19:17:21.485661817Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:18:21Z clientIP="71.62.189.24" requestID="edc115b7-fe05-4e7f" responseTimeMS=6 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:18:21.573627203Z [32cc073c47335a40] GET /api/health
+2025-12-30T19:18:21.573660904Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:19:17.148670701Z ==> Deploying...
+2025-12-30T19:19:21Z clientIP="71.62.189.24" requestID="18c814f9-c0ea-49d6" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:19:21.558759925Z [6be28e0670b61c80] GET /api/health
+2025-12-30T19:19:21.558781615Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:19:22.210049255Z INFO:     Shutting down
+2025-12-30T19:19:22.310595758Z INFO:     Waiting for application shutdown.
+2025-12-30T19:19:22.310783712Z 2025-12-30 19:19:22,310 [INFO] propelai: [Shutdown] PropelAI shutting down...
+2025-12-30T19:19:22.31278234Z 2025-12-30 19:19:22,312 [INFO] propelai: [Shutdown] Database connections closed
+2025-12-30T19:19:22.31280461Z 2025-12-30 19:19:22,312 [INFO] propelai: [Shutdown] Cleanup complete
+2025-12-30T19:19:22.312951994Z INFO:     Application shutdown complete.
+2025-12-30T19:19:22.313035925Z INFO:     Finished server process [56]
+2025-12-30T19:20:15.747337737Z ==> Running 'uvicorn api.main:app --host 0.0.0.0 --port $PORT'
+2025-12-30T19:20:21Z clientIP="71.62.189.24" requestID="eaf68891-3cf9-496a" responseTimeMS=14 responseBytes=223158 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:20:30.964386039Z INFO:     Started server process [57]
+2025-12-30T19:20:30.964414909Z INFO:     Waiting for application startup.
+2025-12-30T19:20:30.968755191Z 2025-12-30 19:20:30,964 [INFO] propelai: [Startup] PropelAI v4.1 starting...
+2025-12-30T19:20:30.968777912Z 2025-12-30 19:20:30,964 [INFO] propelai: [Startup] Environment: production
+2025-12-30T19:20:30.968783252Z 2025-12-30 19:20:30,965 [INFO] propelai: [Startup] Upload directory: /data/uploads
+2025-12-30T19:20:30.968799192Z 2025-12-30 19:20:30,965 [INFO] propelai: [Startup] Database available: True
+2025-12-30T19:20:30.968803752Z 2025-12-30 19:20:30,965 [INFO] propelai: [Startup] Bcrypt available: True
+2025-12-30T19:20:31.208886026Z 2025-12-30 19:20:31,208 [INFO] propelai: [Startup] Ready to serve requests
+2025-12-30T19:20:31.209132502Z INFO:     Application startup complete.
+2025-12-30T19:20:31.209498921Z INFO:     Uvicorn running on http://0.0.0.0:10000 (Press CTRL+C to quit)
+2025-12-30T19:20:32.117304105Z === PropelAI Resilient Extraction v4.0.0 (extractor v3.2.0) ===
+2025-12-30T19:20:32.117331746Z Warning: Trust Gate not available: cannot import name 'BoundingBox' from 'agents.enhanced_compliance' (/opt/render/project/src/agents/enhanced_compliance/__init__.py)
+2025-12-30T19:20:32.117338226Z [Storage] Using persistent disk at /data
+2025-12-30T19:20:32.117343176Z [DB] Warning: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.PostgresSyntaxError'>: syntax error at or near "EXCEPTION"
+2025-12-30T19:20:32.117348026Z [SQL: EXCEPTION WHEN OTHERS THEN
+2025-12-30T19:20:32.117352626Z         RAISE NOTICE 'pgvector extension not available or already enabled']
+2025-12-30T19:20:32.117356876Z (Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-30T19:20:32.117382077Z [DB] Warning: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.PostgresSyntaxError'>: unterminated dollar-quoted string at or near "$$"
+2025-12-30T19:20:32.117386657Z [SQL: END $$]
+2025-12-30T19:20:32.117390697Z (Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-30T19:20:32.117394667Z [DB] Company Library tables ready
+2025-12-30T19:20:32.117398527Z [DB] Database initialized successfully
+2025-12-30T19:20:32.117402337Z [Store] Database initialized, loaded 0 RFPs
+2025-12-30T19:20:32.117406297Z [a0e79a1a3a91ec5c] HEAD /
+2025-12-30T19:20:32.117410587Z INFO:     127.0.0.1:33912 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+2025-12-30T19:20:39.345928793Z ==> Your service is live 🎉
+2025-12-30T19:20:39.70035448Z ==> 
+2025-12-30T19:20:39.790398451Z ==> ///////////////////////////////////////////////////////////
+2025-12-30T19:20:39.878874693Z ==> 
+2025-12-30T19:20:39.967458785Z ==> Available at your primary URL https://propelai01.onrender.com
+2025-12-30T19:20:40Z clientIP="34.82.79.105" requestID="04b34962-640f-4aab" responseTimeMS=5 responseBytes=223158 userAgent="Go-http-client/2.0"
+2025-12-30T19:20:40.056974586Z ==> 
+2025-12-30T19:20:40.148666406Z ==> ///////////////////////////////////////////////////////////
+2025-12-30T19:21:21Z clientIP="71.62.189.24" requestID="579cb427-6fd8-48e2" responseTimeMS=10 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:22:21Z clientIP="71.62.189.24" requestID="e09466b7-3431-45cf" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:23:21Z clientIP="71.62.189.24" requestID="7326fc23-e29d-4b57" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:24:21Z clientIP="71.62.189.24" requestID="74ab3855-0d4c-48bb" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:24:21.478032334Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:25:21Z clientIP="71.62.189.24" requestID="785e91e3-2bf0-4f30" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:25:21.549355515Z [826469b00a4113b2] GET /api/health
+2025-12-30T19:25:21.549387446Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:25:39.230426856Z ==> Detected service running on port 10000
+2025-12-30T19:25:39.424444451Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2025-12-30T19:26:21Z clientIP="71.62.189.24" requestID="333b71f9-5574-4ee3" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:26:21.478493796Z [a75bdc802e9e89af] GET /api/health
+2025-12-30T19:26:21.478514717Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:27:21Z clientIP="71.62.189.24" requestID="a67dd2b6-58d9-441f" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:27:21.542154544Z [ef743fb7d6e4e72e] GET /api/health
+2025-12-30T19:27:21.542185385Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:28:21Z clientIP="71.62.189.24" requestID="e05ccf2c-f886-4ffe" responseTimeMS=2 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:28:21.521122287Z [7cd2027f2cdd528b] GET /api/health
+2025-12-30T19:28:21.521172209Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:29:21Z clientIP="71.62.189.24" requestID="8ce97d0c-36b6-4dfb" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:29:21.508029682Z [1e508a6ef4b387cc] GET /api/health
+2025-12-30T19:29:21.508067293Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:30:21Z clientIP="71.62.189.24" requestID="82bc74b6-6a5d-479a" responseTimeMS=12 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:30:21.419166907Z [f3a2513e19756564] GET /api/health
+2025-12-30T19:30:21.419198788Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:31:21Z clientIP="71.62.189.24" requestID="05d93eb5-6b64-4a71" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:31:21.555562518Z [91f6e678c8acd144] GET /api/health
+2025-12-30T19:31:21.555592569Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:32:21Z clientIP="71.62.189.24" requestID="4a4404c6-bb21-4ecd" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:32:21.603834697Z [570cf46113460566] GET /api/health
+2025-12-30T19:32:21.603885448Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:42:42Z clientIP="71.62.189.24" requestID="987c84aa-f557-4c57" responseTimeMS=7 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:42:42.734745874Z [ea7173e72e0f6d2b] GET /api/health
+2025-12-30T19:42:42.734787485Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:48:20Z clientIP="71.62.189.24" requestID="a31c9335-5b5f-47c4" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:48:20.022483333Z [1a8f9cf901085772] GET /api/health
+2025-12-30T19:48:20.022514593Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T19:54:56Z clientIP="71.62.189.24" requestID="b450759d-cfd7-4c1e" responseTimeMS=17 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T19:54:56.251788852Z [80e6ba73432a80c0] GET /api/health
+2025-12-30T19:54:56.251839273Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:01:05.488486925Z [9f22ac897ffcff68] GET /api/health
+2025-12-30T20:01:05.488509586Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:01:05Z clientIP="71.62.189.24" requestID="4c7d3a7b-a6ab-4584" responseTimeMS=10 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:02:05Z clientIP="71.62.189.24" requestID="36ccad7d-a149-4247" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:03:05Z clientIP="71.62.189.24" requestID="336e8c14-1552-4086" responseTimeMS=2 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:04:05Z clientIP="71.62.189.24" requestID="e94913c0-2b72-4e07" responseTimeMS=2 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:04:05.364046656Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:05:05Z clientIP="71.62.189.24" requestID="ecca4c89-5e6b-4db9" responseTimeMS=9 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:05:05.437152563Z [ccfe973b3bd87883] GET /api/health
+2025-12-30T20:05:05.437187693Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:06:05Z clientIP="71.62.189.24" requestID="47194d79-603a-4d7e" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:06:05.347863553Z [3dfb9fd9012f21f0] GET /api/health
+2025-12-30T20:06:05.347889114Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:07:05Z clientIP="71.62.189.24" requestID="0f299078-38da-455b" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:07:05.402969306Z [5889933495202fad] GET /api/health
+2025-12-30T20:07:05.402992386Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:08:05Z clientIP="71.62.189.24" requestID="9ad8b8bd-6462-4b4a" responseTimeMS=6 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:08:05.376171066Z [2d6a46126b2a2eff] GET /api/health
+2025-12-30T20:08:05.376204646Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:09:05Z clientIP="71.62.189.24" requestID="cccdfe03-454f-4b71" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:09:05.36669823Z [9f6f3ce063711c9a] GET /api/health
+2025-12-30T20:09:05.366741301Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:10:05Z clientIP="71.62.189.24" requestID="7517a1f5-265e-4c9d" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:10:05.442508701Z [fed828e5c3616ba7] GET /api/health
+2025-12-30T20:10:05.442581123Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:11:05Z clientIP="71.62.189.24" requestID="7ed7be3d-55b8-4946" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:11:05.418298742Z [91edc6a101b25890] GET /api/health
+2025-12-30T20:11:05.418331163Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:12:05Z clientIP="71.62.189.24" requestID="e116a388-7094-4aed" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:12:05.470965717Z [f08089f42b76cd58] GET /api/health
+2025-12-30T20:12:05.470987568Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:13:05Z clientIP="71.62.189.24" requestID="916445e8-3893-481a" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:13:05.402850867Z [fc3f5a0bfae8a28a] GET /api/health
+2025-12-30T20:13:05.402885748Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:14:05Z clientIP="71.62.189.24" requestID="bd977d46-df22-4dc2" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:14:05.395913346Z [5a827f6c56b405ab] GET /api/health
+2025-12-30T20:14:05.395957367Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:15:05Z clientIP="71.62.189.24" requestID="b7a1ef4d-9613-41e5" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:15:05.337974323Z [a2542b0d11196ca7] GET /api/health
+2025-12-30T20:15:05.338001293Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:16:05Z clientIP="71.62.189.24" requestID="84698192-bafd-41b6" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:16:05.398704024Z [8fe30674ae644867] GET /api/health
+2025-12-30T20:16:05.398797907Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:17:05Z clientIP="71.62.189.24" requestID="ed13c5cf-0cb2-47c9" responseTimeMS=3 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:17:05.348714624Z [3ced520b6e14903e] GET /api/health
+2025-12-30T20:17:05.348738505Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:18:05Z clientIP="71.62.189.24" requestID="3dca01f4-0006-4bbf" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:18:05.42384427Z [4eca8b1d833938f5] GET /api/health
+2025-12-30T20:18:05.423888441Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:19:05Z clientIP="71.62.189.24" requestID="6764947f-6181-4674" responseTimeMS=4 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:19:05.504640481Z [77e6ba2a4422c514] GET /api/health
+2025-12-30T20:19:05.504686812Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:19:32Z clientIP="71.62.189.24" requestID="30f8949f-d5cb-45eb" responseTimeMS=2 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:19:32.229287793Z [cb6e890cd2a57eda] GET /api/health
+2025-12-30T20:19:32.229312934Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:19:59Z clientIP="71.62.189.24" requestID="5cc8c041-dcfc-42f3" responseTimeMS=17 responseBytes=48228 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:19:59.11163889Z [625e185fbc502dd2] GET /
+2025-12-30T20:19:59.111667Z INFO:     71.62.189.24:0 - "GET / HTTP/1.1" 200 OK
+2025-12-30T20:20:00Z clientIP="71.62.189.24" requestID="a0e52211-ec41-4e80" responseTimeMS=5 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:00Z clientIP="71.62.189.24" requestID="028a9b85-9d0d-4826" responseTimeMS=3 responseBytes=3450 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:00.723325301Z [59f02902171aeba6] GET /api/upload-config
+2025-12-30T20:20:00.723351952Z INFO:     71.62.189.24:0 - "GET /api/upload-config HTTP/1.1" 200 OK
+2025-12-30T20:20:00.761227332Z [d1dbd7f60de1fe84] GET /api/health
+2025-12-30T20:20:00.761260883Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:20:03Z clientIP="71.62.189.24" requestID="20faeda9-b412-4395" responseTimeMS=5 responseBytes=1008 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:03.317159254Z [67359584d28ade14] GET /api/library
+2025-12-30T20:20:03.317187735Z INFO:     71.62.189.24:0 - "GET /api/library HTTP/1.1" 200 OK
+2025-12-30T20:20:04Z clientIP="71.62.189.24" requestID="80cabfc1-e6c8-4b04" responseTimeMS=6 responseBytes=713 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:04Z clientIP="71.62.189.24" requestID="2cdc44f1-9f46-440b" responseTimeMS=3 responseBytes=1011 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:04.883823518Z [dc14874722779d78] POST /api/library/rebuild
+2025-12-30T20:20:04.883848078Z INFO:     71.62.189.24:0 - "POST /api/library/rebuild HTTP/1.1" 200 OK
+2025-12-30T20:20:04.940649203Z [d91f11e55c57c524] GET /api/library
+2025-12-30T20:20:04.940665524Z INFO:     71.62.189.24:0 - "GET /api/library HTTP/1.1" 200 OK
+2025-12-30T20:20:06Z clientIP="71.62.189.24" requestID="207db0b5-659f-47b1" responseTimeMS=19 responseBytes=3450 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:06.604600014Z [e56af05d4679cf64] GET /api/upload-config
+2025-12-30T20:20:06.604627685Z INFO:     71.62.189.24:0 - "GET /api/upload-config HTTP/1.1" 200 OK
+2025-12-30T20:20:26Z clientIP="71.62.189.24" requestID="b7d5fbc7-fe58-4283" responseTimeMS=6 responseBytes=750 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:26.71491414Z [802e4ded564668bd] POST /api/rfp
+2025-12-30T20:20:26.714981011Z INFO:     71.62.189.24:0 - "POST /api/rfp HTTP/1.1" 200 OK
+2025-12-30T20:20:27Z clientIP="71.62.189.24" requestID="5ce938b3-5a6b-4bae" responseTimeMS=6 responseBytes=604 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:27.786233687Z [Store] DB sync error for RFP-E13FCFCF: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+2025-12-30T20:20:27.786264228Z [d5295effb38723ad] GET /api/rfp/RFP-E13FCFCF/status
+2025-12-30T20:20:27.786269958Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/status HTTP/1.1" 200 OK
+2025-12-30T20:20:28.541951834Z 2025-12-30 20:20:28,541 [INFO] propelai: File uploaded successfully: Attachment 1. Stament Of Work.pdf
+2025-12-30T20:20:28.54561618Z 2025-12-30 20:20:28,545 [INFO] propelai: File uploaded successfully: Solicitation - FA880625RB003.pdf
+2025-12-30T20:20:28.546665335Z 2025-12-30 20:20:28,546 [INFO] propelai: File uploaded successfully: Attachment 2. Placement Procedures.pdf
+2025-12-30T20:20:28.548440877Z 2025-12-30 20:20:28,548 [INFO] propelai: File uploaded successfully: Solicitation - Clauses and Provisions.pdf
+2025-12-30T20:20:28.550072585Z [fec961fdd8d10a96] POST /api/rfp/RFP-E13FCFCF/upload-guided
+2025-12-30T20:20:28.550083965Z INFO:     71.62.189.24:0 - "POST /api/rfp/RFP-E13FCFCF/upload-guided HTTP/1.1" 200 OK
+2025-12-30T20:20:28.606693026Z [Store] DB sync error for RFP-E13FCFCF: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+2025-12-30T20:20:28.606713077Z [3b531dc78cb05f88] POST /api/rfp/RFP-E13FCFCF/process
+2025-12-30T20:20:28.606718357Z INFO:     71.62.189.24:0 - "POST /api/rfp/RFP-E13FCFCF/process HTTP/1.1" 200 OK
+2025-12-30T20:20:28.627927916Z Exception terminating connection <AdaptedConnection <asyncpg.connection.Connection object at 0x7369a20026c0>>
+2025-12-30T20:20:28.627953566Z Traceback (most recent call last):
+2025-12-30T20:20:28.627957206Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 372, in _close_connection
+2025-12-30T20:20:28.627959446Z     self._dialect.do_terminate(connection)
+2025-12-30T20:20:28.627961426Z     ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+2025-12-30T20:20:28.627963956Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 1127, in do_terminate
+2025-12-30T20:20:28.627966746Z     dbapi_connection.terminate()
+2025-12-30T20:20:28.627968826Z     ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+2025-12-30T20:20:28.627970966Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 402, in terminate
+2025-12-30T20:20:28.627973026Z     self.await_(asyncio.shield(self._terminate_graceful_close()))  # type: ignore[attr-defined] # noqa: E501
+2025-12-30T20:20:28Z clientIP="71.62.189.24" requestID="901d0f90-1817-4c43" responseTimeMS=178 responseBytes=1060 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:28Z clientIP="71.62.189.24" requestID="ba2b410c-72fd-4673" responseTimeMS=13 responseBytes=621 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:28Z clientIP="71.62.189.24" requestID="41e90cee-40ae-424b" responseTimeMS=9 responseBytes=651 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:28.627975887Z     ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-12-30T20:20:28.627977957Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+2025-12-30T20:20:28.627980057Z     return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+2025-12-30T20:20:28.627982217Z            ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+2025-12-30T20:20:28.627984227Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+2025-12-30T20:20:28.627987437Z     value = await result
+2025-12-30T20:20:28.627989427Z             ^^^^^^^^^^^^
+2025-12-30T20:20:28.627992087Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 912, in _terminate_graceful_close
+2025-12-30T20:20:28.627994127Z     await self._connection.close(timeout=2)
+2025-12-30T20:20:28.627996137Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 1513, in close
+2025-12-30T20:20:28.627998047Z     await self._protocol.close(timeout)
+2025-12-30T20:20:28.628000637Z   File "asyncpg/protocol/protocol.pyx", line 618, in close
+2025-12-30T20:20:28.628005337Z RuntimeError: Task <Task pending name='Task-947' coro=<AsyncAdapt_asyncpg_connection._terminate_graceful_close() running at /opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py:912> cb=[shield.<locals>._inner_done_callback() at /opt/render/project/python/Python-3.13.4/lib/python3.13/asyncio/tasks.py:958]> got Future <Future pending> attached to a different loop
+2025-12-30T20:20:28.679788675Z Future exception was never retrieved
+2025-12-30T20:20:28.679805415Z future: <Future finished exception=InternalClientError('got result for unknown protocol state 3')>
+2025-12-30T20:20:28.679808375Z Traceback (most recent call last):
+2025-12-30T20:20:28.679810625Z   File "asyncpg/protocol/protocol.pyx", line 892, in asyncpg.protocol.protocol.BaseProtocol._dispatch_result
+2025-12-30T20:20:28.679813265Z asyncpg.exceptions._base.InternalClientError: got result for unknown protocol state 3
+2025-12-30T20:20:28.785122951Z Processing RFP-E13FCFCF with Resilient Extraction v4.0.0 (extractor v3.2.0)
+2025-12-30T20:20:28.785141732Z [Store] DB sync error for RFP-E13FCFCF: Task <Task pending name='Task-946' coro=<RFPStore._sync_to_db() running at /opt/render/project/src/api/main.py:686> cb=[_run_until_complete_cb() at /opt/render/project/python/Python-3.13.4/lib/python3.13/asyncio/base_events.py:181]> got Future <Future pending cb=[BaseProtocol._on_waiter_completed()]> attached to a different loop
+2025-12-30T20:20:28.785150732Z [DEBUG] Guided upload document_metadata: {'Attachment 1. Stament Of Work.pdf': {'doc_type': 'sow', 'file_path': '/data/uploads/RFP-E13FCFCF/Attachment 1. Stament Of Work.pdf', 'size': 1241569, 'uploaded_at': '2025-12-30T20:20:28.541700', 'original_name': 'Attachment 1. Stament Of Work.pdf'}, 'Solicitation - FA880625RB003.pdf': {'doc_type': 'combined_rfp', 'file_path': '/data/uploads/RFP-E13FCFCF/Solicitation - FA880625RB003.pdf', 'size': 1881676, 'uploaded_at': '2025-12-30T20:20:28.545373', 'original_name': 'Solicitation - FA880625RB003.pdf'}, 'Attachment 2. Placement Procedures.pdf': {'doc_type': 'instructions_evaluation', 'file_path': '/data/uploads/RFP-E13FCFCF/Attachment 2. Placement Procedures.pdf', 'size': 879715, 'uploaded_at': '2025-12-30T20:20:28.546499', 'original_name': 'Attachment 2. Placement Procedures.pdf'}, 'Solicitation - Clauses and Provisions.pdf': {'doc_type': 'solicitation', 'file_path': '/data/uploads/RFP-E13FCFCF/Solicitation - Clauses and Provisions.pdf', 'size': 1059037, 'uploaded_at': '2025-12-30T20:20:28.548258', 'original_name': 'Solicitation - Clauses and Provisions.pdf'}}
+2025-12-30T20:20:28.785165342Z [529edbb02f367421] GET /api/rfp/RFP-E13FCFCF/status
+2025-12-30T20:20:28.785167982Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/status HTTP/1.1" 200 OK
+2025-12-30T20:20:29Z clientIP="71.62.189.24" requestID="b861ccbb-6705-4108" responseTimeMS=53 responseBytes=621 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:29.831254126Z [0fd3fc5b60055b66] GET /api/rfp/RFP-E13FCFCF/status
+2025-12-30T20:20:29.831692506Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/status HTTP/1.1" 200 OK
+2025-12-30T20:20:30Z clientIP="71.62.189.24" requestID="2aeeddfd-d886-4b99" responseTimeMS=31 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:30Z clientIP="71.62.189.24" requestID="90a6a4f5-7133-4104" responseTimeMS=6 responseBytes=621 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:30.745398198Z [d3d78a0d00cdc641] GET /api/health
+2025-12-30T20:20:30.745417289Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
+2025-12-30T20:20:30.782686595Z [6fb5aef8f11e5976] GET /api/rfp/RFP-E13FCFCF/status
+2025-12-30T20:20:30.782706945Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/status HTTP/1.1" 200 OK
+2025-12-30T20:20:31Z clientIP="71.62.189.24" requestID="df770e5b-8c31-439f" responseTimeMS=61 responseBytes=621 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:31.835706732Z [cb074e9891cdc6a3] GET /api/rfp/RFP-E13FCFCF/status
+2025-12-30T20:20:31.835729953Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/status HTTP/1.1" 200 OK
+2025-12-30T20:20:32Z clientIP="71.62.189.24" requestID="7b00dcc9-36b4-446d" responseTimeMS=9 responseBytes=614 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:32.7824239Z [DEBUG] Requirements by category: {'TECHNICAL': 110, 'TECHNICAL_REQUIREMENT': 60, 'L_COMPLIANCE': 12, 'EVALUATION': 14, 'PRICING': 4, 'PROPOSAL_INSTRUCTION': 13, 'DELIVERY': 2, 'ADMINISTRATION': 1, 'EVALUATION_FACTOR': 3, 'INSPECTION': 4, 'PACKAGING': 2, 'GENERAL': 8, 'REPRESENTATION': 6, 'ATTACHMENT': 1, 'CONTRACT_FORM': 3}
+2025-12-30T20:20:32.782459441Z [a5f5902a28a94b01] GET /api/rfp/RFP-E13FCFCF/status
+2025-12-30T20:20:32.782463611Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/status HTTP/1.1" 200 OK
+2025-12-30T20:20:33Z clientIP="71.62.189.24" requestID="ad113847-a316-4c89" responseTimeMS=3 responseBytes=622 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:33.78369105Z [Store] DB sync error for RFP-E13FCFCF: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+2025-12-30T20:20:33.783715641Z [3551d9e68fcd2847] GET /api/rfp/RFP-E13FCFCF/status
+2025-12-30T20:20:33.783721141Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/status HTTP/1.1" 200 OK
+2025-12-30T20:20:33.854993667Z [a4724c14074ad843] GET /api/rfp/RFP-E13FCFCF
+2025-12-30T20:20:33.855022137Z [ef97f2c2127be307] GET /api/rfp/RFP-E13FCFCF/requirements
+2025-12-30T20:20:33.855027567Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF HTTP/1.1" 200 OK
+2025-12-30T20:20:33.855263833Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/requirements?page_size=0 HTTP/1.1" 200 OK
+2025-12-30T20:20:33Z clientIP="71.62.189.24" requestID="c02e8e42-cb13-4dee" responseTimeMS=22 responseBytes=30848 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:33Z clientIP="71.62.189.24" requestID="fc91d526-4d6d-4da0" responseTimeMS=17 responseBytes=1219 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:35Z clientIP="71.62.189.24" requestID="1dce83fa-702c-4007" responseTimeMS=500 responseBytes=98597 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:35.744563101Z [f9ac7ef362fe8f8b] GET /api/rfp/RFP-E13FCFCF/export
+2025-12-30T20:20:35.744587122Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/export?format=xlsx HTTP/1.1" 200 OK
+2025-12-30T20:20:43Z clientIP="71.62.189.24" requestID="16cf0e34-0c4b-4ff7" responseTimeMS=98 responseBytes=13971 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:43.144605429Z Exception terminating connection <AdaptedConnection <asyncpg.connection.Connection object at 0x73699f12e990>>
+2025-12-30T20:20:43.14462876Z Traceback (most recent call last):
+2025-12-30T20:20:43.14463398Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 372, in _close_connection
+2025-12-30T20:20:43.14464887Z     self._dialect.do_terminate(connection)
+2025-12-30T20:20:43.144654331Z     ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+2025-12-30T20:20:43.144657211Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 1127, in do_terminate
+2025-12-30T20:20:43.144660101Z     dbapi_connection.terminate()
+2025-12-30T20:20:43.144662351Z     ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+2025-12-30T20:20:43.144664711Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 402, in terminate
+2025-12-30T20:20:43.144667041Z     self.await_(asyncio.shield(self._terminate_graceful_close()))  # type: ignore[attr-defined] # noqa: E501
+2025-12-30T20:20:43.144669761Z     ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-12-30T20:20:43.144672121Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+2025-12-30T20:20:43.144674461Z     return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+2025-12-30T20:20:43.144676711Z            ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+2025-12-30T20:20:43.144678941Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+2025-12-30T20:20:43.144681781Z     value = await result
+2025-12-30T20:20:43.144684071Z             ^^^^^^^^^^^^
+2025-12-30T20:20:43.144686961Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 912, in _terminate_graceful_close
+2025-12-30T20:20:43.144689381Z     await self._connection.close(timeout=2)
+2025-12-30T20:20:43.144692061Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 1513, in close
+2025-12-30T20:20:43.144694372Z     await self._protocol.close(timeout)
+2025-12-30T20:20:43.144697012Z   File "asyncpg/protocol/protocol.pyx", line 617, in close
+2025-12-30T20:20:43.144699341Z   File "asyncpg/protocol/protocol.pyx", line 650, in asyncpg.protocol.protocol.BaseProtocol._request_cancel
+2025-12-30T20:20:43.144701732Z   File "/opt/render/project/src/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 1682, in _cancel_current_command
+2025-12-30T20:20:43.144704072Z     self._cancellations.add(self._loop.create_task(self._cancel(waiter)))
+2025-12-30T20:20:43.144706252Z                             ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+2025-12-30T20:20:43.144708442Z   File "/opt/render/project/python/Python-3.13.4/lib/python3.13/asyncio/base_events.py", line 466, in create_task
+2025-12-30T20:20:43.144710722Z     self._check_closed()
+2025-12-30T20:20:43.144712932Z     ~~~~~~~~~~~~~~~~~~^^
+2025-12-30T20:20:43.144715102Z   File "/opt/render/project/python/Python-3.13.4/lib/python3.13/asyncio/base_events.py", line 556, in _check_closed
+2025-12-30T20:20:43.144717362Z     raise RuntimeError('Event loop is closed')
+2025-12-30T20:20:43.144719712Z RuntimeError: Event loop is closed
+2025-12-30T20:20:43.14634437Z [203f7166199d44fb] GET /api/rfp/RFP-E13FCFCF/outline
+2025-12-30T20:20:43.146358851Z INFO:     71.62.189.24:0 - "GET /api/rfp/RFP-E13FCFCF/outline HTTP/1.1" 200 OK
+2025-12-30T20:20:47Z clientIP="71.62.189.24" requestID="500bf5e9-5215-47ce" responseTimeMS=11 responseBytes=48228 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:47.795903893Z [Store] DB sync error for RFP-E13FCFCF: Task <Task pending name='Task-1002' coro=<RFPStore._sync_to_db() running at /opt/render/project/src/api/main.py:686>> got Future <Future pending cb=[BaseProtocol._on_waiter_completed()]> attached to a different loop
+2025-12-30T20:20:47.795924164Z [50cbb79bca1ee688] GET /
+2025-12-30T20:20:47.795928304Z INFO:     71.62.189.24:0 - "GET / HTTP/1.1" 200 OK
+2025-12-30T20:20:48Z clientIP="71.62.189.24" requestID="542aab12-7e0f-4468" responseTimeMS=3 responseBytes=3450 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:48Z clientIP="71.62.189.24" requestID="d1443970-b9e4-4380" responseTimeMS=2 responseBytes=862 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+2025-12-30T20:20:48.778250809Z [6ecf0eff22b2d941] GET /api/upload-config
+2025-12-30T20:20:48.77828686Z INFO:     71.62.189.24:0 - "GET /api/upload-config HTTP/1.1" 200 OK
+2025-12-30T20:20:48.780275516Z [3ead683f59550988] GET /api/health
+2025-12-30T20:20:48.780288216Z INFO:     71.62.189.24:0 - "GET /api/health HTTP/1.1" 200 OK
