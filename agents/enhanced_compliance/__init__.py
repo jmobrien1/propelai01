@@ -130,12 +130,13 @@ except ImportError as e:
 
 # Trust Gate (PDF Coordinate Extraction for v4.0)
 try:
-    from .pdf_coordinate_extractor import PDFCoordinateExtractor
+    from .pdf_coordinate_extractor import PDFCoordinateExtractor, get_coordinate_extractor
     TRUST_GATE_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Trust Gate not available: {e}")
     TRUST_GATE_AVAILABLE = False
     PDFCoordinateExtractor = None
+    get_coordinate_extractor = None
 
 __all__ = [
     "__version__",
@@ -171,7 +172,7 @@ __all__ = [
     # Availability flags
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
     # Trust Gate (v4.0)
-    "TRUST_GATE_AVAILABLE", "PDFCoordinateExtractor",
+    "TRUST_GATE_AVAILABLE", "PDFCoordinateExtractor", "get_coordinate_extractor",
     "BoundingBox", "SourceCoordinate",
     # v3.0 Decoupled Outline Generation
     "SectionL_Schema", "VolumeInstruction", "SectionInstruction",
