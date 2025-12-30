@@ -175,6 +175,9 @@ class ProposalState(TypedDict):
     competitor_analysis: Dict[str, Any]
     price_to_win: Optional[Dict[str, Any]]
     
+    # === Structure (v3.0) ===
+    proposal_skeleton: Dict[str, Any]          # Skeleton from StrictStructureBuilder (Component A)
+
     # === Draft Content ===
     annotated_outline: Dict[str, Any]          # The storyboard with page allocations
     draft_sections: Dict[str, Dict]            # section_id -> DraftSection dict
@@ -235,7 +238,10 @@ def create_initial_state(
         win_themes=[],
         competitor_analysis={},
         price_to_win=None,
-        
+
+        # Structure (v3.0)
+        proposal_skeleton={},
+
         # Drafts
         annotated_outline={},
         draft_sections={},
