@@ -387,7 +387,7 @@ class TestRedTeamAgent:
 
 class TestFullWorkflow:
     """Integration tests for the full workflow"""
-    
+
     def test_full_proposal_workflow(self, sample_state):
         """Test complete proposal generation workflow"""
         # Create all agents
@@ -395,56 +395,56 @@ class TestFullWorkflow:
         strategy_agent = create_strategy_agent()
         drafting_agent = create_drafting_agent()
         red_team_agent = create_red_team_agent()
-        
+
         # Step 1: Shred
         compliance_result = compliance_agent(sample_state)
         sample_state.update(compliance_result)
         assert sample_state["current_phase"] == ProposalPhase.SHRED.value
         assert len(sample_state["requirements"]) > 0
-        
+
         # Step 2: Strategy
         strategy_result = strategy_agent(sample_state)
         sample_state.update(strategy_result)
         assert sample_state["current_phase"] == ProposalPhase.STRATEGY.value
         assert len(sample_state["win_themes"]) > 0
-        
+
         # Step 3: Draft
         draft_result = drafting_agent(sample_state)
         sample_state.update(draft_result)
         assert len(sample_state["draft_sections"]) > 0
-        
+
         # Step 4: Red Team
         redteam_result = red_team_agent(sample_state)
         sample_state.update(redteam_result)
         assert len(sample_state["red_team_feedback"]) > 0
-        
-        # Verify audit trail
+
+        # Verify audit trail - each agent now accumulates its trace log
         assert len(sample_state["agent_trace_log"]) >= 4
-    
+
     def test_trace_log_completeness(self, sample_state):
         """Test that all agents log their actions"""
         compliance_agent = create_compliance_agent()
         strategy_agent = create_strategy_agent()
         drafting_agent = create_drafting_agent()
         red_team_agent = create_red_team_agent()
-        
-        # Run workflow
+
+        # Run workflow - agents now accumulate trace logs automatically
         compliance_result = compliance_agent(sample_state)
         sample_state.update(compliance_result)
-        
+
         strategy_result = strategy_agent(sample_state)
         sample_state.update(strategy_result)
-        
+
         draft_result = drafting_agent(sample_state)
         sample_state.update(draft_result)
-        
+
         redteam_result = red_team_agent(sample_state)
         sample_state.update(redteam_result)
-        
+
         # Check trace log
         trace_log = sample_state["agent_trace_log"]
         agent_names = [entry["agent_name"] for entry in trace_log]
-        
+
         assert "compliance_agent" in agent_names
         assert "strategy_agent" in agent_names
         assert "drafting_agent" in agent_names

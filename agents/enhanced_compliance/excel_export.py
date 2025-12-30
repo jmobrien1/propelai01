@@ -9,7 +9,8 @@ Creates a professional Compliance Traceability Matrix (CTM) with:
 - Lifecycle management fields (Status, Owner, Interdependencies)
 """
 
-from typing import Dict, List, Any, Optional
+from __future__ import annotations
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 import os
 import re
@@ -22,6 +23,8 @@ try:
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
+    if TYPE_CHECKING:
+        from openpyxl import Workbook
 
 from .models import (
     RequirementNode, RequirementType, ConfidenceLevel,

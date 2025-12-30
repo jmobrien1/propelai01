@@ -1,0 +1,261 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\fswiss\fcharset0 Helvetica-Bold;\f2\fswiss\fcharset0 Helvetica;
+\f3\fswiss\fcharset0 Helvetica-Oblique;\f4\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;\red36\green36\blue36;\red255\green255\blue255;\red30\green31\blue33;
+\red183\green187\blue184;}
+{\*\expandedcolortbl;;\cssrgb\c18824\c18824\c18824;\cssrgb\c100000\c100000\c100000;\cssrgb\c15686\c16471\c17255;
+\cssrgb\c76863\c78039\c77255;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs44 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Product Requirements Document (PRD): PropelAI Phase 2 "The Strategy Engine"\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b\fs28 \cf2 \cb3 Phase:
+\f2\b0  2 (Strategy & Structure) 
+\f1\b Target User:
+\f2\b0  "Charles" (The Executive Strategist) & "Brenda" (The Proposal Manager) 
+\f1\b Core Objective:
+\f2\b0  Transform the verified Compliance Matrix into a strategic 
+\f1\b Annotated Outline
+\f2\b0  populated with Win Themes, Section M scoring logic, and competitive "Ghosting" strategies.\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\fs32 \cf2 1. Executive Summary\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\fs28 \cf2 \cb3 Phase 1 solved the "Trust Gap" by verifying requirements. Phase 2 solves the "Blank Page Problem." We are automating the creation of the 
+\f1\b Annotated Outline
+\f2\b0 , identified by industry experts as the "single most important tool for any proposal" .\cb1 \
+\cb3 In this phase, the 
+\f1\b Strategy Agent
+\f2\b0  and 
+\f1\b Outline Agent
+\f2\b0  come online. They do not write the final prose yet; instead, they construct the architectural skeleton of the proposal. They utilize the "Iron Triangle" logic (connecting Section C, L, and M) to ensure that every section of the outline is not only compliant but optimized for maximum scoring potential .\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\fs32 \cf2 2. Functional Requirements (Epics & Features)\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\fs28 \cf2 \cb3 2.1 Epic: The "Iron Triangle" Logic Graph\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\i \cf2 \cb3 The system must mathematically link what we must do (C), how we format it (L), and how we are scored (M).
+\f2\i0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b FR-1.1: Section M Decomposition:
+\f2\b0  The Strategy Agent must parse Section M (Evaluation Factors) to extract scoring weights (e.g., "Technical is significantly more important than Cost"). It must identify specific "discriminators" the government values (e.g., Innovation vs. Low Risk) .\cb1 \
+\cb3 \'95 
+\f1\b FR-1.2: Dependency Graphing:
+\f2\b0  Utilize 
+\f1\b NetworkX
+\f2\b0  to build a graph where Section M factors are parent nodes to Section L instructions. This ensures that the outline prioritizes page allocation to high-scoring sections .\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f3\i Constraint:
+\f2\i0  If Section L is silent on a topic, the outline structure must default to the structure of Section M to facilitate evaluator scoring .\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 2.2 Epic: Automated Annotated Outline Generation\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\i \cf2 \cb3 The system must generate a structured Word document that serves as writing instructions for human or AI authors.
+\f2\i0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b FR-2.1: Outline Skeleton:
+\f2\b0  Auto-generate a hierarchical outline (Vol 1, Section 1.1, 1.2, etc.) based strictly on Section L instructions.\cb1 \
+\cb3 \'95 
+\f1\b FR-2.2: Requirement Injection:
+\f2\b0  For every section header, inject a "Writing Guidance" table containing the specific "Shall" statements from the Compliance Matrix mapped to that section .\cb1 \
+\cb3 \'95 
+\f1\b FR-2.3: Annotation Injection:
+\f2\b0  Each section must include placeholders for:\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Page Budget:
+\f2\b0  Calculated based on Section M weight (e.g., "High value factor gets 15 pages").\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Win Theme:
+\f2\b0  A placeholder for the strategic message .\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Proof Points:
+\f2\b0  Required evidence (e.g., "Insert Past Performance Citation") .\cb1 \
+\cb3 \'95 
+\f1\b FR-2.4: Export to Docx:
+\f2\b0  The output must be a downloadable 
+\f4 \cf4 \cb5 \strokec4 .docx
+\f2 \cf2 \cb3 \strokec2  file matching the specific formatting styles (Font, Margins) detected in the RFP .\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 2.3 Epic: The Strategy Agent (Win Themes & Ghosting)\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\i \cf2 \cb3 The system must move from passive extraction to active strategic reasoning.
+\f2\i0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b FR-3.1: Hot Button Analysis:
+\f2\b0  The agent analyzes the PWS/SOW (Section C) to infer the agency's implicit pain points (e.g., "Requirement for 24/7 uptime implies a pain point around previous system outages") .\cb1 \
+\cb3 \'95 
+\f1\b FR-3.2: Win Theme Generator:
+\f2\b0  Using the 
+\f1\b Feature-Benefit-Proof (F-B-P)
+\f2\b0  framework, generate 3 draft Win Themes for each major volume.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f3\i Format:
+\f2\i0  "Feature [X] delivers Benefit [Y] to the Agency, proven by [Evidence Z]" .\cb1 \
+\cb3 \'95 
+\f1\b FR-3.3: Black Hat / Ghosting:
+\f2\b0  If a competitor is identified (user input), the agent must suggest "Ghosting" statements.\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f3\i Example:
+\f2\i0  If the competitor is an incumbent with legacy tech, suggest themes emphasizing "Modernization" and "No Technical Debt" .\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\fs32 \cf2 3. Technical Architecture & Data Strategy\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\fs28 \cf2 \cb3 3.1 Orchestration: LangGraph "Plan-and-Execute"\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 We will implement the 
+\f1\b Plan-and-Execute
+\f2\b0  pattern from the Google Agentic Guide .\cb1 \
+\cb3 \'95 
+\f1\b Node 1: Strategy Agent:
+\f2\b0  Reads Section M and PWS -> Outputs 
+\f4 \cf4 \cb5 \strokec4 StrategicPlan
+\f2 \cf2 \cb3 \strokec2  JSON (Themes, Hot Buttons).\cb1 \
+\cb3 \'95 
+\f1\b Node 2: Outline Agent:
+\f2\b0  Reads Section L and 
+\f4 \cf4 \cb5 \strokec4 StrategicPlan
+\f2 \cf2 \cb3 \strokec2  -> Outputs 
+\f4 \cf4 \cb5 \strokec4 OutlineStructure
+\f2 \cf2 \cb3 \strokec2  JSON.\cb1 \
+\cb3 \'95 
+\f1\b Node 3: Requirements Injector:
+\f2\b0  Maps extraction IDs from Phase 1 into the 
+\f4 \cf4 \cb5 \strokec4 OutlineStructure
+\f2 \cf2 \cb3 \strokec2 .\cb1 \
+\cb3 \'95 
+\f1\b State Persistence:
+\f2\b0  The 
+\f4 \cf4 \cb5 \strokec4 ProposalState
+\f2 \cf2 \cb3 \strokec2  in PostgreSQL is updated to include the 
+\f4 \cf4 \cb5 \strokec4 strategic_plan
+\f2 \cf2 \cb3 \strokec2  and 
+\f4 \cf4 \cb5 \strokec4 outline_tree
+\f2 \cf2 \cb3 \strokec2 . This allows the user to manually tweak the outline in the UI before the document is generated .\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 3.2 Data Models (Python TypedDict)\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f4 \cf2 \cb3 class WinTheme(TypedDict):\
+    feature: str\
+    benefit: str\
+    proof_point_id: str  # Link to Company Library\
+    ghosting_strategy: Optional[str]\
+\
+class OutlineNode(TypedDict):\
+    section_number: str\
+    title: str\
+    page_allocation: int\
+    assigned_requirements: List[str]  # Requirement IDs\
+    assigned_win_theme: WinTheme\
+\pard\pardeftab720\partightenfactor0
+
+\f3\i \cf2 
+\f2\i0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 3.3 RAG Strategy: GraphRAG for "Proof Points"\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 To support the "Proof" in F-B-P, we cannot use simple vector search. We must use 
+\f1\b GraphRAG
+\f2\b0  to map concepts.\cb1 \
+\cb3 \'95 
+\f3\i Logic:
+\f2\i0  If the Strategy Agent generates a theme about "Rapid Staffing," the Research Agent must traverse the knowledge graph to find specific "Time-to-Fill" metrics in the Company Library (Past Proposals) .\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\fs32 \cf2 4. User Experience (UX): The "War Room"\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\fs28 \cf2 \cb3 4.1 The Strategy Dashboard\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Input:
+\f2\b0  A "Strategy Configuration" modal where the user defines:\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b The Incumbent:
+\f2\b0  (e.g., "Lockheed Martin").\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\uc0\u9702  
+\f1\b Our Strengths:
+\f2\b0  (e.g., "Agile Development," "Cloud Native").\cb1 \
+\cb3 \'95 
+\f1\b Output:
+\f2\b0  A split-view dashboard showing Section M factors on the left and generated Win Themes on the right. Users can "Accept," "Reject," or "Edit" AI-suggested themes .\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 4.2 The Outline Builder\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Visual Tree View:
+\f2\b0  A drag-and-drop tree representing the proposal volumes.\cb1 \
+\cb3 \'95 
+\f1\b Requirement Dragging:
+\f2\b0  Users can drag "Orphaned Requirements" (those not automatically mapped) from a sidebar into specific outline sections.\cb1 \
+\cb3 \'95 
+\f1\b Click-to-Verify Integration:
+\f2\b0  Clicking a requirement in the outline view triggers the PDF overlay from Phase 1, maintaining the "Trust Gate" .\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\fs32 \cf2 5. Success Metrics (KPIs)\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\fs28 \cf2 \cb3 \'95 
+\f1\b Outline Generation Time:
+\f2\b0  Reduce time-to-first-draft outline from 4 days (manual) to <1 hour (AI) .\cb1 \
+\cb3 \'95 
+\f1\b Strategy Alignment Score:
+\f2\b0  % of Section M Evaluation Factors that are explicitly mapped to at least one section in the generated outline.\cb1 \
+\cb3 \'95 
+\f1\b Requirement Coverage:
+\f2\b0  100% of "Shall" statements from Phase 1 must be assigned to an outline node (No "Orphaned Requirements") .\
+--------------------------------------------------------------------------------\
+\pard\pardeftab720\partightenfactor0
+
+\fs32 \cf2 6. Implementation Steps (Sprint Plan)\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\fs28 \cf2 \cb3 1. 
+\f1\b Backend (Weeks 1-2):
+\f2\b0  Implement 
+\f4 \cf4 \cb5 \strokec4 StrategyAgent
+\f2 \cf2 \cb3 \strokec2  in LangGraph. Build 
+\f4 \cf4 \cb5 \strokec4 SectionM_Parser
+\f2 \cf2 \cb3 \strokec2  to extract evaluation weights .\cb1 \
+\cb3 2. 
+\f1\b Logic (Week 3):
+\f2\b0  Build the 
+\f1\b NetworkX
+\f2\b0  graph to link Section L structure to Section C requirements.\cb1 \
+\cb3 3. 
+\f1\b Frontend (Week 4):
+\f2\b0  Deploy the "Outline Builder" UI with drag-and-drop capabilities.\cb1 \
+\cb3 4. 
+\f1\b Integration (Week 5):
+\f2\b0  Connect the 
+\f4 \cf4 \cb5 \strokec4 AnnotatedOutlineExporter
+\f2 \cf2 \cb3 \strokec2  (Node.js) to generate the 
+\f4 \cf4 \cb5 \strokec4 .docx
+\f2 \cf2 \cb3 \strokec2  file with the specific color-coding (Red for L, Blue for M, Green for Strategy) .\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf2 \
+\
+\
+}

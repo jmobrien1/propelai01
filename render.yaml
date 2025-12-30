@@ -1,6 +1,9 @@
 services:
   - type: web
     name: propelai01
-    env: python
-    buildCommand: pip install -r requirements-prod.txt && npm install -g docx
+    runtime: python
+    buildCommand: pip install -r requirements-prod.txt
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0

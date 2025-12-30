@@ -919,6 +919,28 @@ class CompanyLibrary:
     def get_profile(self) -> Dict:
         """Get aggregated company profile"""
         return self.profile.to_dict()
+
+    def rebuild_profile(self) -> Dict:
+        """
+        Rebuild company profile from all stored documents.
+
+        Use this to refresh profile counts if documents were uploaded
+        before profile restoration was fixed, or after extraction improvements.
+
+        Returns:
+            Updated profile dictionary
+        """
+        # Reset profile to empty state
+        self.profile = CompanyProfile()
+
+        # Re-process all documents
+        for doc in self.documents.values():
+            self._update_profile(doc)
+
+        # Save updated library
+        self._save_library()
+
+        return self.profile.to_dict()
     
     def search(self, query: str) -> List[Dict]:
         """

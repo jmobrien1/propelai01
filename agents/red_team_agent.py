@@ -113,9 +113,10 @@ class RedTeamAgent:
         compliance_matrix = state.get("compliance_matrix", [])
         
         if not draft_sections:
+            existing_trace = state.get("agent_trace_log", [])
             return {
                 "error_state": "No draft sections to evaluate",
-                "agent_trace_log": [{
+                "agent_trace_log": existing_trace + [{
                     "timestamp": start_time.isoformat(),
                     "agent_name": "red_team_agent",
                     "action": "evaluate_proposal",
@@ -219,11 +220,14 @@ class RedTeamAgent:
             "recommendation": overall_evaluation["recommendation"]
         }
         
+        # Accumulate trace logs
+        existing_trace = state.get("agent_trace_log", [])
+
         return {
             "current_phase": next_phase,
             "red_team_feedback": [feedback],
             "proposal_quality_score": overall_evaluation["numeric_score"],
-            "agent_trace_log": [trace_log],
+            "agent_trace_log": existing_trace + [trace_log],
             "updated_at": datetime.now().isoformat()
         }
     

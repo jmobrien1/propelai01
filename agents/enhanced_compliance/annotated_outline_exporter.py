@@ -206,10 +206,18 @@ class AnnotatedOutlineExporter:
                 data["dueDate"] = sub["due_date"]
             if sub.get("method") and data["submissionMethod"] == "Not Specified":
                 data["submissionMethod"] = sub["method"]
-        
+
         if "total_pages" in outline_data and outline_data["total_pages"]:
             data["totalPages"] = outline_data["total_pages"]
-        
+
+        # Task 1: Pass win_themes for injection into sections
+        if "win_themes" in outline_data:
+            data["winThemes"] = outline_data["win_themes"]
+
+        # Task 2: Pass company profile data for metadata injection
+        if "company_profile" in outline_data:
+            data["companyProfile"] = outline_data["company_profile"]
+
         return data
 
 

@@ -97,9 +97,10 @@ class StrategyAgent:
         rfp_metadata = state.get("rfp_metadata", {})
         
         if not evaluation_criteria:
+            existing_trace = state.get("agent_trace_log", [])
             return {
                 "error_state": "No evaluation criteria found - run compliance shred first",
-                "agent_trace_log": [{
+                "agent_trace_log": existing_trace + [{
                     "timestamp": start_time.isoformat(),
                     "agent_name": "strategy_agent",
                     "action": "develop_strategy",
@@ -165,12 +166,15 @@ class StrategyAgent:
             ]
         }
         
+        # Accumulate trace logs
+        existing_trace = state.get("agent_trace_log", [])
+
         return {
             "current_phase": ProposalPhase.STRATEGY.value,
             "win_themes": [self._win_theme_to_dict(t) for t in win_themes],
             "competitor_analysis": competitor_analysis,
             "annotated_outline": annotated_outline,
-            "agent_trace_log": [trace_log],
+            "agent_trace_log": existing_trace + [trace_log],
             "updated_at": datetime.now().isoformat()
         }
     
@@ -683,3 +687,318 @@ def create_strategy_agent(
         llm_client=llm_client,
         past_performance_store=past_performance_store
     )
+
+
+class CompetitorAnalyzer:
+    """
+    Competitive Analysis Engine
+
+    Analyzes competitive landscape for proposal strategy:
+    - Identifies likely competitors
+    - Generates ghosting language
+    - Maps competitor weaknesses to our strengths
+    """
+
+    def __init__(self, use_llm: bool = True):
+        """
+        Initialize the Competitor Analyzer
+
+        Args:
+            use_llm: Whether to use LLM for advanced analysis
+        """
+        self.use_llm = use_llm
+
+    def analyze_competitive_landscape(
+        self,
+        rfp_data: Dict[str, Any],
+        known_competitors: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze competitive landscape for an RFP
+
+        Args:
+            rfp_data: RFP data including requirements and evaluation criteria
+            known_competitors: List of known competitor profiles
+
+        Returns:
+            Competitive analysis with ghosting library
+        """
+        known_competitors = known_competitors or []
+
+        # Build competitor profiles
+        profiles = []
+        for comp in known_competitors:
+            profile = CompetitorProfile(
+                name=comp.get("name", "Unknown"),
+                strengths=comp.get("strengths", []),
+                weaknesses=comp.get("weaknesses", []),
+                likely_themes=self._infer_themes(comp),
+                ghosting_opportunities=self._identify_ghosting(comp)
+            )
+            profiles.append(profile)
+
+        # Generate ghosting library
+        ghosting_library = self._build_ghosting_library(profiles, rfp_data)
+
+        # Identify win opportunities
+        opportunities = self._identify_opportunities(profiles, rfp_data)
+
+        return {
+            "competitor_count": len(profiles),
+            "competitors": [
+                {
+                    "name": p.name,
+                    "strengths": p.strengths,
+                    "weaknesses": p.weaknesses,
+                    "likely_themes": p.likely_themes,
+                    "ghosting_opportunities": p.ghosting_opportunities
+                }
+                for p in profiles
+            ],
+            "ghosting_library": ghosting_library,
+            "win_opportunities": opportunities,
+            "analysis_date": datetime.now().isoformat()
+        }
+
+    def _infer_themes(self, competitor: Dict[str, Any]) -> List[str]:
+        """Infer likely win themes a competitor will use"""
+        themes = []
+        strengths = competitor.get("strengths", [])
+
+        if any("incumbent" in str(s).lower() for s in strengths):
+            themes.append("Continuity and proven performance")
+        if any("price" in str(s).lower() or "cost" in str(s).lower() for s in strengths):
+            themes.append("Competitive pricing")
+        if any("innovation" in str(s).lower() or "technology" in str(s).lower() for s in strengths):
+            themes.append("Technical innovation")
+        if any("experience" in str(s).lower() or "years" in str(s).lower() for s in strengths):
+            themes.append("Deep domain experience")
+
+        return themes if themes else ["Standard compliance approach"]
+
+    def _identify_ghosting(self, competitor: Dict[str, Any]) -> List[str]:
+        """Identify ghosting opportunities for a competitor"""
+        opportunities = []
+        weaknesses = competitor.get("weaknesses", [])
+
+        for weakness in weaknesses:
+            weakness_lower = weakness.lower()
+            if "transition" in weakness_lower:
+                opportunities.append("Emphasize seamless transition capability")
+            if "size" in weakness_lower or "capacity" in weakness_lower:
+                opportunities.append("Highlight scalable resources and depth")
+            if "innovation" in weakness_lower:
+                opportunities.append("Lead with modern, innovative approaches")
+            if "past performance" in weakness_lower:
+                opportunities.append("Showcase directly relevant experience")
+            if "key personnel" in weakness_lower:
+                opportunities.append("Feature committed, named key personnel")
+
+        return opportunities
+
+    def _build_ghosting_library(
+        self,
+        profiles: List[CompetitorProfile],
+        rfp_data: Dict[str, Any]
+    ) -> List[Dict[str, str]]:
+        """Build library of ghosting language"""
+        library = []
+
+        # Common ghosting phrases by weakness type
+        ghosting_templates = {
+            "transition": {
+                "phrase": "Our team brings Day 1 readiness with no learning curve",
+                "context": "When competitors lack transition experience"
+            },
+            "innovation": {
+                "phrase": "Unlike legacy approaches, our modern methodology...",
+                "context": "When competitors use dated methods"
+            },
+            "personnel": {
+                "phrase": "Our named key personnel are committed and available",
+                "context": "When competitors have turnover concerns"
+            },
+            "scalability": {
+                "phrase": "With [X] employees nationwide, we scale to meet surge demands",
+                "context": "When competitors have capacity limits"
+            },
+            "incumbent_risk": {
+                "phrase": "Fresh perspective unencumbered by legacy processes",
+                "context": "Counter incumbent's 'we've always done it this way'"
+            }
+        }
+
+        # Add applicable ghosting phrases
+        all_weaknesses = []
+        for profile in profiles:
+            all_weaknesses.extend(profile.weaknesses)
+
+        for weakness in all_weaknesses:
+            weakness_lower = weakness.lower()
+            for key, template in ghosting_templates.items():
+                if key in weakness_lower or any(k in weakness_lower for k in key.split("_")):
+                    if template not in library:
+                        library.append(template)
+
+        # Always include some standard differentiators
+        library.append({
+            "phrase": "Our proven track record of on-time, on-budget delivery",
+            "context": "Standard differentiator"
+        })
+
+        return library
+
+    def _identify_opportunities(
+        self,
+        profiles: List[CompetitorProfile],
+        rfp_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Identify win opportunities based on competitive analysis"""
+        opportunities = []
+
+        # Collect all competitor weaknesses
+        all_weaknesses = set()
+        for profile in profiles:
+            all_weaknesses.update(profile.weaknesses)
+
+        # Map weaknesses to opportunities
+        if any("transition" in w.lower() for w in all_weaknesses):
+            opportunities.append({
+                "opportunity": "Transition Excellence",
+                "description": "Competitors lack transition experience - emphasize our proven transition methodology",
+                "priority": "high"
+            })
+
+        if any("incumbent" in w.lower() for w in all_weaknesses):
+            opportunities.append({
+                "opportunity": "Fresh Perspective",
+                "description": "Incumbent complacency - position as innovative challenger with new ideas",
+                "priority": "medium"
+            })
+
+        if any("personnel" in w.lower() or "staff" in w.lower() for w in all_weaknesses):
+            opportunities.append({
+                "opportunity": "Key Personnel Commitment",
+                "description": "Competitor personnel concerns - showcase committed, named staff",
+                "priority": "high"
+            })
+
+        # Default opportunity
+        if not opportunities:
+            opportunities.append({
+                "opportunity": "Compliance and Value",
+                "description": "Standard competitive position - focus on clear compliance and best value",
+                "priority": "medium"
+            })
+
+        return opportunities
+
+
+class GhostingLanguageGenerator:
+    """
+    Generates ghosting language to subtly de-position competitors.
+
+    Ghosting is the art of highlighting your strengths in a way that
+    draws attention to competitor weaknesses without naming them directly.
+    """
+
+    def __init__(self, use_llm: bool = True):
+        """
+        Initialize the Ghosting Language Generator
+
+        Args:
+            use_llm: Whether to use LLM for advanced language generation
+        """
+        self.use_llm = use_llm
+
+        # Standard ghosting templates by category
+        self.templates = {
+            "incumbent_risk": [
+                "Our fresh perspective brings innovative solutions unconstrained by legacy approaches",
+                "We bring proven best practices refined across multiple similar engagements",
+                "Our team is specifically assembled for this opportunity with no competing priorities",
+            ],
+            "transition": [
+                "Our Day 1 readiness ensures zero disruption to mission operations",
+                "Our proven transition methodology has achieved 100% on-time transitions",
+                "We commit dedicated transition resources with no learning curve",
+            ],
+            "personnel": [
+                "Our named key personnel are committed and available for immediate assignment",
+                "We maintain deep bench strength ensuring continuity through any personnel changes",
+                "Our team members average [X] years of directly relevant experience",
+            ],
+            "innovation": [
+                "Our modern, cloud-native architecture enables rapid capability deployment",
+                "We leverage cutting-edge technologies proven in production environments",
+                "Our agile methodology delivers continuous improvement throughout performance",
+            ],
+            "scale": [
+                "With [X] employees nationwide, we scale resources to meet surge demands",
+                "Our national presence ensures local expertise wherever needed",
+                "We maintain excess capacity specifically for rapid response requirements",
+            ],
+            "past_performance": [
+                "Our directly relevant experience spans [X] similar contracts",
+                "We have achieved [metric] across all comparable engagements",
+                "Our customer satisfaction ratings consistently exceed [X]%",
+            ],
+        }
+
+    def generate_ghosting_language(
+        self,
+        competitor_weaknesses: List[str],
+        our_strengths: List[str],
+        evaluation_factors: Optional[List[Dict]] = None
+    ) -> List[Dict[str, str]]:
+        """
+        Generate ghosting language based on competitor weaknesses and our strengths.
+
+        Args:
+            competitor_weaknesses: List of identified competitor weaknesses
+            our_strengths: List of our relevant strengths
+            evaluation_factors: Optional list of evaluation factors for targeting
+
+        Returns:
+            List of ghosting phrases with context
+        """
+        ghosting_phrases = []
+
+        for weakness in competitor_weaknesses:
+            weakness_lower = weakness.lower()
+
+            # Match weakness to template category
+            for category, templates in self.templates.items():
+                if any(kw in weakness_lower for kw in category.split("_")):
+                    # Select best template
+                    phrase = templates[0]  # In production, use LLM to select/customize
+
+                    ghosting_phrases.append({
+                        "phrase": phrase,
+                        "targets_weakness": weakness,
+                        "category": category,
+                        "usage_context": f"Use when addressing {category.replace('_', ' ')} in proposal",
+                    })
+                    break
+
+        # Add strength-based phrases
+        for strength in our_strengths[:3]:  # Top 3 strengths
+            ghosting_phrases.append({
+                "phrase": f"Our proven {strength.lower()} delivers measurable results",
+                "targets_weakness": "general",
+                "category": "strength_highlight",
+                "usage_context": "General discriminator language",
+            })
+
+        return ghosting_phrases
+
+    def get_templates(self) -> Dict[str, List[str]]:
+        """Get all available ghosting templates"""
+        return self.templates
+
+    def add_custom_template(self, category: str, phrases: List[str]):
+        """Add custom ghosting templates for a category"""
+        if category in self.templates:
+            self.templates[category].extend(phrases)
+        else:
+            self.templates[category] = phrases

@@ -123,6 +123,15 @@ except ImportError as e:
     BEST_PRACTICES_AVAILABLE = False
     BestPracticesCTMExporter = export_ctm_best_practices = None
 
+# Trust Gate (PDF Coordinate Extraction for v4.0)
+try:
+    from .pdf_coordinate_extractor import PDFCoordinateExtractor
+    TRUST_GATE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Trust Gate not available: {e}")
+    TRUST_GATE_AVAILABLE = False
+    PDFCoordinateExtractor = None
+
 __all__ = [
     "__version__",
     # v3.0 Data Models
@@ -156,6 +165,8 @@ __all__ = [
     "BEST_PRACTICES_AVAILABLE",
     # Availability flags
     "OUTLINE_GENERATOR_AVAILABLE", "COMPANY_LIBRARY_AVAILABLE",
+    # Trust Gate (v4.0)
+    "TRUST_GATE_AVAILABLE", "PDFCoordinateExtractor",
 ]
 
 # =============================================================================
@@ -174,3 +185,58 @@ except ImportError as e:
     AnnotatedOutlineExporter = None
     AnnotatedOutlineConfig = None
     generate_annotated_outline = None
+
+# =============================================================================
+# Requirement Injector (Master Architect v1.0)
+# =============================================================================
+try:
+    from .requirement_injector import (
+        RequirementInjector,
+        create_requirement_injector,
+        inject_requirements_into_outline,
+    )
+    REQUIREMENT_INJECTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Requirement Injector not available: {e}")
+    REQUIREMENT_INJECTOR_AVAILABLE = False
+    RequirementInjector = None
+    create_requirement_injector = None
+    inject_requirements_into_outline = None
+
+# =============================================================================
+# Requirements Graph with NetworkX DAG (v5.0 Iron Triangle)
+# =============================================================================
+try:
+    from .requirements_graph import (
+        RequirementsDAG,
+        EdgeType,
+        NodeSection,
+        GraphEdge,
+        OrphanReport,
+        GraphAnalysis,
+    )
+    REQUIREMENTS_GRAPH_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Requirements Graph not available: {e}")
+    REQUIREMENTS_GRAPH_AVAILABLE = False
+    RequirementsDAG = None
+    EdgeType = NodeSection = GraphEdge = OrphanReport = GraphAnalysis = None
+
+# =============================================================================
+# Validation Engine (v5.0 Deterministic Validation)
+# =============================================================================
+try:
+    from .validation_engine import (
+        ValidationEngine,
+        ValidationResult,
+        ValidationViolation,
+        ViolationType,
+        Severity,
+        validate_requirements,
+    )
+    VALIDATION_ENGINE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Validation Engine not available: {e}")
+    VALIDATION_ENGINE_AVAILABLE = False
+    ValidationEngine = ValidationResult = ValidationViolation = None
+    ViolationType = Severity = validate_requirements = None
