@@ -4437,70 +4437,124 @@ async def get_stats(rfp_id: str):
 # ============== Proposal Outline ==============
 
 @app.post("/api/rfp/{rfp_id}/outline")
-async def generate_outline(rfp_id: str):
+async def generate_outline(rfp_id: str, use_v3: bool = True):
     """
     Generate proposal outline from RFP.
-    
-    v2.10: Uses SmartOutlineGenerator which leverages already-extracted
-    compliance matrix data for better accuracy.
+
+    v3.0: Uses OutlineOrchestrator with StrictStructureBuilder for accurate
+    structure extraction from Section L. Falls back to SmartOutlineGenerator
+    if v3.0 fails.
+
+    Args:
+        rfp_id: RFP project ID
+        use_v3: If True (default), use v3.0 OutlineOrchestrator.
+                If False, use legacy SmartOutlineGenerator.
     """
     from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
-    
+
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     # Check if we have compliance matrix data
     requirements = rfp.get("requirements", [])
     stats = rfp.get("stats", {})
-    
+
     if not requirements:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="No compliance matrix data. Process RFP first using /process-best-practices"
         )
-    
+
+    # Separate requirements by category
+    section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
+                 or r.get("section", "").upper() == "L"]
+    section_m = [r for r in requirements if r.get("category") == "EVALUATION"
+                 or r.get("section", "").upper() == "M"]
+    technical = [r for r in requirements if r.get("category") == "TECHNICAL"
+                 or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
+
+    # v4.2 FIX: VA Commercial RFPs use Section E.2 for evaluation factors (FAR 52.212-2)
+    import re
+    va_eval_patterns = [
+        r'factor\s*[1-4]',  # Factor 1, Factor 2, etc.
+        r'52\.212-2',  # FAR clause for commercial evaluation
+        r'evaluation.*?factor',
+        r'comparative\s+evaluation',
+        r'technical\s+experience',
+        r'past\s+performance\s+(?:factor|evaluat)',
+    ]
+    for req in requirements:
+        section = req.get("section", "").upper()
+        category = req.get("category", "")
+        text = (req.get("text", "") or "").lower()
+
+        # Check if this is Section E with evaluation content
+        if section == "E" or category == "INSPECTION":
+            for pattern in va_eval_patterns:
+                if re.search(pattern, text, re.IGNORECASE):
+                    if req not in section_m:
+                        section_m.append(req)
+                    break
+
+    # If section_l is empty, treat section_m as containing submission instructions (GSA/BPA)
+    if not section_l and section_m:
+        section_l = section_m
+
+    # Try v3.0 OutlineOrchestrator first
+    if use_v3:
+        try:
+            from agents.enhanced_compliance.outline_orchestrator import OutlineOrchestrator
+            from agents.enhanced_compliance.strict_structure_builder import StructureValidationError
+
+            # Build Section L text from instructions
+            section_l_text = "\n\n".join([
+                r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
+                for r in section_l
+                if r.get("text") or r.get("full_text") or r.get("requirement_text")
+            ])
+
+            if section_l_text:
+                orchestrator = OutlineOrchestrator(strict_mode=False)  # Allow warnings
+                result = orchestrator.generate_outline(
+                    section_l_text=section_l_text,
+                    requirements=technical,
+                    evaluation_criteria=section_m,
+                    rfp_number=rfp.get("solicitation_number", ""),
+                    rfp_title=rfp.get("name", "")
+                )
+
+                # Transform v3.0 output to be compatible with UI expectations
+                v3_outline = result["annotated_outline"]
+                outline_data = _transform_v3_outline_for_ui(v3_outline, section_m)
+
+                # Store outline with v3.0 metadata
+                store.update(rfp_id, {
+                    "outline": outline_data,
+                    "proposal_skeleton": result["proposal_skeleton"],
+                    "outline_version": "3.0",
+                    "outline_metadata": result["injection_metadata"]
+                })
+
+                return {
+                    "status": "generated",
+                    "version": "3.0",
+                    "outline": outline_data,
+                    "skeleton_valid": result["proposal_skeleton"].get("is_valid", False),
+                    "warnings": result["injection_metadata"].get("warnings", [])
+                }
+
+        except StructureValidationError as e:
+            print(f"[WARN] v3.0 structure validation failed, falling back to legacy: {e}")
+        except Exception as e:
+            print(f"[WARN] v3.0 outline generation failed, falling back to legacy: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Fall back to legacy SmartOutlineGenerator
     try:
         generator = SmartOutlineGenerator()
-        
-        # Separate requirements by category
-        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
-                     or r.get("section", "").upper() == "L"]
-        section_m = [r for r in requirements if r.get("category") == "EVALUATION"
-                     or r.get("section", "").upper() == "M"]
-        technical = [r for r in requirements if r.get("category") == "TECHNICAL"
-                     or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
 
-        # v4.2 FIX: VA Commercial RFPs use Section E.2 for evaluation factors (FAR 52.212-2)
-        # Check if Section E contains evaluation content and add to section_m
-        import re
-        va_eval_patterns = [
-            r'factor\s*[1-4]',  # Factor 1, Factor 2, etc.
-            r'52\.212-2',  # FAR clause for commercial evaluation
-            r'evaluation.*?factor',
-            r'comparative\s+evaluation',
-            r'technical\s+experience',
-            r'past\s+performance\s+(?:factor|evaluat)',
-        ]
-        for req in requirements:
-            section = req.get("section", "").upper()
-            category = req.get("category", "")
-            text = (req.get("text", "") or "").lower()
-
-            # Check if this is Section E with evaluation content
-            if section == "E" or category == "INSPECTION":
-                for pattern in va_eval_patterns:
-                    if re.search(pattern, text, re.IGNORECASE):
-                        # This is VA evaluation content - add to section_m if not already there
-                        if req not in section_m:
-                            section_m.append(req)
-                        break
-
-        # If section_l is empty, treat section_m as containing submission instructions (GSA/BPA)
-        if not section_l and section_m:
-            section_l = section_m  # GSA/BPA format has instructions in eval section
-        
-        # Generate outline from compliance matrix data
         # v4.2: Include Company Library data for win theme generation
         company_library_data = None
         if COMPANY_LIBRARY_AVAILABLE and company_library:
@@ -4516,96 +4570,137 @@ async def generate_outline(rfp_id: str):
             stats=stats,
             company_library_data=company_library_data
         )
-        
+
         # Convert to JSON
         outline_data = generator.to_json(outline)
-        
+
         # Store outline
-        store.update(rfp_id, {"outline": outline_data})
-        
+        store.update(rfp_id, {"outline": outline_data, "outline_version": "legacy"})
+
         return {
             "status": "generated",
-            "outline": outline_data
+            "version": "legacy",
+            "outline": outline_data,
+            "warning": "Using legacy SmartOutlineGenerator. v3.0 may produce more accurate results."
         }
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Outline generation failed: {str(e)}")
 
 
+def _transform_v3_outline_for_ui(v3_outline: dict, eval_criteria: list) -> dict:
+    """
+    Transform v3.0 outline output to be compatible with the existing UI.
+
+    The UI expects certain field names and structures that differ from v3.0.
+    """
+    # Infer volume type from title
+    def infer_volume_type(title: str) -> str:
+        title_lower = title.lower()
+        if any(kw in title_lower for kw in ['technical', 'approach', 'solution']):
+            return 'technical'
+        elif any(kw in title_lower for kw in ['cost', 'price', 'pricing']):
+            return 'cost_price'
+        elif any(kw in title_lower for kw in ['past performance', 'experience']):
+            return 'past_performance'
+        elif any(kw in title_lower for kw in ['management', 'staffing']):
+            return 'management'
+        elif any(kw in title_lower for kw in ['contract', 'admin', 'documentation']):
+            return 'administrative'
+        return 'other'
+
+    volumes = []
+    for vol in v3_outline.get('volumes', []):
+        sections = []
+        for sec in vol.get('sections', []):
+            section_data = {
+                'id': sec.get('id', ''),
+                'title': sec.get('title', ''),
+                'name': sec.get('title', ''),  # UI compatibility
+                'page_limit': sec.get('page_limit'),
+                'page_allocation': sec.get('page_limit') or 0,
+                'order': sec.get('order', 0),
+                'requirements': sec.get('requirements', []),
+                'content_requirements': sec.get('requirements', []),  # UI compatibility
+                'win_themes': sec.get('win_themes', []),
+                'proof_points': sec.get('proof_points', []),
+                'eval_criteria': [],
+                'compliance_checkpoints': sec.get('compliance_checkpoints', []),
+                'subsections': []
+            }
+            sections.append(section_data)
+
+        volume_data = {
+            'id': vol.get('id', ''),
+            'name': vol.get('title', ''),  # UI expects 'name'
+            'title': vol.get('title', ''),
+            'type': infer_volume_type(vol.get('title', '')),
+            'page_limit': vol.get('page_limit'),
+            'order': vol.get('volume_number', 0),
+            'eval_factors': [],
+            'sections': sections
+        }
+        volumes.append(volume_data)
+
+    # Transform evaluation criteria
+    eval_factors = []
+    for i, crit in enumerate(eval_criteria):
+        eval_factors.append({
+            'id': crit.get('id', f'eval-{i}'),
+            'name': crit.get('text', '')[:100],  # Truncate for display
+            'weight': 0.2,  # Default weight
+            'importance': 'equal',
+            'criteria': crit.get('text', '')
+        })
+
+    return {
+        'rfp_format': 'detected',
+        'total_pages': v3_outline.get('total_page_limit') or 0,
+        'volumes': volumes,
+        'evaluation_factors': eval_factors[:10],  # Limit for UI
+        'eval_factors': eval_factors[:10],
+        'format_requirements': v3_outline.get('format_rules', {
+            'font': 'Times New Roman',
+            'font_size': 12,
+            'margins': '1 inch',
+            'line_spacing': 'single',
+            'page_size': 'letter'
+        }),
+        'submission': v3_outline.get('submission_rules', {
+            'due_date': 'TBD',
+            'due_time': '',
+            'method': 'Not Specified',
+            'email': ''
+        }),
+        'warnings': [],
+        'generation_metadata': v3_outline.get('generation_metadata', {
+            'version': '3.0',
+            'structure_source': 'Section L (StrictStructureBuilder)'
+        })
+    }
+
+
 @app.get("/api/rfp/{rfp_id}/outline")
 async def get_outline(rfp_id: str, format: str = "json"):
-    """Get proposal outline"""
-    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
-    
+    """Get proposal outline. Generates using v3.0 if not cached."""
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
-    
+
     outline = rfp.get("outline")
-    
+
     if not outline:
-        # Generate if not exists - need compliance matrix data
-        requirements = rfp.get("requirements", [])
-        stats = rfp.get("stats", {})
-        
-        if not requirements:
-            raise HTTPException(
-                status_code=400, 
-                detail="No compliance matrix data. Process RFP first using /process-best-practices"
-            )
-        
-        generator = SmartOutlineGenerator()
+        # Generate if not exists using v3.0 pipeline
+        result = await generate_outline(rfp_id, use_v3=True)
+        outline = result.get("outline")
 
-        # Separate requirements by category
-        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"
-                     or r.get("section", "").upper() == "L"]
-        section_m = [r for r in requirements if r.get("category") == "EVALUATION"
-                     or r.get("section", "").upper() == "M"]
-        technical = [r for r in requirements if r.get("category") == "TECHNICAL"
-                     or r.get("section", "").upper() in ["C", "PWS", "SOW"]]
-
-        # v4.2 FIX: VA Commercial RFPs use Section E.2 for evaluation factors
-        import re
-        va_eval_patterns = [
-            r'factor\s*[1-4]', r'52\.212-2', r'evaluation.*?factor',
-            r'comparative\s+evaluation', r'technical\s+experience',
-            r'past\s+performance\s+(?:factor|evaluat)',
-        ]
-        for req in requirements:
-            section = req.get("section", "").upper()
-            category = req.get("category", "")
-            text = (req.get("text", "") or "").lower()
-            if section == "E" or category == "INSPECTION":
-                for pattern in va_eval_patterns:
-                    if re.search(pattern, text, re.IGNORECASE):
-                        if req not in section_m:
-                            section_m.append(req)
-                        break
-
-        if not section_l and section_m:
-            section_l = section_m
-
-        # v4.2: Include Company Library data for win theme generation
-        company_library_data = None
-        if COMPANY_LIBRARY_AVAILABLE and company_library:
-            try:
-                company_library_data = company_library.get_profile()
-            except Exception:
-                pass
-
-        outline_obj = generator.generate_from_compliance_matrix(
-            section_l_requirements=section_l,
-            section_m_requirements=section_m,
-            technical_requirements=technical,
-            stats=stats,
-            company_library_data=company_library_data
-        )
-        outline = generator.to_json(outline_obj)
-        store.update(rfp_id, {"outline": outline})
-
-    return {"format": "json", "outline": outline}
+    return {
+        "format": "json",
+        "outline": outline,
+        "version": rfp.get("outline_version", "unknown")
+    }
 
 
 @app.get("/api/rfp/{rfp_id}/outline/export")
