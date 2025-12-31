@@ -4513,7 +4513,9 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
             attachment_texts = {}
 
             document_metadata = rfp.get("document_metadata", {})
+            print(f"[v3.0 Outline] document_metadata has {len(document_metadata)} documents: {list(document_metadata.keys())}")
             for doc_name, doc_info in document_metadata.items():
+                print(f"[v3.0 Outline] Checking {doc_name}: doc_type={doc_info.get('doc_type', 'MISSING')}")
                 doc_type = doc_info.get("doc_type", "")
                 file_path = doc_info.get("file_path", "")
 
