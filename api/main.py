@@ -4507,20 +4507,43 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
             from agents.enhanced_compliance.outline_orchestrator import OutlineOrchestrator
             from agents.enhanced_compliance.strict_structure_builder import StructureValidationError
 
-            # Build Section L text from instructions
-            section_l_text = "\n\n".join([
-                r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
-                for r in section_l
-                if r.get("text") or r.get("full_text") or r.get("requirement_text")
-            ])
+            # v3.0 FIX: Read FULL TEXT of instructions_evaluation document, not just extracted requirements
+            # The volume structure ("Volume I: Technical") is in the document but not extracted as requirements
+            section_l_text = ""
+            attachment_texts = {}
+
+            document_metadata = rfp.get("document_metadata", {})
+            for doc_name, doc_info in document_metadata.items():
+                doc_type = doc_info.get("doc_type", "")
+                file_path = doc_info.get("file_path", "")
+
+                if doc_type == "instructions_evaluation" and file_path:
+                    try:
+                        from agents.enhanced_compliance import MultiFormatParser
+                        parser = MultiFormatParser()
+                        parsed = parser.parse_file(file_path)
+                        if parsed and hasattr(parsed, 'text'):
+                            section_l_text = parsed.text
+                            print(f"[v3.0 Outline] Read full text from {doc_name}: {len(section_l_text)} chars")
+                        elif parsed and isinstance(parsed, dict) and parsed.get('text'):
+                            section_l_text = parsed['text']
+                            print(f"[v3.0 Outline] Read full text from {doc_name}: {len(section_l_text)} chars")
+                    except Exception as e:
+                        print(f"[v3.0 Outline] WARN: Could not read {doc_name}: {e}")
+
+            # Fallback: use extracted requirements if no document text found
+            if not section_l_text:
+                section_l_text = "\n\n".join([
+                    r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
+                    for r in section_l
+                    if r.get("text") or r.get("full_text") or r.get("requirement_text")
+                ])
+                print(f"[v3.0 Outline] Fallback: Using extracted requirements ({len(section_l)} reqs, {len(section_l_text)} chars)")
 
             # Debug logging for v3.0 pipeline
-            print(f"[v3.0 Outline] Section L requirements count: {len(section_l)}")
             print(f"[v3.0 Outline] Section L text length: {len(section_l_text)} chars")
-            if section_l and not section_l_text:
-                # Log the first requirement to see what fields it has
-                print(f"[v3.0 Outline] First L req keys: {list(section_l[0].keys())}")
-                print(f"[v3.0 Outline] First L req sample: {str(section_l[0])[:500]}")
+            if section_l_text:
+                print(f"[v3.0 Outline] Text preview: {section_l_text[:300]}...")
 
             if section_l_text:
                 print(f"[v3.0 Outline] Starting v3.0 pipeline...")
