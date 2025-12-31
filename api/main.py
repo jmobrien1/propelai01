@@ -4520,8 +4520,10 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
                 if doc_type == "instructions_evaluation" and file_path:
                     try:
                         from agents.enhanced_compliance import MultiFormatParser
+                        from agents.enhanced_compliance.models import DocumentType as ParserDocType
                         parser = MultiFormatParser()
-                        parsed = parser.parse_file(file_path)
+                        # parse_file requires doc_type - use ATTACHMENT as generic type for text extraction
+                        parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
                         if parsed and hasattr(parsed, 'text'):
                             section_l_text = parsed.text
                             print(f"[v3.0 Outline] Read full text from {doc_name}: {len(section_l_text)} chars")
