@@ -4557,11 +4557,15 @@
                                                         {section.content_requirements?.length > 0 && (
                                                             <div style={{ marginBottom: 8 }}>
                                                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>CONTENT REQUIREMENTS</div>
-                                                                {section.content_requirements.slice(0, 2).map((req, i) => (
-                                                                    <div key={i} style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 2 }}>
-                                                                        • {req.slice(0, 150)}{req.length > 150 ? '...' : ''}
-                                                                    </div>
-                                                                ))}
+                                                                {section.content_requirements.slice(0, 2).map((req, i) => {
+                                                                    // Handle both string (legacy) and object (v3.0) formats
+                                                                    const reqText = typeof req === 'string' ? req : (req?.text || req?.description || '');
+                                                                    return (
+                                                                        <div key={i} style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 2 }}>
+                                                                            • {reqText.slice(0, 150)}{reqText.length > 150 ? '...' : ''}
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         )}
                                                         
