@@ -1,6 +1,6 @@
 # PropelAI v5.0 As-Built Technical Document
 
-**Version:** 5.0.3
+**Version:** 5.0.4
 **Date:** December 2024
 **Classification:** Technical Architecture Documentation
 
@@ -34,6 +34,10 @@
     - [17.1 Test Suite Overview](#171-test-suite-overview)
     - [17.2 Test Fixtures](#172-test-fixtures)
     - [17.3 CI/CD Pipeline](#173-cicd-pipeline)
+18. [Decoupled Outline v3.0 (v5.0.4)](#18-decoupled-outline-v30-v504)
+    - [18.1 Production Bug Fixes](#181-production-bug-fixes)
+    - [18.2 Volume Title Parsing](#182-volume-title-parsing)
+    - [18.3 Frontend Compatibility](#183-frontend-compatibility)
 
 ---
 
@@ -67,6 +71,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Force-Directed Graph | Physics-based layout for Iron Triangle visualization | v5.0.2 |
 | Agent Trace Log | Data Flywheel foundation (Input→Output→Correction) | v5.0.2 |
 | QA Test Infrastructure | 114 tests with GoldenRFP fixtures and CI/CD pipeline | v5.0.3 |
+| Decoupled Outline v3.0 | StrictStructureBuilder + ContentInjector + UI/Export fixes | v5.0.4 |
 
 ### 1.3 Technology Stack
 
@@ -1474,6 +1479,7 @@ LogEntry = {
 | v5.0.1 | 2024-12 | Word API Semantic Search (pgvector embeddings) |
 | v5.0.2 | 2024-12 | Force-Directed Graph + Agent Trace Log (NFR-2.3) |
 | v5.0.3 | 2024-12 | **QA Test Infrastructure: 114 tests + CI/CD pipeline** |
+| v5.0.4 | 2024-12 | **Decoupled Outline v3.0: Fixed production deployment issues** |
 
 ### v5.0 Changes
 
@@ -3994,6 +4000,133 @@ def test_trace_log_completeness(self, initial_state, golden_rfp):
 3. **Isolation**: Each test starts with clean state, no shared mutable state
 4. **Fast Feedback**: Full suite runs in <5 seconds locally
 5. **CI Integration**: Automated testing on every push/PR
+
+---
+
+## 18. Decoupled Outline v3.0 (v5.0.4)
+
+**Location:** `api/main.py`, `agents/enhanced_compliance/section_l_parser.py`, `web/index.html`, `agents/enhanced_compliance/annotated_outline_exporter.js`
+
+The v3.0 Decoupled Outline architecture (StrictStructureBuilder + ContentInjector + OutlineOrchestrator) was implemented in v5.0.3 but had production deployment issues. v5.0.4 fixes these issues.
+
+### 18.1 Production Bug Fixes
+
+**Root Cause:** The v3.0 outline generation failed in production due to multiple issues in the data pipeline.
+
+| Issue | Root Cause | Fix |
+|-------|------------|-----|
+| `parse_file() missing 1 required positional argument` | `MultiFormatParser.parse_file()` requires `doc_type` parameter | Added `ParserDocType.ATTACHMENT` as second argument |
+| `ParsedDocument has no 'text' attribute` | Wrong attribute name - dataclass uses `full_text` | Changed `hasattr(parsed, 'text')` to `hasattr(parsed, 'full_text')` |
+| Only 1 volume detected instead of 3 | Was passing extracted requirements text instead of full PDF | Read full document text from `instructions_evaluation` PDF |
+
+**Code Changes (api/main.py):**
+
+```python
+# Before (broken)
+parsed = parser.parse_file(file_path)
+if parsed and hasattr(parsed, 'text'):
+    section_l_text = parsed.text
+
+# After (fixed)
+parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
+if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
+    section_l_text = parsed.full_text
+```
+
+### 18.2 Volume Title Parsing
+
+**Root Cause:** Volume titles were malformed with trailing content like `'Technical Proposal)'` or `'Cost Proposal), which is linked to all tabs...'`.
+
+**Issue:** The regex pattern `([^\n]+)` captured everything until newline, including parenthetical content. The cleanup only removed `.,:;` not parentheses.
+
+**Fix (section_l_parser.py):**
+
+```python
+# Comprehensive title cleanup:
+# 1. Remove parenthetical content (page limits, notes)
+title = re.sub(r'\s*\([^)]*\).*$', '', title)
+# 2. Remove content after comma/semicolon
+title = re.sub(r'\s*[,;].*$', '', title)
+# 3. Remove trailing punctuation including ')'
+title = re.sub(r'[\.\,\;\:\)]+$', '', title).strip()
+# 4. Truncate overly long titles with smart break points
+if len(title) > 80:
+    # Find natural break point
+    for sep in [' - ', ' – ', ': ', ' ']:
+        if sep in title[:80]:
+            title = title[:title.rfind(sep, 0, 80)]
+            break
+```
+
+### 18.3 Frontend Compatibility
+
+**Issue 1: OutlineView Crash**
+
+```
+TypeError: req.slice is not a function
+```
+
+**Root Cause:** v3.0 outline returns requirements as objects `{id, text, confidence, ...}` but frontend called `.slice()` assuming strings.
+
+**Fix (web/index.html):**
+
+```javascript
+// Before (broken)
+• {req.slice(0, 150)}
+
+// After (fixed)
+const reqText = typeof req === 'string' ? req : (req?.text || req?.description || '');
+• {reqText.slice(0, 150)}
+```
+
+**Issue 2: Word Export Crash**
+
+```
+TypeError: (factor.criteria || []).join is not a function
+```
+
+**Root Cause:** v3.0 returns `factor.criteria` as a string, but exporter called `.join()` expecting array.
+
+**Fix (annotated_outline_exporter.js):**
+
+```javascript
+// Before (broken)
+text: (factor.criteria || []).join("; ")
+
+// After (fixed)
+text: (typeof factor.criteria === 'string'
+    ? factor.criteria
+    : (Array.isArray(factor.criteria) ? factor.criteria.join("; ") : ""))
+```
+
+### 18.4 API Enhancement
+
+**Added `regenerate` parameter to GET outline endpoint:**
+
+```python
+@app.get("/api/rfp/{rfp_id}/outline")
+async def get_outline(rfp_id: str, format: str = "json", regenerate: bool = False):
+    """Get proposal outline. Generates using v3.0 if not cached or regenerate=true."""
+    outline = rfp.get("outline") if not regenerate else None
+    # ...
+```
+
+**Usage:** `GET /api/rfp/{id}/outline?regenerate=true` bypasses cache and forces regeneration.
+
+### 18.5 Debug Logging
+
+Comprehensive debug logging was added to trace the outline generation pipeline:
+
+```
+[v3.0 Outline] document_metadata has 4 documents
+[v3.0 Outline] Attempting to parse: /data/uploads/RFP-XXX/Attachment.pdf
+[v3.0 Outline] Read full text from Attachment.pdf: 25434 chars
+[v3.0 Parser] Found 2 volumes
+[v3.0 Parser] Volume titles: ['Technical Proposal', 'Cost Proposal']
+[v3.0 Outline] annotated_outline.volumes count: 2
+[v3.0 Outline] SUCCESS - Generated 2 volumes
+[GET Outline] Returning outline with 2 volumes
+```
 
 ---
 
