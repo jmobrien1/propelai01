@@ -497,7 +497,11 @@ function buildEvalFactorsSummary(data) {
                         borders: cellBorders, width: { size: 5060, type: WidthType.DXA },
                         children: [new Paragraph({
                             children: [new TextRun({
-                                text: (factor.criteria || []).join("; ") || "See Section M for details",
+                                // Handle both string (v3.0) and array (legacy) formats
+                                text: (typeof factor.criteria === 'string'
+                                    ? factor.criteria
+                                    : (Array.isArray(factor.criteria) ? factor.criteria.join("; ") : ""))
+                                    || "See Section M for details",
                                 size: 20
                             })]
                         })]
