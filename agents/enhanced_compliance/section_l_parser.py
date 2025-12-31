@@ -208,8 +208,22 @@ class SectionLParser:
                 vol_num = self._roman_to_int(vol_num_str)
                 title = match.group(2).strip()
 
-                # Clean up title (remove trailing punctuation)
-                title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+                # Clean up title comprehensively
+                # 1. Remove parenthetical content (page limits, notes, etc.)
+                title = re.sub(r'\s*\([^)]*\).*$', '', title)
+                # 2. Remove content after comma or semicolon (often extra notes)
+                title = re.sub(r'\s*[,;].*$', '', title)
+                # 3. Remove trailing punctuation
+                title = re.sub(r'[\.\,\;\:\)]+$', '', title).strip()
+                # 4. Truncate overly long titles (likely captured extra content)
+                if len(title) > 80:
+                    # Find natural break point
+                    for sep in [' - ', ' – ', ': ', ' ']:
+                        if sep in title[:80]:
+                            title = title[:title.rfind(sep, 0, 80)]
+                            break
+                    else:
+                        title = title[:80].rsplit(' ', 1)[0]
 
                 # Skip if we've seen this title
                 if title.lower() in seen_titles:

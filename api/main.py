@@ -4569,7 +4569,13 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
 
                 # Transform v3.0 output to be compatible with UI expectations
                 v3_outline = result["annotated_outline"]
+                print(f"[v3.0 Outline] annotated_outline keys: {v3_outline.keys() if v3_outline else 'None'}")
+                print(f"[v3.0 Outline] annotated_outline.volumes count: {len(v3_outline.get('volumes', []))}")
+                if v3_outline.get('volumes'):
+                    for i, vol in enumerate(v3_outline['volumes']):
+                        print(f"[v3.0 Outline] Volume {i}: id={vol.get('id')}, title={vol.get('title')}, sections={len(vol.get('sections', []))}")
                 outline_data = _transform_v3_outline_for_ui(v3_outline, section_m)
+                print(f"[v3.0 Outline] transformed outline_data.volumes count: {len(outline_data.get('volumes', []))}")
 
                 # Store outline with v3.0 metadata
                 store.update(rfp_id, {
@@ -4730,18 +4736,30 @@ def _transform_v3_outline_for_ui(v3_outline: dict, eval_criteria: list) -> dict:
 
 
 @app.get("/api/rfp/{rfp_id}/outline")
-async def get_outline(rfp_id: str, format: str = "json"):
-    """Get proposal outline. Generates using v3.0 if not cached."""
+async def get_outline(rfp_id: str, format: str = "json", regenerate: bool = False):
+    """Get proposal outline. Generates using v3.0 if not cached or regenerate=true."""
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
 
-    outline = rfp.get("outline")
+    outline = rfp.get("outline") if not regenerate else None
+    print(f"[GET Outline] Cached outline exists: {outline is not None}, regenerate={regenerate}")
 
     if not outline:
         # Generate if not exists using v3.0 pipeline
+        print(f"[GET Outline] No cache, generating v3.0 outline...")
         result = await generate_outline(rfp_id, use_v3=True)
         outline = result.get("outline")
+        print(f"[GET Outline] Generation returned outline: {outline is not None}")
+
+    # Debug the response
+    if outline:
+        volumes = outline.get('volumes', [])
+        print(f"[GET Outline] Returning outline with {len(volumes)} volumes")
+        for i, vol in enumerate(volumes[:3]):
+            print(f"[GET Outline]   Volume {i}: id={vol.get('id')}, name={vol.get('name')}, sections={len(vol.get('sections', []))}")
+    else:
+        print(f"[GET Outline] WARNING: Returning null outline!")
 
     return {
         "format": "json",
