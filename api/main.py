@@ -4528,16 +4528,15 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
                         # parse_file requires doc_type - use ATTACHMENT as generic type for text extraction
                         parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
                         print(f"[v3.0 Outline] Parsed result type: {type(parsed)}, value: {parsed is not None}")
-                        if parsed:
-                            print(f"[v3.0 Outline] Parsed attrs: {dir(parsed)[:10]}...")
-                        if parsed and hasattr(parsed, 'text'):
-                            section_l_text = parsed.text
+                        # ParsedDocument uses 'full_text' attribute, not 'text'
+                        if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
+                            section_l_text = parsed.full_text
                             print(f"[v3.0 Outline] Read full text from {doc_name}: {len(section_l_text)} chars")
-                        elif parsed and isinstance(parsed, dict) and parsed.get('text'):
-                            section_l_text = parsed['text']
+                        elif parsed and isinstance(parsed, dict) and parsed.get('full_text'):
+                            section_l_text = parsed['full_text']
                             print(f"[v3.0 Outline] Read full text from {doc_name}: {len(section_l_text)} chars")
                         else:
-                            print(f"[v3.0 Outline] Parsed has no usable text attribute")
+                            print(f"[v3.0 Outline] Parsed has no usable full_text attribute")
                     except Exception as e:
                         import traceback
                         print(f"[v3.0 Outline] WARN: Could not read {doc_name}: {e}")
