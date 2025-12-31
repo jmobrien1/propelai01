@@ -36,6 +36,7 @@ class ViolationType(Enum):
     # Format violations
     VOLUME_RESTRICTION = "volume_restriction"  # Content in wrong volume
     PAGE_LIMIT_EXCEEDED = "page_limit_exceeded"  # Section exceeds limit
+    VOLUME_COUNT_MISMATCH = "volume_count_mismatch"  # Generated volumes != stated count
 
     # Logical violations
     CIRCULAR_REFERENCE = "circular_reference"  # A -> B -> A
@@ -197,6 +198,63 @@ class ValidationEngine:
             violations=violations,
             compliance_score=compliance_score,
         )
+
+    def validate_outline_volume_count(
+        self,
+        generated_volumes: int,
+        stated_volume_count: Optional[int],
+        compliance_matrix_volumes: Optional[int] = None,
+    ) -> List[ValidationViolation]:
+        """
+        Validate that generated outline volume count matches RFP specifications.
+
+        This is the key Iron Triangle check for outline generation.
+
+        Args:
+            generated_volumes: Number of volumes in generated outline
+            stated_volume_count: Volume count stated in Section L
+            compliance_matrix_volumes: Volume count detected in Compliance Matrix
+
+        Returns:
+            List of violations (empty if valid)
+        """
+        violations = []
+
+        # Check against stated volume count from Section L
+        if stated_volume_count is not None and generated_volumes != stated_volume_count:
+            violations.append(ValidationViolation(
+                id=self._next_violation_id(),
+                violation_type=ViolationType.VOLUME_COUNT_MISMATCH,
+                severity=Severity.CRITICAL,
+                requirement_id="OUTLINE",
+                requirement_text=f"Section L specifies {stated_volume_count} volumes",
+                message=f"Generated {generated_volumes} volumes but Section L specifies {stated_volume_count}",
+                suggestion="Review Section L instructions to ensure all volumes are captured",
+                metadata={
+                    "generated_count": generated_volumes,
+                    "stated_count": stated_volume_count,
+                    "source": "section_l",
+                }
+            ))
+
+        # Cross-check against Compliance Matrix if available
+        if compliance_matrix_volumes is not None and generated_volumes != compliance_matrix_volumes:
+            violations.append(ValidationViolation(
+                id=self._next_violation_id(),
+                violation_type=ViolationType.VOLUME_COUNT_MISMATCH,
+                severity=Severity.WARNING,
+                requirement_id="OUTLINE",
+                requirement_text=f"Compliance Matrix shows {compliance_matrix_volumes} volumes",
+                message=f"Generated {generated_volumes} volumes but Compliance Matrix shows {compliance_matrix_volumes}",
+                suggestion="Verify volume structure consistency between outline and compliance matrix",
+                metadata={
+                    "generated_count": generated_volumes,
+                    "compliance_matrix_count": compliance_matrix_volumes,
+                    "source": "compliance_matrix",
+                }
+            ))
+
+        return violations
 
     def validate_single_requirement(
         self,
