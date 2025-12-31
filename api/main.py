@@ -4736,14 +4736,14 @@ def _transform_v3_outline_for_ui(v3_outline: dict, eval_criteria: list) -> dict:
 
 
 @app.get("/api/rfp/{rfp_id}/outline")
-async def get_outline(rfp_id: str, format: str = "json"):
-    """Get proposal outline. Generates using v3.0 if not cached."""
+async def get_outline(rfp_id: str, format: str = "json", regenerate: bool = False):
+    """Get proposal outline. Generates using v3.0 if not cached or regenerate=true."""
     rfp = store.get(rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
 
-    outline = rfp.get("outline")
-    print(f"[GET Outline] Cached outline exists: {outline is not None}")
+    outline = rfp.get("outline") if not regenerate else None
+    print(f"[GET Outline] Cached outline exists: {outline is not None}, regenerate={regenerate}")
 
     if not outline:
         # Generate if not exists using v3.0 pipeline
