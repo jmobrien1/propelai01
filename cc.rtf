@@ -1,0 +1,154 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\fmodern\fcharset0 Courier-Bold;\f2\froman\fcharset0 Times-Bold;
+\f3\froman\fcharset0 Times-Italic;\f4\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red109\green109\blue109;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\cssrgb\c50196\c50196\c50196;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid1\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid2\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid101\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid2}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\fs24 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Based on the analysis of your provided 
+\f1\b\fs26 AS_BUILT_v5.1.md
+\f0\b0\fs24  (internally labeled as v5.0.4 in the text), I have identified the exact architectural failure causing the outline issues.\
+The "smoking gun" is located in 
+\f2\b Section 18: Decoupled Outline v3.0
+\f0\b0 , specifically under 
+\f2\b 18.1 Production Bug Fixes
+\f0\b0 . The document explicitly admits that the system was passing 
+\f3\i extracted requirements text
+\f0\i0  to the outline generator instead of the 
+\f3\i full PDF source
+\f0\i0 , causing the structure (Volume headers) to be lost.\
+Here is the breakdown of why the system failed and the specific prompt you need to fix it.\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f2\b\fs28 \cf0 The Root Cause (Found in AS_BUILT_v5.1)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 Your architecture document identifies three specific bugs that explain why PropelAI extracted requirements correctly (Compliance Matrix) but failed the outline:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls1\ilvl0
+\f2\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Context Stripping (The "One Volume" Bug):
+\f0\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls1\ilvl1
+\f2\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 The Error:
+\f0\b0  The system detected "Only 1 volume detected instead of 3" [Source 585].\
+\ls1\ilvl1
+\f2\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 The Cause:
+\f0\b0  The 
+\f4\fs26 StrictStructureBuilder
+\f0\fs24  was being fed the 
+\f3\i extracted requirements list
+\f0\i0  (which is flat) rather than the 
+\f3\i full PDF text
+\f0\i0  of Attachment 2. When the AI only sees a list of "shalls," it loses the "Volume 1 / Volume 2" headers that visually separate them. It then hallucinated a standard Shipley structure to fill the void.\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls1\ilvl0
+\f2\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Regex Failure on Titles:
+\f0\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls1\ilvl1
+\f2\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 The Error:
+\f0\b0  Volume titles in the RFP (e.g., "Volume 1: Technical (Factor 1)") contained parenthetical text that broke the regex parser [Source 586].\
+\ls1\ilvl1
+\f2\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 The Cause:
+\f0\b0  The regex 
+\f4\fs26 ([^\\n]+)
+\f0\fs24  captured the entire line, including noise, causing the logic to fail to recognize "Volume 1" as a delimiter.\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls1\ilvl0
+\f2\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Frontend/Backend Mismatch:
+\f0\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls1\ilvl1
+\f2\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 The Error:
+\f0\b0  The backend returned objects (dictionaries), but the frontend expected strings, causing crashes or empty exports [Source 587].\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f2\b\fs28 \cf0 \strokec2 The Remediation Plan\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 We need to force the 
+\f4\fs26 StrictStructureBuilder
+\f0\fs24  to stop looking at the "Requirements" and start looking at the "Document Structure" of 
+\f4\fs26 Attachment 2
+\f0\fs24 .\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f2\b \cf0 The Fix Strategy:
+\f0\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls2\ilvl0
+\f2\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Switch Input Source:
+\f0\b0  Ensure 
+\f4\fs26 StrictStructureBuilder
+\f0\fs24  ingests the 
+\f4\fs26 full_text
+\f0\fs24  of 
+\f4\fs26 Attachment 2
+\f0\fs24 , not the 
+\f4\fs26 compliance_matrix
+\f0\fs24 .\
+\ls2\ilvl0
+\f2\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Apply Regex Patch:
+\f0\b0  Update 
+\f4\fs26 section_l_parser.py
+\f0\fs24  with the cleanup logic defined in Section 18.2 [Source 586].\
+\ls2\ilvl0
+\f2\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Enforce Iron Triangle Validation:
+\f0\b0  Use the new "Validation Engine" (Section 16.4) to check if the generated volumes match the "Volume Restriction" rules [Source 574].\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f2\b\fs28 \cf0 \strokec2 The "Fix It" Prompt for Claude Code\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b0\fs24 \cf0 Run this prompt in your terminal. It points Claude directly to the admitted bugs in Section 18 and instructs it to implement the fixes.\
+\pard\pardeftab720\partightenfactor0
+
+\f4\fs26 \cf0 @AS_BUILT_v5.1.md @agents/enhanced_compliance/smart_outline_generator.py @agents/enhanced_compliance/section_l_parser.py\
+\
+Role: Lead Systems Architect\
+Context: We are fixing the "Decoupled Outline v3.0" implementation based on the known bugs identified in AS_BUILT_v5.1.md, Section 18.\
+\
+The Problem:\
+The outline generator is failing to detect the correct Volume structure (generating 4 volumes instead of 3) because it is analyzing the 'extracted requirements' rather than the 'raw document structure'.\
+\
+Your Task:\
+Refactor the `StrictStructureBuilder` (or `section_l_parser.py`) to implement the fixes described in Section 18.1 and 18.2 of the As-Built document.\
+\
+1. Fix Data Source (Section 18.1):\
+   - Modify the input handler so that `StrictStructureBuilder` receives the `full_text` of the Section L PDF (Attachment 2), NOT the extracted requirements list.\
+   - Reference Source: "Read full document text from instructions_evaluation PDF".\
+\
+2. Fix Volume Regex (Section 18.2):\
+   - Update the regex pattern in `section_l_parser.py` to handle Volume titles with parenthetical content (e.g., "Volume 1: Technical (Factor 1)").\
+   - Implement the cleanup logic to remove non-alphanumeric trailing characters.\
+   - Reference Source.\
+\
+3. Verify against Iron Triangle (Section 16.4):\
+   - Once the outline is generated, pass it through the `ValidationEngine` described in Section 16.4 [Source 574].\
+   - If the number of Volumes in the outline does not match the number of Volumes detected in the Compliance Matrix metadata, raise a `VolumeMismatchError`.\
+\
+Output:\
+Show me the specific code changes for `section_l_parser.py` and `smart_outline_generator.py` that implement these fixes.\
+}
