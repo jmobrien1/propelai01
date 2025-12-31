@@ -4569,7 +4569,13 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
 
                 # Transform v3.0 output to be compatible with UI expectations
                 v3_outline = result["annotated_outline"]
+                print(f"[v3.0 Outline] annotated_outline keys: {v3_outline.keys() if v3_outline else 'None'}")
+                print(f"[v3.0 Outline] annotated_outline.volumes count: {len(v3_outline.get('volumes', []))}")
+                if v3_outline.get('volumes'):
+                    for i, vol in enumerate(v3_outline['volumes']):
+                        print(f"[v3.0 Outline] Volume {i}: id={vol.get('id')}, title={vol.get('title')}, sections={len(vol.get('sections', []))}")
                 outline_data = _transform_v3_outline_for_ui(v3_outline, section_m)
+                print(f"[v3.0 Outline] transformed outline_data.volumes count: {len(outline_data.get('volumes', []))}")
 
                 # Store outline with v3.0 metadata
                 store.update(rfp_id, {
