@@ -128,9 +128,16 @@ class SectionLParser:
         # Extract volumes
         volumes = self._extract_volumes(full_text, warnings)
 
-        # If no explicit volumes found, try alternative patterns
+        # v5.0.5: REMOVED mention-based fallback (_extract_volumes_from_mentions)
+        # The fallback would infer volumes from keywords like "Technical Proposal"
+        # which often created HALLUCINATED volumes not in the RFP.
+        # If no explicit "Volume I:" patterns found, we fail and ask user to review.
         if not volumes:
-            volumes = self._extract_volumes_from_mentions(full_text, warnings)
+            warnings.append(
+                "No explicit volume declarations found in Section L "
+                "(e.g., 'Volume I: Technical Approach'). "
+                "Please verify the document contains proposal structure instructions."
+            )
 
         # Validate against stated count
         if stated_count and len(volumes) != stated_count:
@@ -251,10 +258,26 @@ class SectionLParser:
         warnings: List[str]
     ) -> List[VolumeInstruction]:
         """
-        Extract volumes from mentions when no explicit volume declarations found.
+        DEPRECATED (v5.0.5): Do not use this method.
 
-        Looks for "Technical Proposal", "Price Proposal", etc.
+        This method infers volumes from keyword mentions like "Technical Proposal"
+        which creates HALLUCINATED volumes that may not match RFP requirements.
+
+        The method is kept for reference only. The v5.0.5 architecture requires
+        explicit "Volume I:" patterns in Section L text. If no explicit volumes
+        are found, the system should fail and ask the user to review the RFP.
+
+        Original purpose: Extract volumes from mentions when no explicit volume
+        declarations found. Looks for "Technical Proposal", "Price Proposal", etc.
         """
+        # v5.0.5: This method should NOT be called. Return empty list.
+        warnings.append(
+            "DEPRECATED: _extract_volumes_from_mentions was called. "
+            "This fallback is disabled in v5.0.5 to prevent hallucinated volumes."
+        )
+        return []
+
+        # --- ORIGINAL CODE (disabled) ---
         volumes: List[VolumeInstruction] = []
         seen_titles: set = set()
 
