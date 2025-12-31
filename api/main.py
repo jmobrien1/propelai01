@@ -5234,6 +5234,7 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
     """
     from agents.enhanced_compliance.outline_orchestrator import OutlineOrchestrator
     from agents.enhanced_compliance.strict_structure_builder import StructureValidationError
+    from agents.enhanced_compliance.validation_engine import ValidationEngine
 
     rfp = store.get(rfp_id)
     if not rfp:
@@ -5286,19 +5287,46 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
             rfp_title=rfp.get("name", "")
         )
 
+        # Iron Triangle Validation: Check volume count consistency
+        validator = ValidationEngine()
+        generated_volumes_count = len(result["proposal_skeleton"].get("volumes", []))
+        stated_volume_count = result["proposal_skeleton"].get("stated_volume_count")
+
+        # Get compliance matrix volume count if available
+        compliance_matrix = rfp.get("compliance_matrix", {})
+        compliance_matrix_volumes = compliance_matrix.get("volumes_count") if compliance_matrix else None
+
+        volume_violations = validator.validate_outline_volume_count(
+            generated_volumes=generated_volumes_count,
+            stated_volume_count=stated_volume_count,
+            compliance_matrix_volumes=compliance_matrix_volumes
+        )
+
+        # Check for critical violations
+        critical_violations = [v for v in volume_violations if v.severity.value == "critical"]
+        if strict_mode and critical_violations:
+            violation_msgs = [v.message for v in critical_violations]
+            raise StructureValidationError(
+                f"Iron Triangle validation failed: {'; '.join(violation_msgs)}"
+            )
+
+        # Add any validation warnings to the metadata
+        validation_warnings = [v.to_dict() for v in volume_violations]
+
         # Store results in RFP store
         store.update(rfp_id, {
             "proposal_skeleton": result["proposal_skeleton"],
             "outline": result["annotated_outline"],
             "outline_version": "3.0",
-            "outline_metadata": result["injection_metadata"]
+            "outline_metadata": result["injection_metadata"],
+            "outline_validation": validation_warnings
         })
 
         return {
             "status": "success",
             "version": "3.0",
             "skeleton_valid": result["proposal_skeleton"].get("is_valid", False),
-            "volumes_count": len(result["proposal_skeleton"].get("volumes", [])),
+            "volumes_count": generated_volumes_count,
             "volumes": [
                 {
                     "title": v.get("title"),
@@ -5311,6 +5339,12 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
             "requirements_unmapped": result["injection_metadata"]["unmapped_count"],
             "low_confidence_count": result["injection_metadata"].get("low_confidence_count", 0),
             "warnings": result["injection_metadata"]["warnings"],
+            "validation": {
+                "volume_check_passed": len(critical_violations) == 0,
+                "violations": validation_warnings,
+                "stated_volume_count": stated_volume_count,
+                "compliance_matrix_volumes": compliance_matrix_volumes
+            },
             "outline": result["annotated_outline"]
         }
 

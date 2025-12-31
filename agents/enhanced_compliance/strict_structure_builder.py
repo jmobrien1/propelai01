@@ -66,6 +66,8 @@ class ProposalSkeleton:
     total_page_limit: Optional[int]
     format_rules: Dict[str, Any]
     submission_rules: Dict[str, Any]
+    # Stated volume count from Section L (for Iron Triangle validation)
+    stated_volume_count: Optional[int] = None
     # Validation status
     is_valid: bool = False
     validation_errors: List[str] = field(default_factory=list)
@@ -178,6 +180,7 @@ class StrictStructureBuilder:
             total_page_limit=total_limit,
             format_rules=dict(schema.get('format_rules', {})),
             submission_rules=dict(schema.get('submission_rules', {})),
+            stated_volume_count=stated_count,  # For Iron Triangle validation
             is_valid=(len(errors) == 0),
             validation_errors=errors,
             validation_warnings=warnings
