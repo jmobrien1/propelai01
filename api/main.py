@@ -4743,11 +4743,23 @@ async def get_outline(rfp_id: str, format: str = "json"):
         raise HTTPException(status_code=404, detail="RFP not found")
 
     outline = rfp.get("outline")
+    print(f"[GET Outline] Cached outline exists: {outline is not None}")
 
     if not outline:
         # Generate if not exists using v3.0 pipeline
+        print(f"[GET Outline] No cache, generating v3.0 outline...")
         result = await generate_outline(rfp_id, use_v3=True)
         outline = result.get("outline")
+        print(f"[GET Outline] Generation returned outline: {outline is not None}")
+
+    # Debug the response
+    if outline:
+        volumes = outline.get('volumes', [])
+        print(f"[GET Outline] Returning outline with {len(volumes)} volumes")
+        for i, vol in enumerate(volumes[:3]):
+            print(f"[GET Outline]   Volume {i}: id={vol.get('id')}, name={vol.get('name')}, sections={len(vol.get('sections', []))}")
+    else:
+        print(f"[GET Outline] WARNING: Returning null outline!")
 
     return {
         "format": "json",
