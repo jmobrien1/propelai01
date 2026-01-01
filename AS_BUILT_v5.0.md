@@ -1,7 +1,7 @@
 # PropelAI v5.0 As-Built Technical Document
 
-**Version:** 5.0.4
-**Date:** December 2024
+**Version:** 5.0.5
+**Date:** January 2025
 **Classification:** Technical Architecture Documentation
 
 ---
@@ -38,6 +38,12 @@
     - [18.1 Production Bug Fixes](#181-production-bug-fixes)
     - [18.2 Volume Title Parsing](#182-volume-title-parsing)
     - [18.3 Frontend Compatibility](#183-frontend-compatibility)
+19. [Outline Remediation v5.0.5](#19-outline-remediation-v505)
+    - [19.1 Root Cause Analysis](#191-root-cause-analysis)
+    - [19.2 Phase 1: Validation Gate](#192-phase-1-validation-gate)
+    - [19.3 Phase 2: Data Source Fix](#193-phase-2-data-source-fix)
+    - [19.4 Phase 3: Fallback Removal](#194-phase-3-fallback-removal)
+    - [19.5 Iron Triangle Validation](#195-iron-triangle-validation)
 
 ---
 
@@ -72,6 +78,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Agent Trace Log | Data Flywheel foundation (Input→Output→Correction) | v5.0.2 |
 | QA Test Infrastructure | 114 tests with GoldenRFP fixtures and CI/CD pipeline | v5.0.3 |
 | Decoupled Outline v3.0 | StrictStructureBuilder + ContentInjector + UI/Export fixes | v5.0.4 |
+| Outline Remediation | Validation gate, data source fix, fallback removal | v5.0.5 |
 
 ### 1.3 Technology Stack
 
@@ -4126,6 +4133,263 @@ Comprehensive debug logging was added to trace the outline generation pipeline:
 [v3.0 Outline] annotated_outline.volumes count: 2
 [v3.0 Outline] SUCCESS - Generated 2 volumes
 [GET Outline] Returning outline with 2 volumes
+```
+
+---
+
+## 19. Outline Remediation v5.0.5
+
+**Location:** `api/main.py`, `agents/enhanced_compliance/section_l_parser.py`, `agents/enhanced_compliance/validation_engine.py`, `agents/enhanced_compliance/strict_structure_builder.py`
+
+The v5.0.4 fixes addressed immediate bugs but didn't resolve the root cause of outline hallucination. v5.0.5 implements a comprehensive three-phase remediation based on expert analysis.
+
+### 19.1 Root Cause Analysis
+
+**The Problem:** The outline generator was producing incorrect volumes (e.g., 4 volumes when RFP specified 3) because of three architectural failures:
+
+| Failure Mode | Description | Impact |
+|--------------|-------------|--------|
+| **Data Source** | System passed extracted requirements (flat list) instead of full PDF text | Volume headers like "Volume I: Technical" were lost |
+| **Lenient Mode** | `strict_mode=False` allowed validation errors to be ignored | Invalid outlines reached the UI |
+| **Fallback Chain** | SmartOutlineGenerator defaults created hardcoded volumes | Hallucinated Past Performance, Management volumes |
+
+**The Iron Triangle Principle:**
+
+```
+Section L → STRUCTURE (mandatory, non-negotiable)
+Section M → EVALUATION WEIGHTS (scoring criteria)
+Section C → CONTENT (requirements to inject)
+```
+
+Government procurement requires exact compliance with Section L structure. Submitting the wrong number of volumes results in **immediate disqualification** as non-responsive.
+
+### 19.2 Phase 1: Validation Gate
+
+**Goal:** Ensure invalid outlines never reach the UI.
+
+**Changes to `/api/rfp/{rfp_id}/outline` endpoint:**
+
+```python
+# Changed: strict_mode now defaults to True
+async def generate_outline(rfp_id: str, strict_mode: bool = True):
+    ...
+    # Pass strict_mode to orchestrator
+    orchestrator = OutlineOrchestrator(strict_mode=strict_mode)
+```
+
+**Three Validation Gates:**
+
+| Gate | Condition | Action |
+|------|-----------|--------|
+| Gate 1 | `volumes_count == 0` | HTTP 422: "No volumes found in Section L" |
+| Gate 2 | `skeleton_valid == False` | HTTP 422: "Structure validation failed" |
+| Gate 3 | `stated_volume_count != generated_count` | HTTP 422: "Iron Triangle validation failed" |
+
+**Lenient Mode Response:**
+
+When `strict_mode=False`, validation failures return with `requires_manual_review: True` instead of blocking.
+
+### 19.3 Phase 2: Data Source Fix
+
+**Goal:** Ensure StrictStructureBuilder receives full PDF text, not concatenated requirements.
+
+**Change 1: Store full text during processing**
+
+```python
+# In process_rfp_resilient_background():
+section_l_full_text = None  # Capture during parsing
+
+for file_path in file_paths:
+    parsed = parser.parse_file(file_path, doc_type)
+    if parsed:
+        # Capture Section L full text for outline generation
+        guided_doc_type = document_metadata.get(filename, {}).get("doc_type", "")
+        if guided_doc_type in ["instructions_evaluation", "combined_lm", "instructions"]:
+            section_l_full_text = parsed.full_text
+
+# Store with RFP data
+if section_l_full_text:
+    update_data["section_l_full_text"] = section_l_full_text
+```
+
+**Change 2: Remove dangerous fallback**
+
+```python
+# REMOVED: The fallback that concatenated requirements
+# if not section_l_text:
+#     section_l_text = "\n\n".join([r.get("text") for r in section_l])
+
+# NEW: Fail with clear error
+if not section_l_text:
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "error": "Cannot determine proposal structure",
+            "reason": "Full Section L document text is not available.",
+            "action": "Please re-upload the Instructions/Evaluation document."
+        }
+    )
+```
+
+**Data Flow (Fixed):**
+
+```
+PDF Upload → parse_file() → full_text with "VOLUME I:" headers
+                              ↓
+              Store as rfp["section_l_full_text"]
+                              ↓
+         Outline Generation reads full text
+                              ↓
+         SectionLParser finds explicit volumes
+                              ↓
+         Correct outline generated ✓
+```
+
+### 19.4 Phase 3: Fallback Removal
+
+**Goal:** Eliminate all paths that can create hallucinated volumes.
+
+**Change 1: Remove SmartOutlineGenerator from API**
+
+The entire fallback chain to SmartOutlineGenerator was removed:
+
+```python
+# REMOVED from api/main.py:
+# except Exception:
+#     generator = SmartOutlineGenerator()
+#     outline = generator.generate_from_compliance_matrix(...)
+```
+
+Now, if v3.0 fails, the API returns an error instead of silently using legacy defaults.
+
+**Change 2: Deprecate mention-based extraction**
+
+```python
+# In section_l_parser.py - REMOVED the call:
+# if not volumes:
+#     volumes = self._extract_volumes_from_mentions(full_text, warnings)
+
+# NEW: Just warn if no volumes found
+if not volumes:
+    warnings.append(
+        "No explicit volume declarations found in Section L "
+        "(e.g., 'Volume I: Technical Approach'). "
+        "Please verify the document contains proposal structure instructions."
+    )
+```
+
+The `_extract_volumes_from_mentions()` method is now deprecated and returns empty list if called.
+
+**Why Mention-Based Extraction Was Dangerous:**
+
+| RFP Text | Mention-Based Result | Correct Result |
+|----------|---------------------|----------------|
+| "Submit a technical proposal and cost proposal" | 2 volumes (Technical, Cost) | Depends on Section L structure |
+| "Past performance may be discussed in Section 1.3" | 3 volumes (includes Past Performance) | Wrong if PP isn't a separate volume |
+| No explicit "Volume I:" patterns | Infers from keywords | Should fail and ask user |
+
+### 19.5 Iron Triangle Validation
+
+**Goal:** Cross-validate generated outline against RFP specifications.
+
+**New Method in ValidationEngine:**
+
+```python
+def validate_outline_volume_count(
+    self,
+    generated_volumes: int,
+    stated_volume_count: Optional[int],
+    compliance_matrix_volumes: Optional[int] = None,
+) -> List[ValidationViolation]:
+    """
+    Validate that generated outline volume count matches RFP specifications.
+    """
+    violations = []
+
+    # Check against stated volume count from Section L
+    if stated_volume_count is not None and generated_volumes != stated_volume_count:
+        violations.append(ValidationViolation(
+            violation_type=ViolationType.VOLUME_COUNT_MISMATCH,
+            severity=Severity.CRITICAL,  # Non-negotiable
+            message=f"Generated {generated_volumes} volumes but Section L specifies {stated_volume_count}",
+        ))
+
+    # Cross-check against Compliance Matrix
+    if compliance_matrix_volumes is not None and generated_volumes != compliance_matrix_volumes:
+        violations.append(ValidationViolation(
+            violation_type=ViolationType.VOLUME_COUNT_MISMATCH,
+            severity=Severity.WARNING,
+            message=f"Generated {generated_volumes} volumes but Compliance Matrix shows {compliance_matrix_volumes}",
+        ))
+
+    return violations
+```
+
+**New Field in ProposalSkeleton:**
+
+```python
+@dataclass
+class ProposalSkeleton:
+    rfp_number: str
+    rfp_title: str
+    volumes: List[SkeletonVolume]
+    total_page_limit: Optional[int]
+    format_rules: Dict[str, Any]
+    submission_rules: Dict[str, Any]
+    stated_volume_count: Optional[int] = None  # NEW: For Iron Triangle validation
+    is_valid: bool = False
+    validation_errors: List[str] = field(default_factory=list)
+    validation_warnings: List[str] = field(default_factory=list)
+```
+
+**API Response Enhancement:**
+
+```json
+{
+  "status": "generated",
+  "version": "3.0",
+  "skeleton_valid": true,
+  "volumes_count": 3,
+  "stated_volume_count": 3,
+  "validation": {
+    "volume_check_passed": true,
+    "violations": [],
+    "errors": [],
+    "warnings": []
+  },
+  "outline": {...}
+}
+```
+
+### 19.6 Breaking Changes
+
+| Change | Impact | Migration |
+|--------|--------|-----------|
+| `strict_mode=True` default | Invalid outlines return HTTP 422 | Use `?strict_mode=false` for debugging |
+| No SmartOutlineGenerator fallback | Legacy mode no longer available | Ensure full PDF text is available |
+| Requires full PDF text | Can't generate from requirements only | Re-upload Section L if needed |
+
+### 19.7 Test Results
+
+```
+Test 1 - Parser with no volumes:
+  Volumes found: 0
+  Warnings: ["No explicit volume declarations found..."]
+  ✓ PASSED - No hallucinated volumes
+
+Test 2 - Parser with explicit volumes:
+  Volumes found: 3
+  Stated count: 3
+  ✓ PASSED - Found all 3 volumes
+
+Test 3 - Skeleton has stated_volume_count:
+  stated_volume_count in skeleton: 3
+  ✓ PASSED
+
+Test 4 - Volume count mismatch validation:
+  Violations: 1
+  Message: Generated 2 volumes but Section L specifies 3
+  ✓ PASSED - Mismatch detected as CRITICAL
 ```
 
 ---
