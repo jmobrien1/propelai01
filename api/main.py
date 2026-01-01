@@ -3055,6 +3055,8 @@ def process_rfp_resilient_background(rfp_id: str):
                 return DocumentType.ATTACHMENT
 
         documents = []
+        section_l_full_text = None  # v5.0.5: Store Section L full text for outline generation
+
         for file_path in file_paths:
             try:
                 import os
@@ -3081,6 +3083,18 @@ def process_rfp_resilient_background(rfp_id: str):
                         'pages': parsed.pages if parsed.pages else [parsed.full_text],
                         'content_type': content_type,  # Pass to extractor for categorization
                     })
+
+                    # v5.0.5: Capture Section L full text for outline generation
+                    # This preserves volume headers like "Volume I: Technical Approach"
+                    guided_doc_type = document_metadata.get(filename, {}).get("doc_type", "")
+                    if guided_doc_type in ["instructions_evaluation", "combined_lm", "instructions", "instructions_only"]:
+                        section_l_full_text = parsed.full_text
+                        print(f"[v5.0.5] Stored section_l_full_text from {filename}: {len(section_l_full_text)} chars")
+                    elif content_type == "section_lm" and section_l_full_text is None:
+                        # Fallback: use inferred Section L content if no guided upload
+                        section_l_full_text = parsed.full_text
+                        print(f"[v5.0.5] Stored section_l_full_text from inferred {filename}: {len(section_l_full_text)} chars")
+
             except Exception as e:
                 print(f"Warning: Could not parse {file_path}: {e}")
 
@@ -3203,14 +3217,22 @@ def process_rfp_resilient_background(rfp_id: str):
 
         # Store results
         # v4.0 FIX: Clear cached outline when reprocessing to prevent stale data
-        store.update(rfp_id, {
+        # v5.0.5: Store section_l_full_text for outline generation (preserves volume headers)
+        update_data = {
             "status": "completed",
             "requirements": requirements,
             "resilient_result": result.to_dict(),
             "stats": stats,
             "extraction_mode": "resilient_v3",
             "outline": None  # Clear cached outline - will be regenerated from new requirements
-        })
+        }
+
+        # v5.0.5: Store Section L full text if captured during parsing
+        if section_l_full_text:
+            update_data["section_l_full_text"] = section_l_full_text
+            print(f"[v5.0.5] Storing section_l_full_text: {len(section_l_full_text)} chars")
+
+        store.update(rfp_id, update_data)
 
         # Log quality summary
         if metrics.anomalies:
@@ -4437,20 +4459,24 @@ async def get_stats(rfp_id: str):
 # ============== Proposal Outline ==============
 
 @app.post("/api/rfp/{rfp_id}/outline")
-async def generate_outline(rfp_id: str, use_v3: bool = True):
+async def generate_outline(rfp_id: str, strict_mode: bool = True):
     """
-    Generate proposal outline from RFP.
+    Generate proposal outline from RFP using v3.0 architecture.
 
-    v3.0: Uses OutlineOrchestrator with StrictStructureBuilder for accurate
-    structure extraction from Section L. Falls back to SmartOutlineGenerator
-    if v3.0 fails.
+    v3.0 Architecture (Phases 1-3 Remediation):
+    - Uses OutlineOrchestrator with StrictStructureBuilder
+    - Requires full PDF text (not extracted requirements)
+    - Validates structure before returning
+    - NO fallback to legacy SmartOutlineGenerator
 
     Args:
         rfp_id: RFP project ID
-        use_v3: If True (default), use v3.0 OutlineOrchestrator.
-                If False, use legacy SmartOutlineGenerator.
+        strict_mode: If True (default), fail on validation errors.
+                    If False, return with requires_manual_review flag.
     """
-    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
+    from agents.enhanced_compliance.outline_orchestrator import OutlineOrchestrator
+    from agents.enhanced_compliance.strict_structure_builder import StructureValidationError
+    from agents.enhanced_compliance.validation_engine import ValidationEngine
 
     rfp = store.get(rfp_id)
     if not rfp:
@@ -4458,7 +4484,6 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
 
     # Check if we have compliance matrix data
     requirements = rfp.get("requirements", [])
-    stats = rfp.get("stats", {})
 
     if not requirements:
         raise HTTPException(
@@ -4501,146 +4526,221 @@ async def generate_outline(rfp_id: str, use_v3: bool = True):
     if not section_l and section_m:
         section_l = section_m
 
-    # Try v3.0 OutlineOrchestrator first
-    if use_v3:
-        try:
-            from agents.enhanced_compliance.outline_orchestrator import OutlineOrchestrator
-            from agents.enhanced_compliance.strict_structure_builder import StructureValidationError
+    # ==================== PHASE 2: Get Full PDF Text ====================
+    # CRITICAL: We MUST read the full PDF text to get volume structure.
+    # Extracted requirements lose "Volume I: Technical" headers!
+    section_l_text = ""
+    section_l_source = None
 
-            # v3.0 FIX: Read FULL TEXT of instructions_evaluation document, not just extracted requirements
-            # The volume structure ("Volume I: Technical") is in the document but not extracted as requirements
-            section_l_text = ""
-            attachment_texts = {}
+    # Try to get full text from stored section_l_full_text (set during processing)
+    if rfp.get("section_l_full_text"):
+        section_l_text = rfp["section_l_full_text"]
+        section_l_source = "stored_full_text"
+        print(f"[v3.0 Outline] Using stored section_l_full_text: {len(section_l_text)} chars")
 
-            document_metadata = rfp.get("document_metadata", {})
-            print(f"[v3.0 Outline] document_metadata has {len(document_metadata)} documents: {list(document_metadata.keys())}")
-            for doc_name, doc_info in document_metadata.items():
-                print(f"[v3.0 Outline] Checking {doc_name}: doc_type={doc_info.get('doc_type', 'MISSING')}")
-                doc_type = doc_info.get("doc_type", "")
-                file_path = doc_info.get("file_path", "")
+    # Fallback: Try to read from instructions_evaluation document
+    if not section_l_text:
+        document_metadata = rfp.get("document_metadata", {})
+        print(f"[v3.0 Outline] document_metadata has {len(document_metadata)} documents: {list(document_metadata.keys())}")
 
-                if doc_type == "instructions_evaluation" and file_path:
-                    try:
-                        print(f"[v3.0 Outline] Attempting to parse: {file_path}")
-                        from agents.enhanced_compliance import MultiFormatParser
-                        from agents.enhanced_compliance.models import DocumentType as ParserDocType
-                        parser = MultiFormatParser()
-                        # parse_file requires doc_type - use ATTACHMENT as generic type for text extraction
-                        parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
-                        print(f"[v3.0 Outline] Parsed result type: {type(parsed)}, value: {parsed is not None}")
-                        # ParsedDocument uses 'full_text' attribute, not 'text'
-                        if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
-                            section_l_text = parsed.full_text
-                            print(f"[v3.0 Outline] Read full text from {doc_name}: {len(section_l_text)} chars")
-                        elif parsed and isinstance(parsed, dict) and parsed.get('full_text'):
-                            section_l_text = parsed['full_text']
-                            print(f"[v3.0 Outline] Read full text from {doc_name}: {len(section_l_text)} chars")
-                        else:
-                            print(f"[v3.0 Outline] Parsed has no usable full_text attribute")
-                    except Exception as e:
-                        import traceback
-                        print(f"[v3.0 Outline] WARN: Could not read {doc_name}: {e}")
-                        print(f"[v3.0 Outline] Traceback: {traceback.format_exc()}")
+        for doc_name, doc_info in document_metadata.items():
+            doc_type = doc_info.get("doc_type", "")
+            file_path = doc_info.get("file_path", "")
 
-            # Fallback: use extracted requirements if no document text found
-            if not section_l_text:
-                section_l_text = "\n\n".join([
-                    r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
-                    for r in section_l
-                    if r.get("text") or r.get("full_text") or r.get("requirement_text")
-                ])
-                print(f"[v3.0 Outline] Fallback: Using extracted requirements ({len(section_l)} reqs, {len(section_l_text)} chars)")
+            if doc_type == "instructions_evaluation" and file_path:
+                try:
+                    print(f"[v3.0 Outline] Reading full text from: {file_path}")
+                    from agents.enhanced_compliance import MultiFormatParser
+                    from agents.enhanced_compliance.models import DocumentType as ParserDocType
+                    parser = MultiFormatParser()
+                    parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
 
-            # Debug logging for v3.0 pipeline
-            print(f"[v3.0 Outline] Section L text length: {len(section_l_text)} chars")
-            if section_l_text:
-                print(f"[v3.0 Outline] Text preview: {section_l_text[:300]}...")
+                    if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
+                        section_l_text = parsed.full_text
+                        section_l_source = f"document:{doc_name}"
+                        print(f"[v3.0 Outline] Read {len(section_l_text)} chars from {doc_name}")
+                    elif parsed and isinstance(parsed, dict) and parsed.get('full_text'):
+                        section_l_text = parsed['full_text']
+                        section_l_source = f"document:{doc_name}"
+                        print(f"[v3.0 Outline] Read {len(section_l_text)} chars from {doc_name}")
+                except Exception as e:
+                    print(f"[v3.0 Outline] WARN: Could not read {doc_name}: {e}")
 
-            if section_l_text:
-                print(f"[v3.0 Outline] Starting v3.0 pipeline...")
-                orchestrator = OutlineOrchestrator(strict_mode=False)  # Allow warnings
-                result = orchestrator.generate_outline(
-                    section_l_text=section_l_text,
-                    requirements=technical,
-                    evaluation_criteria=section_m,
-                    rfp_number=rfp.get("solicitation_number", ""),
-                    rfp_title=rfp.get("name", "")
-                )
-
-                # Transform v3.0 output to be compatible with UI expectations
-                v3_outline = result["annotated_outline"]
-                print(f"[v3.0 Outline] annotated_outline keys: {v3_outline.keys() if v3_outline else 'None'}")
-                print(f"[v3.0 Outline] annotated_outline.volumes count: {len(v3_outline.get('volumes', []))}")
-                if v3_outline.get('volumes'):
-                    for i, vol in enumerate(v3_outline['volumes']):
-                        print(f"[v3.0 Outline] Volume {i}: id={vol.get('id')}, title={vol.get('title')}, sections={len(vol.get('sections', []))}")
-                outline_data = _transform_v3_outline_for_ui(v3_outline, section_m)
-                print(f"[v3.0 Outline] transformed outline_data.volumes count: {len(outline_data.get('volumes', []))}")
-
-                # Store outline with v3.0 metadata
-                store.update(rfp_id, {
-                    "outline": outline_data,
-                    "proposal_skeleton": result["proposal_skeleton"],
-                    "outline_version": "3.0",
-                    "outline_metadata": result["injection_metadata"]
-                })
-
-                volumes_count = len(result["proposal_skeleton"].get("volumes", []))
-                print(f"[v3.0 Outline] SUCCESS - Generated {volumes_count} volumes")
-                return {
-                    "status": "generated",
-                    "version": "3.0",
-                    "outline": outline_data,
-                    "skeleton_valid": result["proposal_skeleton"].get("is_valid", False),
-                    "warnings": result["injection_metadata"].get("warnings", [])
-                }
-            else:
-                print(f"[v3.0 Outline] SKIP - No Section L text found, falling back to legacy")
-
-        except StructureValidationError as e:
-            print(f"[v3.0 Outline] FAILED - Structure validation error: {e}")
-        except Exception as e:
-            print(f"[v3.0 Outline] FAILED - Exception: {e}")
-            import traceback
-            traceback.print_exc()
-
-    # Fall back to legacy SmartOutlineGenerator
-    try:
-        generator = SmartOutlineGenerator()
-
-        # v4.2: Include Company Library data for win theme generation
-        company_library_data = None
-        if COMPANY_LIBRARY_AVAILABLE and company_library:
-            try:
-                company_library_data = company_library.get_profile()
-            except Exception as e:
-                print(f"[WARN] Could not fetch Company Library: {e}")
-
-        outline = generator.generate_from_compliance_matrix(
-            section_l_requirements=section_l,
-            section_m_requirements=section_m,
-            technical_requirements=technical,
-            stats=stats,
-            company_library_data=company_library_data
+    # ==================== PHASE 2: NO FALLBACK TO REQUIREMENTS ====================
+    # REMOVED: The dangerous fallback that concatenated requirements and lost volume structure
+    # If we can't get full PDF text, we MUST fail and ask user to re-upload
+    if not section_l_text:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "Cannot determine proposal structure",
+                "reason": "Full Section L/Attachment document text is not available. "
+                         "The extracted requirements do not contain volume structure information.",
+                "action": "Please re-upload the Instructions/Evaluation document (Section L) "
+                         "or the attachment containing proposal format requirements.",
+                "technical_detail": "Volume headers like 'Volume I: Technical Approach' are "
+                                   "needed for accurate structure extraction."
+            }
         )
 
-        # Convert to JSON
-        outline_data = generator.to_json(outline)
+    # ==================== Generate Outline with v3.0 ====================
+    print(f"[v3.0 Outline] Starting pipeline with {len(section_l_text)} chars from {section_l_source}")
 
-        # Store outline
-        store.update(rfp_id, {"outline": outline_data, "outline_version": "legacy"})
+    try:
+        # PHASE 1: Enable strict_mode by default
+        orchestrator = OutlineOrchestrator(strict_mode=strict_mode)
+        result = orchestrator.generate_outline(
+            section_l_text=section_l_text,
+            requirements=technical,
+            evaluation_criteria=section_m,
+            rfp_number=rfp.get("solicitation_number", ""),
+            rfp_title=rfp.get("name", "")
+        )
 
-        return {
-            "status": "generated",
-            "version": "legacy",
+        skeleton = result["proposal_skeleton"]
+        v3_outline = result["annotated_outline"]
+        injection_metadata = result["injection_metadata"]
+
+        # ==================== PHASE 1: Validation Gate ====================
+        # Check skeleton validity BEFORE returning
+        skeleton_valid = skeleton.get("is_valid", False)
+        volumes_count = len(skeleton.get("volumes", []))
+        stated_volume_count = skeleton.get("stated_volume_count")
+        validation_errors = skeleton.get("validation_errors", [])
+        validation_warnings = skeleton.get("validation_warnings", [])
+
+        print(f"[v3.0 Outline] Skeleton: valid={skeleton_valid}, volumes={volumes_count}, stated={stated_volume_count}")
+        print(f"[v3.0 Outline] Errors: {validation_errors}")
+        print(f"[v3.0 Outline] Warnings: {validation_warnings}")
+
+        # Iron Triangle Validation: Check volume count
+        validator = ValidationEngine()
+        compliance_matrix = rfp.get("compliance_matrix", {})
+        compliance_matrix_volumes = compliance_matrix.get("volumes_count") if compliance_matrix else None
+
+        volume_violations = validator.validate_outline_volume_count(
+            generated_volumes=volumes_count,
+            stated_volume_count=stated_volume_count,
+            compliance_matrix_volumes=compliance_matrix_volumes
+        )
+
+        critical_violations = [v for v in volume_violations if v.severity.value == "critical"]
+        all_violations = [v.to_dict() for v in volume_violations]
+
+        # Gate 1: No volumes found
+        if volumes_count == 0:
+            error_msg = "No volumes found in Section L. Cannot generate outline."
+            if strict_mode:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": error_msg,
+                        "validation_errors": validation_errors,
+                        "suggestion": "Ensure Section L contains explicit volume declarations "
+                                     "(e.g., 'Volume I: Technical Approach')"
+                    }
+                )
+            # Lenient mode: return with review flag
+            return {
+                "status": "requires_manual_review",
+                "version": "3.0",
+                "error": error_msg,
+                "skeleton_valid": False,
+                "volumes_count": 0,
+                "validation_errors": validation_errors,
+                "outline": None
+            }
+
+        # Gate 2: Skeleton validation failed
+        if not skeleton_valid and validation_errors:
+            if strict_mode:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "Structure validation failed",
+                        "validation_errors": validation_errors,
+                        "volumes_found": volumes_count,
+                        "stated_volume_count": stated_volume_count
+                    }
+                )
+            # Lenient mode continues with warning
+
+        # Gate 3: Iron Triangle volume count mismatch
+        if critical_violations and strict_mode:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "Iron Triangle validation failed",
+                    "violations": all_violations,
+                    "volumes_generated": volumes_count,
+                    "stated_volume_count": stated_volume_count,
+                    "suggestion": "Review Section L to verify the correct number of volumes"
+                }
+            )
+
+        # ==================== Success: Transform and Return ====================
+        outline_data = _transform_v3_outline_for_ui(v3_outline, section_m)
+
+        # Store outline with metadata
+        store.update(rfp_id, {
             "outline": outline_data,
-            "warning": "Using legacy SmartOutlineGenerator. v3.0 may produce more accurate results."
+            "proposal_skeleton": skeleton,
+            "outline_version": "3.0",
+            "outline_metadata": injection_metadata,
+            "outline_validation": all_violations,
+            "section_l_source": section_l_source
+        })
+
+        print(f"[v3.0 Outline] SUCCESS - Generated {volumes_count} volumes")
+
+        response = {
+            "status": "generated",
+            "version": "3.0",
+            "outline": outline_data,
+            "skeleton_valid": skeleton_valid,
+            "volumes_count": volumes_count,
+            "stated_volume_count": stated_volume_count,
+            "requirements_mapped": injection_metadata.get("mapped_count", 0),
+            "requirements_unmapped": injection_metadata.get("unmapped_count", 0),
+            "validation": {
+                "volume_check_passed": len(critical_violations) == 0,
+                "violations": all_violations,
+                "errors": validation_errors,
+                "warnings": validation_warnings + injection_metadata.get("warnings", [])
+            }
         }
 
+        # Add review flag if there are issues but we're in lenient mode
+        if not skeleton_valid or validation_errors or critical_violations:
+            response["requires_manual_review"] = True
+
+        return response
+
+    except StructureValidationError as e:
+        # v3.0 raised a structure error - don't fall back to legacy!
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "Structure validation failed",
+                "message": str(e),
+                "suggestion": "Review Section L document for explicit volume declarations"
+            }
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         import traceback
+        print(f"[v3.0 Outline] FAILED - Exception: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Outline generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Outline generation failed",
+                "message": str(e),
+                "type": type(e).__name__
+            }
+        )
 
 
 def _transform_v3_outline_for_ui(v3_outline: dict, eval_criteria: list) -> dict:
