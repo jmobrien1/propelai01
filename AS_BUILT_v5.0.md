@@ -4398,9 +4398,9 @@ Test 4 - Volume count mismatch validation:
 
 ### 19.8 Endpoint Consolidation (v5.0.5-hotfix)
 
-**Problem Discovered:** Despite the v5.0.5 three-phase fix, phantom volumes (e.g., "Past Performance", "Staffing Plan") were still appearing. Expert analysis revealed that the fix only covered ONE of FOUR outline generation paths.
+**Problem Discovered:** Despite the v5.0.5 three-phase fix, phantom volumes (e.g., "Past Performance", "Staffing Plan") were still appearing. Expert analysis revealed that the fix only covered ONE of FIVE outline generation paths.
 
-**Root Cause:** Four different API endpoints could generate outlines, but only `POST /outline` was using the v3.0 pipeline:
+**Root Cause:** Five different API endpoints could generate outlines, but only `POST /outline` was using the v3.0 pipeline correctly:
 
 | Endpoint | Before v5.0.5-hotfix | Status |
 |----------|---------------------|--------|
@@ -4408,6 +4408,7 @@ Test 4 - Volume count mismatch validation:
 | `GET /api/rfp/{rfp_id}/outline` | Wrong parameter name | ✗ Broken |
 | `GET /api/rfp/{rfp_id}/outline/export` | SmartOutlineGenerator | ✗ Broken |
 | `POST /api/rfp/{rfp_id}/master-architect` | SmartOutlineGenerator (Phase 2) | ✗ Broken |
+| `POST /api/rfp/{rfp_id}/outline/v3` | Concatenated requirements | ✗ Broken |
 
 **Fix 1: GET /outline Parameter Name**
 
@@ -4502,15 +4503,48 @@ if phase is None or phase == 2:
     }
 ```
 
+**Fix 4: POST /outline/v3 - Data Source Fix**
+
+The `/outline/v3` endpoint (ironically named "v3") was building `section_l_text` by concatenating extracted requirements, losing volume headers:
+
+```python
+# BEFORE (broken - loses "Volume I: Technical" headers)
+section_l_text = "\n\n".join([
+    r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
+    for r in instructions
+])
+
+# AFTER (correct - uses full PDF text)
+# Try stored full text first
+if rfp.get("section_l_full_text"):
+    section_l_text = rfp["section_l_full_text"]
+
+# Fallback: read from instructions_evaluation document
+if not section_l_text:
+    for doc_name, doc_info in document_metadata.items():
+        if doc_info.get("doc_type") == "instructions_evaluation":
+            parser = MultiFormatParser()
+            parsed = parser.parse_file(doc_info["file_path"], ...)
+            section_l_text = parsed.full_text
+
+# NO fallback to concatenation - fail with HTTP 422
+if not section_l_text:
+    raise HTTPException(status_code=422, detail={
+        "error": "Cannot determine proposal structure",
+        "action": "Re-upload Instructions/Evaluation document"
+    })
+```
+
 **Result: Single Source of Truth**
 
-All four endpoints now route through the same validated v3.0 pipeline:
+All five endpoints now route through the same validated v3.0 pipeline:
 
 ```
 POST /outline       ──┐
-GET /outline        ──┼──→ generate_outline(strict_mode=True)
-GET /outline/export ──┤          ↓
-POST /master-architect┘    OutlineOrchestrator
+GET /outline        ──┤
+GET /outline/export ──┼──→ generate_outline(strict_mode=True)
+POST /master-architect│          ↓
+POST /outline/v3    ──┘    OutlineOrchestrator
                                  ↓
                          StrictStructureBuilder
                                  ↓
