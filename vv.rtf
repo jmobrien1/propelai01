@@ -1,0 +1,197 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\fswiss\fcharset0 Helvetica-Bold;\f2\fmodern\fcharset0 Courier;
+\f3\fmodern\fcharset0 Courier-Bold;\f4\fnil\fcharset0 LucidaGrande;\f5\fswiss\fcharset0 Helvetica-Oblique;
+}
+{\colortbl;\red255\green255\blue255;\red36\green36\blue36;\red255\green255\blue255;\red30\green31\blue33;
+\red183\green187\blue184;\red0\green0\blue0;\red194\green200\blue208;}
+{\*\expandedcolortbl;;\cssrgb\c18824\c18824\c18824;\cssrgb\c100000\c100000\c100000;\cssrgb\c15686\c16471\c17255;
+\cssrgb\c76863\c78039\c77255;\cssrgb\c0\c0\c0;\cssrgb\c80392\c82353\c85098;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs28 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Despite the fixes, the system is actively bypassing your "Iron Triangle" logic and reverting to the "Shipley Fallback" structure you explicitly tried to remove.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 1. Evidence of Persistent Failure
+\f0\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 According to 
+\f2 \cf4 \cb5 \strokec4 AS_BUILT_v5.0.md
+\f0 \cf2 \cb3 \strokec2 , the v5.0.5 update was supposed to "Kill the Fallback" and ensure 
+\f2 \cf4 \cb5 \strokec4 StrictStructureBuilder
+\f0 \cf2 \cb3 \strokec2  uses the raw PDF text [Source 280, 283]. However, the latest outlines (
+\f2 \cf4 \cb5 \strokec4 019RFP
+\f0 \cf2 \cb3 \strokec2  and 
+\f2 \cf4 \cb5 \strokec4 09RFP
+\f0 \cf2 \cb3 \strokec2 ) exhibit the exact hallucination pattern identified as the root cause in v5.0.4:\cb1 \
+
+\itap1\trowd \taflags1 \trgaph108\trleft-108 \tamarb240 \trbrdrt\brdrs\brdrw20\brdrcf7 \trbrdrl\brdrs\brdrw20\brdrcf7 \trbrdrr\brdrs\brdrw20\brdrcf7 \tapadb240 
+\clvertalc \clshdrawnil \clwWidth1821\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth3808\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth9310\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec6 Defect\cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Evidence in New Outlines (
+\f3 \cf4 \cb5 \strokec4 019RFP
+\f1 \cf2 \cb3 \strokec6 , 
+\f3 \cf4 \cb5 \strokec4 09RFP
+\f1 \cf2 \cb3 \strokec6 )
+\f0\b0 \cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Violated Logic
+\f0\b0 \cf0 \cb1 \cell \row
+
+\itap1\trowd \taflags1 \trgaph108\trleft-108 \tamarb240 \trbrdrl\brdrs\brdrw20\brdrcf7 \trbrdrr\brdrs\brdrw20\brdrcf7 \tapadb240 
+\clvertalc \clshdrawnil \clwWidth1821\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth3808\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth9310\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Phantom Volume
+\f0\b0 \cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf2 \cb3 "4. Past Performance" and "5. Staffing Plan" appear as distinct sections [Source 30, 32].\cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Shipley Fallback:
+\f0\b0  These are standard Shipley sections but are 
+\f1\b not
+\f0\b0  requested as separate volumes in the Space C2 RFP (which integrates Staffing into Vol 1 and evaluates Past Perf differently) [Source 890, 893].\cf0 \cb1 \cell \row
+
+\itap1\trowd \taflags1 \trgaph108\trleft-108 \tamarb240 \trbrdrl\brdrs\brdrw20\brdrcf7 \trbrdrr\brdrs\brdrw20\brdrcf7 \tapadb240 
+\clvertalc \clshdrawnil \clwWidth1821\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth3808\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth9310\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Volume Displacement
+\f0\b0 \cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf2 \cb3 "VOLUME 3: COST/PRICE" is generated [Source 30].\cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Iron Triangle Failure:
+\f0\b0  The Space C2 RFP mandates 
+\f1\b Volume 2
+\f0\b0  for Cost & Price [Source 855]. The system pushed Cost to Volume 3 because it inserted the phantom Past Performance/Staffing sections.\cf0 \cb1 \cell \row
+
+\itap1\trowd \taflags1 \trgaph108\trleft-108 \tamarb240 \trbrdrl\brdrs\brdrw20\brdrcf7 \trbrdrb\brdrs\brdrw20\brdrcf7 \trbrdrr\brdrs\brdrw20\brdrcf7 \tapadb240 
+\clvertalc \clshdrawnil \clwWidth1821\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx2880
+\clvertalc \clshdrawnil \clwWidth3808\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx5760
+\clvertalc \clshdrawnil \clwWidth9310\clftsWidth3 \clbrdrt\brdrs\brdrw20\brdrcf7 \clbrdrl\brdrs\brdrw20\brdrcf7 \clbrdrb\brdrs\brdrw20\brdrcf7 \clbrdrr\brdrs\brdrw20\brdrcf7 \clpadt60 \clpadl60 \clpadb60 \clpadr60 \gaph\cellx8640
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Structure Hallucination
+\f0\b0 \cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+\cf2 \cb3 Sections are numbered "4" and "5" outside the Volume hierarchy [Source 30].\cf0 \cb1 \cell 
+\pard\intbl\itap1\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Context Stripping:
+\f0\b0  The system likely failed to parse the PDF structure again and reverted to a default list of "standard proposal sections."\cf0 \cb1 \cell \lastrow\row
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 \strokec2 2. Forensic Diagnosis: Why the Fix Failed
+\f0\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 Based on the architecture defined in 
+\f2 \cf4 \cb5 \strokec4 AB.md
+\f0 \cf2 \cb3 \strokec2 , the failure is occurring at 
+\f1\b Gate 2
+\f0\b0  or 
+\f1\b Gate 3
+\f0\b0  of your new validation pipeline:\cb1 \
+\cb3 \'95 
+\f1\b Hypothesis A: The "Fallback" wasn't actually removed.
+\f0\b0 \cb1 \
+\cb3 \'a0\'a0\'a0\'a0
+\f4 \uc0\u9702 
+\f0  
+\f2 \cf4 \cb5 \strokec4 AS_BUILT_v5.0.md
+\f0 \cf2 \cb3 \strokec2  Section 19.4 states "Remove SmartOutlineGenerator from API" [Source 283]. However, the output looks exactly like the "Shipley" defaults. It is highly probable that the 
+\f2 \cf4 \cb5 \strokec4 StrictStructureBuilder
+\f0 \cf2 \cb3 \strokec2  crashed (likely due to the regex issues mentioned in Section 18.2 [Source 278]) and the system 
+\f5\i silently
+\f0\i0  reverted to a hardcoded safe mode that wasn't fully deleted.\cb1 \
+\cb3 \'95 
+\f1\b Hypothesis B: The Validation Gate is "Leaking".
+\f0\b0 \cb1 \
+\cb3 \'a0\'a0\'a0\'a0
+\f4 \uc0\u9702 
+\f0  Section 19.2 describes a "Validation Gate" that returns 
+\f2 \cf4 \cb5 \strokec4 HTTP 422
+\f0 \cf2 \cb3 \strokec2  if 
+\f2 \cf4 \cb5 \strokec4 stated_volume_count != generated_count
+\f0 \cf2 \cb3 \strokec2  [Source 282].\cb1 \
+\cb3 \'a0\'a0\'a0\'a0
+\f4 \uc0\u9702 
+\f0  Since these outlines 
+\f5\i were
+\f0\i0  generated and saved as DOCX files, the API 
+\f1\b did not
+\f0\b0  return a 422 Error. This implies either:\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\'a0\'a0\'a0\'a01. 
+\f1\b Strict Mode is Off:
+\f0\b0  The 
+\f2 \cf4 \cb5 \strokec4 strict_mode
+\f0 \cf2 \cb3 \strokec2  parameter might still be defaulting to 
+\f2 \cf4 \cb5 \strokec4 False
+\f0 \cf2 \cb3 \strokec2  in your configuration, allowing invalid outlines to pass with a warning (that is being ignored) [Source 282].\cb1 \
+\cb3 \'a0\'a0\'a0\'a0\'a0\'a0\'a0\'a02. 
+\f1\b Count Mismatch:
+\f0\b0  The extraction engine might be hallucinating that the RFP 
+\f5\i asks
+\f0\i0  for 3 volumes, and the generator is creating 3 volumes (Technical, Past Perf, Cost), coincidentally passing the check while being semantically wrong.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 3. Recommended Next Steps
+\f0\b0 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 You cannot trust the current "Implemented" state. You must force the system to fail visibly.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Step 1: Verify Strict Mode Enforcement
+\f0\b0  Check your API call or environment variables. Ensure 
+\f2 \cf4 \cb5 \strokec4 strict_mode=True
+\f0 \cf2 \cb3 \strokec2  is explicitly passed.\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f5\i Reference:
+\f0\i0  
+\f2 \cf4 \cb5 \strokec4 AB.md
+\f0 \cf2 \cb3 \strokec2  Section 19.6 lists this as a breaking change that impacts migration [Source 285].\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Step 2: Inspect the "Agent Trace Log"
+\f0\b0  Your architecture now includes an 
+\f2 \cf4 \cb5 \strokec4 AgentTraceLogModel
+\f0 \cf2 \cb3 \strokec2  [Source 266]. Query the logs for the 
+\f2 \cf4 \cb5 \strokec4 StrictStructureBuilder
+\f0 \cf2 \cb3 \strokec2  execution.\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \'95 
+\f1\b Look for:
+\f0\b0  A specific error log or "Fallback triggered" message.\cb1 \
+\cb3 \'95 
+\f1\b Check:
+\f0\b0  The 
+\f2 \cf4 \cb5 \strokec4 stated_volume_count
+\f0 \cf2 \cb3 \strokec2  value extracted from Section L. If the extraction logic reads "3 Volumes" but the generator builds "Volume 3: Cost" (implying 1 and 2 exist), confirm what it thinks Volume 2 is.\cb1 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \cb3 Step 3: "Nuclear Option" on Fallback Code
+\f0\b0  If the code 
+\f2 \cf4 \cb5 \strokec4 agents/enhanced_compliance/smart_outline_generator.py
+\f0 \cf2 \cb3 \strokec2  still contains the 
+\f2 \cf4 \cb5 \strokec4 _get_default_structure()
+\f0 \cf2 \cb3 \strokec2  method or similar hardcoded lists (e.g., 
+\f2 \cf4 \cb5 \strokec4 ["Technical", "Management", "Past Performance", "Cost"]
+\f0 \cf2 \cb3 \strokec2 ), 
+\f1\b delete them immediately
+\f0\b0 . Force the code to raise an exception if it cannot parse the PDF, rather than producing a non-compliant artifact.\cb1 \
+}

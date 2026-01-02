@@ -4848,7 +4848,7 @@ async def get_outline(rfp_id: str, format: str = "json", regenerate: bool = Fals
     if not outline:
         # Generate if not exists using v3.0 pipeline
         print(f"[GET Outline] No cache, generating v3.0 outline...")
-        result = await generate_outline(rfp_id, use_v3=True)
+        result = await generate_outline(rfp_id, strict_mode=True)
         outline = result.get("outline")
         print(f"[GET Outline] Generation returned outline: {outline is not None}")
 
@@ -4873,11 +4873,11 @@ async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
     """
     Export annotated proposal outline as Word document.
 
-    Query params:
-        regenerate: Force regeneration of outline (ignores cache)
-    """
-    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
+    v5.0.5: Uses validated v3.0 pipeline only. No SmartOutlineGenerator fallback.
 
+    Query params:
+        regenerate: Force regeneration of outline using v3.0 pipeline
+    """
     if not ANNOTATED_OUTLINE_AVAILABLE:
         raise HTTPException(
             status_code=501,
@@ -4896,73 +4896,36 @@ async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
     outline = rfp.get("outline") if not regenerate else None
     if outline:
         print(f"[DEBUG] Using CACHED outline (already generated)")
-    if regenerate:
-        print(f"[DEBUG] Regenerating outline (regenerate=true)")
-    if not outline:
-        generator = SmartOutlineGenerator()
-        requirements = rfp.get("requirements", [])
-        # v3.1 FIX: Use category field (set by extraction), not section field
-        # The category field contains: L_COMPLIANCE, EVALUATION, TECHNICAL
-        # The section field contains SOW references like "2.1" which never start with L/M
-        section_l = [r for r in requirements if r.get("category") == "L_COMPLIANCE"]
-        section_m = [r for r in requirements if r.get("category") == "EVALUATION"]
 
-        # Fallback: also include requirements from documents categorized as section_lm
-        if not section_l:
-            section_l = [r for r in requirements
-                        if r.get("source_content_type") in ["section_l", "section_lm"]]
-        if not section_m:
-            section_m = [r for r in requirements
-                        if r.get("source_content_type") in ["section_m", "section_lm"]]
-
-        # v4.2 FIX: VA Commercial RFPs use Section E.2 for evaluation factors
-        import re
-        va_eval_patterns = [
-            r'factor\s*[1-4]', r'52\.212-2', r'evaluation.*?factor',
-            r'comparative\s+evaluation', r'technical\s+experience',
-            r'past\s+performance\s+(?:factor|evaluat)',
-        ]
-        for req in requirements:
-            section = req.get("section", "").upper()
-            category = req.get("category", "")
-            text = (req.get("text", "") or "").lower()
-            if section == "E" or category == "INSPECTION":
-                for pattern in va_eval_patterns:
-                    if re.search(pattern, text, re.IGNORECASE):
-                        if req not in section_m:
-                            section_m.append(req)
-                        break
-
-        # v4.0 FIX: Get technical requirements (not section L or M)
-        technical = [r for r in requirements
-                    if r.get("category") not in ["L_COMPLIANCE", "EVALUATION"]]
-        stats = {"is_non_ucf_format": len(section_l) == 0}
-
-        print(f"[DEBUG] REGENERATING outline from {len(requirements)} requirements")
-        print(f"[DEBUG] Outline generation - section_l count: {len(section_l)}, section_m count: {len(section_m)}, technical count: {len(technical)}")
-
-        # Log sample requirement to verify data isolation
-        if section_l:
-            print(f"[DEBUG] Sample section_l requirement: {section_l[0].get('text', '')[:100]}...")
-
-        # v4.2: Include Company Library data for win theme generation
-        company_library_data = None
-        if COMPANY_LIBRARY_AVAILABLE and company_library:
-            try:
-                company_library_data = company_library.get_profile()
-                print(f"[DEBUG] Company Library loaded with {len(company_library_data.get('differentiators', []))} differentiators")
-            except Exception as e:
-                print(f"[WARN] Could not fetch Company Library: {e}")
-
-        outline_obj = generator.generate_from_compliance_matrix(
-            section_l_requirements=section_l,
-            section_m_requirements=section_m,
-            technical_requirements=technical,
-            stats=stats,
-            company_library_data=company_library_data
-        )
-        outline = generator.to_json(outline_obj)
-        store.update(rfp_id, {"outline": outline})
+    # v5.0.5: Use validated v3.0 pipeline instead of SmartOutlineGenerator
+    # This ensures Iron Triangle validation and prevents phantom volumes
+    if not outline or regenerate:
+        print(f"[DEBUG] Generating outline via v3.0 pipeline (regenerate={regenerate})")
+        try:
+            result = await generate_outline(rfp_id, strict_mode=True)
+            outline = result.get("outline")
+            if not outline:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "Outline generation failed",
+                        "message": "v3.0 pipeline returned no outline",
+                        "action": "Check Section L document for explicit volume declarations"
+                    }
+                )
+            print(f"[DEBUG] v3.0 outline generated with {len(outline.get('volumes', []))} volumes")
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions from generate_outline
+        except Exception as e:
+            print(f"[ERROR] v3.0 outline generation failed: {e}")
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "Outline generation failed",
+                    "message": str(e),
+                    "action": "Ensure Section L document is uploaded with full text"
+                }
+            )
     
     requirements = rfp.get("requirements", [])
 
@@ -5059,7 +5022,7 @@ async def run_master_architect_workflow(
 
     **Returns:** Phase results with outline, compliance matrix, and traceability.
     """
-    from agents.enhanced_compliance.smart_outline_generator import SmartOutlineGenerator
+    # v5.0.5: Removed SmartOutlineGenerator import - now uses v3.0 pipeline
 
     rfp = store.get(rfp_id)
     if not rfp:
@@ -5132,26 +5095,30 @@ async def run_master_architect_workflow(
 
         # =====================================================================
         # PHASE 2: Generate RFP-Specific Annotated Outline
+        # v5.0.5: Uses v3.0 pipeline with Iron Triangle validation
         # =====================================================================
         if phase is None or phase == 2:
-            generator = SmartOutlineGenerator()
+            # Check for cached outline first
+            outline = rfp.get("outline")
 
-            # Get Company Library data if available
-            company_library_data = None
-            if include_company_library and COMPANY_LIBRARY_AVAILABLE and company_library:
+            if not outline:
+                # Generate via v3.0 pipeline (with validation)
+                print(f"[Master Architect Phase 2] Generating outline via v3.0 pipeline...")
                 try:
-                    company_library_data = company_library.get_profile()
+                    gen_result = await generate_outline(rfp_id, strict_mode=True)
+                    outline = gen_result.get("outline")
+                    if not outline:
+                        results["warnings"].append(
+                            "Outline generation failed - check Section L for volume declarations"
+                        )
+                except HTTPException as e:
+                    # Capture validation errors from v3.0 pipeline
+                    detail = e.detail if isinstance(e.detail, str) else e.detail.get("error", str(e.detail))
+                    results["warnings"].append(f"Outline generation failed: {detail}")
+                    outline = {}
                 except Exception as e:
-                    results["warnings"].append(f"Company Library unavailable: {str(e)}")
-
-            outline_obj = generator.generate_from_compliance_matrix(
-                section_l_requirements=section_l,
-                section_m_requirements=section_m,
-                technical_requirements=section_c,
-                stats=stats,
-                company_library_data=company_library_data
-            )
-            outline = generator.to_json(outline_obj)
+                    results["warnings"].append(f"Outline generation error: {str(e)}")
+                    outline = {}
 
             phase2_result = {
                 "phase": 2,
@@ -5159,12 +5126,13 @@ async def run_master_architect_workflow(
                 "volumes_created": len(outline.get("volumes", [])),
                 "eval_factors_detected": len(outline.get("evaluation_factors", [])),
                 "format_requirements": outline.get("format_requirements", {}),
+                "validation": {
+                    "used_v3_pipeline": True,
+                    "skeleton_valid": rfp.get("proposal_skeleton", {}).get("is_valid", False),
+                }
             }
             results["phases_completed"].append(phase2_result)
             results["outline"] = outline
-
-            # Store outline
-            store.update(rfp_id, {"outline": outline})
 
         # =====================================================================
         # PHASE 3: Requirement Injection (L/M/C into sections)
@@ -5311,12 +5279,16 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
     """
     Generate proposal outline using v3.0 decoupled architecture.
 
+    v5.0.5-hotfix: This endpoint now uses full PDF text instead of concatenated
+    requirements. The previous implementation would lose volume headers like
+    "Volume I: Technical Approach" causing phantom volume hallucination.
+
     This endpoint uses the new two-phase pipeline:
     - Phase 1: StrictStructureBuilder creates skeleton from Section L ONLY
     - Phase 2: ContentInjector maps Section C requirements into skeleton
 
     Key Benefits:
-    - No hallucinated volumes (structure comes strictly from Section L)
+    - No hallucinated volumes (structure comes strictly from Section L full text)
     - Clear separation of structure vs content
     - Validation gate ensures compliance with RFP constraints
 
@@ -5347,11 +5319,8 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
             detail="No requirements extracted. Process RFP first using /process-best-practices."
         )
 
-    # Separate requirements by category
-    # Section L (instructions) - drives structure
-    instructions = [r for r in requirements
-                   if r.get("category") == "L_COMPLIANCE"
-                   or r.get("section", "").upper().startswith("L")]
+    # Separate requirements by category for ContentInjector
+    # Note: Section L text comes from full PDF, not extracted requirements (v5.0.5-hotfix)
 
     # Section C (technical requirements) - content to inject
     technical_reqs = [r for r in requirements
@@ -5363,19 +5332,65 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
                     if r.get("category") == "EVALUATION"
                     or r.get("section", "").upper().startswith("M")]
 
-    # Build Section L text from instructions
-    section_l_text = "\n\n".join([
-        r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
-        for r in instructions
-        if r.get("text") or r.get("full_text") or r.get("requirement_text")
-    ])
+    # ==================== v5.0.5-hotfix: Get Full PDF Text ====================
+    # CRITICAL: We MUST read the full PDF text to get volume structure.
+    # Extracted requirements lose "Volume I: Technical" headers!
+    # DO NOT concatenate from requirements - that's the bug that caused phantom volumes.
+    section_l_text = ""
+    section_l_source = None
 
+    # Try to get full text from stored section_l_full_text (set during processing)
+    if rfp.get("section_l_full_text"):
+        section_l_text = rfp["section_l_full_text"]
+        section_l_source = "stored_full_text"
+        print(f"[v3.0 Outline] Using stored section_l_full_text: {len(section_l_text)} chars")
+
+    # Fallback: Try to read from instructions_evaluation document
+    if not section_l_text:
+        document_metadata = rfp.get("document_metadata", {})
+        print(f"[v3.0 Outline] document_metadata has {len(document_metadata)} documents: {list(document_metadata.keys())}")
+
+        for doc_name, doc_info in document_metadata.items():
+            doc_type = doc_info.get("doc_type", "")
+            file_path = doc_info.get("file_path", "")
+
+            if doc_type == "instructions_evaluation" and file_path:
+                try:
+                    print(f"[v3.0 Outline] Reading full text from: {file_path}")
+                    from agents.enhanced_compliance import MultiFormatParser
+                    from agents.enhanced_compliance.models import DocumentType as ParserDocType
+                    parser = MultiFormatParser()
+                    parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
+
+                    if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
+                        section_l_text = parsed.full_text
+                        section_l_source = f"document:{doc_name}"
+                        print(f"[v3.0 Outline] Read {len(section_l_text)} chars from {doc_name}")
+                    elif parsed and isinstance(parsed, dict) and parsed.get('full_text'):
+                        section_l_text = parsed['full_text']
+                        section_l_source = f"document:{doc_name}"
+                        print(f"[v3.0 Outline] Read {len(section_l_text)} chars from {doc_name}")
+                except Exception as e:
+                    print(f"[v3.0 Outline] WARN: Could not read {doc_name}: {e}")
+
+    # ==================== NO FALLBACK TO REQUIREMENTS ====================
+    # REMOVED: The dangerous fallback that concatenated requirements and lost volume structure
+    # If we can't get full PDF text, we MUST fail and ask user to re-upload
     if not section_l_text:
         raise HTTPException(
-            status_code=400,
-            detail="No Section L instructions found. Cannot build proposal structure. "
-                   "Ensure the RFP has been processed and contains Section L content."
+            status_code=422,
+            detail={
+                "error": "Cannot determine proposal structure",
+                "reason": "Full Section L/Attachment document text is not available. "
+                         "The extracted requirements do not contain volume structure information.",
+                "action": "Please re-upload the Instructions/Evaluation document (Section L) "
+                         "or the attachment containing proposal format requirements.",
+                "technical_detail": "Volume headers like 'Volume I: Technical Approach' are "
+                                   "needed for accurate structure extraction."
+            }
         )
+
+    print(f"[v3.0 Outline] Starting pipeline with {len(section_l_text)} chars from {section_l_source}")
 
     try:
         orchestrator = OutlineOrchestrator(strict_mode=strict_mode)

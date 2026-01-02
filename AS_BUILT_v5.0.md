@@ -44,6 +44,10 @@
     - [19.3 Phase 2: Data Source Fix](#193-phase-2-data-source-fix)
     - [19.4 Phase 3: Fallback Removal](#194-phase-3-fallback-removal)
     - [19.5 Iron Triangle Validation](#195-iron-triangle-validation)
+    - [19.6 Breaking Changes](#196-breaking-changes)
+    - [19.7 Test Results](#197-test-results)
+    - [19.8 Endpoint Consolidation (v5.0.5-hotfix)](#198-endpoint-consolidation-v505-hotfix)
+    - [19.9 Complete Test Results (v5.0.5-hotfix)](#199-complete-test-results-v505-hotfix)
 
 ---
 
@@ -4390,6 +4394,165 @@ Test 4 - Volume count mismatch validation:
   Violations: 1
   Message: Generated 2 volumes but Section L specifies 3
   ✓ PASSED - Mismatch detected as CRITICAL
+```
+
+### 19.8 Endpoint Consolidation (v5.0.5-hotfix)
+
+**Problem Discovered:** Despite the v5.0.5 three-phase fix, phantom volumes (e.g., "Past Performance", "Staffing Plan") were still appearing. Expert analysis revealed that the fix only covered ONE of FOUR outline generation paths.
+
+**Root Cause:** Four different API endpoints could generate outlines, but only `POST /outline` was using the v3.0 pipeline:
+
+| Endpoint | Before v5.0.5-hotfix | Status |
+|----------|---------------------|--------|
+| `POST /api/rfp/{rfp_id}/outline` | v3.0 pipeline | ✓ Fixed in v5.0.5 |
+| `GET /api/rfp/{rfp_id}/outline` | Wrong parameter name | ✗ Broken |
+| `GET /api/rfp/{rfp_id}/outline/export` | SmartOutlineGenerator | ✗ Broken |
+| `POST /api/rfp/{rfp_id}/master-architect` | SmartOutlineGenerator (Phase 2) | ✗ Broken |
+
+**Fix 1: GET /outline Parameter Name**
+
+```python
+# BEFORE (broken - use_v3 is not a valid parameter)
+result = await generate_outline(rfp_id, use_v3=True)
+
+# AFTER (correct - matches POST endpoint signature)
+result = await generate_outline(rfp_id, strict_mode=True)
+```
+
+**Fix 2: GET /outline/export - Complete Replacement**
+
+The entire SmartOutlineGenerator block (~89 lines) was replaced with v3.0 pipeline:
+
+```python
+@app.get("/api/rfp/{rfp_id}/outline/export")
+async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
+    """
+    Export annotated proposal outline as Word document.
+    v5.0.5: Uses validated v3.0 pipeline only. No SmartOutlineGenerator fallback.
+    """
+    rfp = await get_rfp(rfp_id)
+    if not rfp:
+        raise HTTPException(status_code=404, detail="RFP not found")
+
+    outline = rfp.get("outline")
+
+    # v5.0.5: Use validated v3.0 pipeline instead of SmartOutlineGenerator
+    if not outline or regenerate:
+        try:
+            result = await generate_outline(rfp_id, strict_mode=True)
+            outline = result.get("outline")
+            if not outline:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "Outline generation failed",
+                        "message": "v3.0 pipeline returned no outline",
+                        "action": "Check Section L document for explicit volume declarations"
+                    }
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "Outline generation failed",
+                    "message": str(e),
+                    "action": "Ensure Section L document is uploaded with full text"
+                }
+            )
+
+    # ... rest of export logic ...
+```
+
+**Fix 3: POST /master-architect Phase 2 - SmartOutlineGenerator Removal**
+
+Phase 2 ("Generate RFP-Specific Annotated Outline") was using SmartOutlineGenerator directly. Now uses v3.0 pipeline:
+
+```python
+# PHASE 2: Generate RFP-Specific Annotated Outline
+# v5.0.5: Uses v3.0 pipeline with Iron Triangle validation
+if phase is None or phase == 2:
+    outline = rfp.get("outline")
+
+    if not outline:
+        try:
+            gen_result = await generate_outline(rfp_id, strict_mode=True)
+            outline = gen_result.get("outline")
+            if not outline:
+                results["warnings"].append(
+                    "Outline generation failed - check Section L for volume declarations"
+                )
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, str) else e.detail.get("error", str(e.detail))
+            results["warnings"].append(f"Outline generation failed: {detail}")
+            outline = {}
+        except Exception as e:
+            results["warnings"].append(f"Outline generation error: {str(e)}")
+            outline = {}
+
+    phase2_result = {
+        "phase": 2,
+        "name": "Annotated Outline Generation",
+        "volumes_created": len(outline.get("volumes", [])),
+        "validation": {
+            "used_v3_pipeline": True,
+            "skeleton_valid": rfp.get("proposal_skeleton", {}).get("is_valid", False),
+        }
+    }
+```
+
+**Result: Single Source of Truth**
+
+All four endpoints now route through the same validated v3.0 pipeline:
+
+```
+POST /outline       ──┐
+GET /outline        ──┼──→ generate_outline(strict_mode=True)
+GET /outline/export ──┤          ↓
+POST /master-architect┘    OutlineOrchestrator
+                                 ↓
+                         StrictStructureBuilder
+                                 ↓
+                           ContentInjector
+                                 ↓
+                         Validated Outline ✓
+```
+
+**SmartOutlineGenerator Status:** Fully deprecated. No production code path references it.
+
+### 19.9 Complete Test Results (v5.0.5-hotfix)
+
+```
+TEST 1: Module imports
+✓ PASSED - All modules imported successfully
+
+TEST 2: SectionLParser with no volumes (hallucination check)
+Volumes found: 0
+Warnings: ['No explicit volume declarations found...']
+✓ PASSED - No hallucinated volumes
+
+TEST 3: SectionLParser with explicit volumes
+Volumes found: 3 (Technical Approach, Cost Proposal, Past Performance)
+Stated count: 3
+✓ PASSED - Found all 3 declared volumes
+
+TEST 4: StrictStructureBuilder skeleton validation
+Skeleton is_valid: True (may show page limit warning)
+stated_volume_count in skeleton: 3
+✓ PASSED
+
+TEST 5: ValidationEngine volume count mismatch
+Violations: 1
+Message: Generated 2 volumes but Section L specifies 3
+Severity: CRITICAL
+✓ PASSED - Mismatch detected
+
+TEST 6: Full OutlineOrchestrator pipeline
+Skeleton valid: True
+Volumes generated: 2 (Technical Approach, Cost Proposal)
+Requirements mapped: 45
+✓ PASSED - Generated exactly 2 volumes (no hallucination)
 ```
 
 ---
