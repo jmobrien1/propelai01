@@ -5279,12 +5279,16 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
     """
     Generate proposal outline using v3.0 decoupled architecture.
 
+    v5.0.5-hotfix: This endpoint now uses full PDF text instead of concatenated
+    requirements. The previous implementation would lose volume headers like
+    "Volume I: Technical Approach" causing phantom volume hallucination.
+
     This endpoint uses the new two-phase pipeline:
     - Phase 1: StrictStructureBuilder creates skeleton from Section L ONLY
     - Phase 2: ContentInjector maps Section C requirements into skeleton
 
     Key Benefits:
-    - No hallucinated volumes (structure comes strictly from Section L)
+    - No hallucinated volumes (structure comes strictly from Section L full text)
     - Clear separation of structure vs content
     - Validation gate ensures compliance with RFP constraints
 
@@ -5315,11 +5319,8 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
             detail="No requirements extracted. Process RFP first using /process-best-practices."
         )
 
-    # Separate requirements by category
-    # Section L (instructions) - drives structure
-    instructions = [r for r in requirements
-                   if r.get("category") == "L_COMPLIANCE"
-                   or r.get("section", "").upper().startswith("L")]
+    # Separate requirements by category for ContentInjector
+    # Note: Section L text comes from full PDF, not extracted requirements (v5.0.5-hotfix)
 
     # Section C (technical requirements) - content to inject
     technical_reqs = [r for r in requirements
@@ -5331,19 +5332,65 @@ async def generate_outline_v3_endpoint(rfp_id: str, strict_mode: bool = True):
                     if r.get("category") == "EVALUATION"
                     or r.get("section", "").upper().startswith("M")]
 
-    # Build Section L text from instructions
-    section_l_text = "\n\n".join([
-        r.get("text", "") or r.get("full_text", "") or r.get("requirement_text", "")
-        for r in instructions
-        if r.get("text") or r.get("full_text") or r.get("requirement_text")
-    ])
+    # ==================== v5.0.5-hotfix: Get Full PDF Text ====================
+    # CRITICAL: We MUST read the full PDF text to get volume structure.
+    # Extracted requirements lose "Volume I: Technical" headers!
+    # DO NOT concatenate from requirements - that's the bug that caused phantom volumes.
+    section_l_text = ""
+    section_l_source = None
 
+    # Try to get full text from stored section_l_full_text (set during processing)
+    if rfp.get("section_l_full_text"):
+        section_l_text = rfp["section_l_full_text"]
+        section_l_source = "stored_full_text"
+        print(f"[v3.0 Outline] Using stored section_l_full_text: {len(section_l_text)} chars")
+
+    # Fallback: Try to read from instructions_evaluation document
+    if not section_l_text:
+        document_metadata = rfp.get("document_metadata", {})
+        print(f"[v3.0 Outline] document_metadata has {len(document_metadata)} documents: {list(document_metadata.keys())}")
+
+        for doc_name, doc_info in document_metadata.items():
+            doc_type = doc_info.get("doc_type", "")
+            file_path = doc_info.get("file_path", "")
+
+            if doc_type == "instructions_evaluation" and file_path:
+                try:
+                    print(f"[v3.0 Outline] Reading full text from: {file_path}")
+                    from agents.enhanced_compliance import MultiFormatParser
+                    from agents.enhanced_compliance.models import DocumentType as ParserDocType
+                    parser = MultiFormatParser()
+                    parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
+
+                    if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
+                        section_l_text = parsed.full_text
+                        section_l_source = f"document:{doc_name}"
+                        print(f"[v3.0 Outline] Read {len(section_l_text)} chars from {doc_name}")
+                    elif parsed and isinstance(parsed, dict) and parsed.get('full_text'):
+                        section_l_text = parsed['full_text']
+                        section_l_source = f"document:{doc_name}"
+                        print(f"[v3.0 Outline] Read {len(section_l_text)} chars from {doc_name}")
+                except Exception as e:
+                    print(f"[v3.0 Outline] WARN: Could not read {doc_name}: {e}")
+
+    # ==================== NO FALLBACK TO REQUIREMENTS ====================
+    # REMOVED: The dangerous fallback that concatenated requirements and lost volume structure
+    # If we can't get full PDF text, we MUST fail and ask user to re-upload
     if not section_l_text:
         raise HTTPException(
-            status_code=400,
-            detail="No Section L instructions found. Cannot build proposal structure. "
-                   "Ensure the RFP has been processed and contains Section L content."
+            status_code=422,
+            detail={
+                "error": "Cannot determine proposal structure",
+                "reason": "Full Section L/Attachment document text is not available. "
+                         "The extracted requirements do not contain volume structure information.",
+                "action": "Please re-upload the Instructions/Evaluation document (Section L) "
+                         "or the attachment containing proposal format requirements.",
+                "technical_detail": "Volume headers like 'Volume I: Technical Approach' are "
+                                   "needed for accurate structure extraction."
+            }
         )
+
+    print(f"[v3.0 Outline] Starting pipeline with {len(section_l_text)} chars from {section_l_source}")
 
     try:
         orchestrator = OutlineOrchestrator(strict_mode=strict_mode)
