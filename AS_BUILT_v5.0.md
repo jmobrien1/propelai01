@@ -1,6 +1,6 @@
 # PropelAI v5.0 As-Built Technical Document
 
-**Version:** 5.0.5
+**Version:** 5.0.7
 **Date:** January 2025
 **Classification:** Technical Architecture Documentation
 
@@ -55,6 +55,12 @@
     - [20.4 Fix 3: Content-First Solicitation Extraction](#204-fix-3-content-first-solicitation-extraction)
     - [20.5 Updated Parser Flow](#205-updated-parser-flow)
     - [20.6 Solicitation Extraction Flow](#206-solicitation-extraction-flow)
+21. [Iron Triangle Enforcement v5.0.7](#21-iron-triangle-enforcement-v507)
+    - [21.1 Root Cause Analysis](#211-root-cause-analysis)
+    - [21.2 Fix 1: Volume Classification](#212-fix-1-volume-classification)
+    - [21.3 Fix 2: Section Header Validation](#213-fix-2-section-header-validation)
+    - [21.4 Semantic Match Update](#214-semantic-match-update)
+    - [21.5 Expected Behavior](#215-expected-behavior)
 
 ---
 
@@ -91,6 +97,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Decoupled Outline v3.0 | StrictStructureBuilder + ContentInjector + UI/Export fixes | v5.0.4 |
 | Outline Remediation | Validation gate, data source fix, fallback removal | v5.0.5 |
 | Parsing Remediation | Table-first extraction, volume promotion, content-first solicitation | v5.0.6 |
+| Iron Triangle Enforcement | Volume classification, header validation, Section C blocking | v5.0.7 |
 
 ### 1.3 Technology Stack
 
@@ -4768,6 +4775,136 @@ Document Processing
       ↓
 Official Solicitation Number
 ```
+
+---
+
+## 21. Iron Triangle Enforcement v5.0.7
+
+**Location:** `agents/enhanced_compliance/content_injector.py`, `agents/enhanced_compliance/section_l_parser.py`
+
+Forensic analysis of RFP-239FA6F8 revealed that despite v5.0.6 fixes, technical requirements were being nested in administrative volumes due to keyword matching (e.g., "Personnel" matching both "Key Personnel" and "Personnel Security Questionnaire").
+
+### 21.1 Root Cause Analysis
+
+| Bug | Symptom | Impact |
+|-----|---------|--------|
+| **Volume Nesting** | Key Personnel requirements in Contract Documentation | Technical content in wrong volume |
+| **Header Hallucination** | "505.. This is a competitive..." promoted to section | Invalid section structure |
+| **Keyword Overlap** | "Personnel" matches any section with that word | Wrong section mapping |
+
+### 21.2 Fix 1: Iron Triangle Validation in ContentInjector
+
+**New Classification Methods:**
+
+```python
+def _classify_volume_type(self, vol_title: str) -> str:
+    """Classify volume as 'technical', 'cost', or 'admin'."""
+
+def _classify_requirement_type(self, requirement: Dict) -> str:
+    """Classify requirement as 'section_c', 'admin_form', or 'other'."""
+
+def _is_valid_iron_triangle_mapping(self, req_type: str, vol_type: str) -> Tuple[bool, str]:
+    """
+    Validate mapping against Iron Triangle rules.
+    Section C (PWS/SOW) requirements → Technical Volume ONLY
+    """
+```
+
+**Volume Type Indicators:**
+
+| Volume Type | Indicators |
+|-------------|------------|
+| Technical | technical, approach, solution, methodology, management, staffing |
+| Cost | cost, price, pricing, budget, financial |
+| Admin | contract documentation, administrative, representations, certifications |
+
+**Requirement Type Indicators:**
+
+| Requirement Type | Indicators |
+|-----------------|------------|
+| Section C | shall, must, contractor, offeror shall, provide, deliver |
+| Admin Form | sf1449, dd254, certification, representation, disclosure |
+
+**Blocking Rule:**
+```python
+if req_type == 'section_c' and vol_type == 'admin':
+    return False, "Section C/PWS requirements cannot go in Administrative volumes"
+```
+
+### 21.3 Fix 2: Header Regex Hardening in SectionLParser
+
+**Problem:** Greedy regex captured "505.. This is a competitive solicitation..." as a section header.
+
+**Pattern Change:**
+```python
+# BEFORE (greedy - matched 505)
+r"(\d+\.\d*)\s+([A-Z][^\n]{4,60})"
+
+# AFTER (max 2 digits)
+r"(\d{1,2}\.\d*)\s+([A-Z][^\n]{4,60})"
+```
+
+**New Validation Method:**
+
+```python
+def _is_valid_section_header(self, sec_id: str, sec_title: str) -> bool:
+    """
+    v5.0.7: Validate that a section header match is legitimate.
+
+    Rejects:
+    - Section numbers > 50 (unrealistic)
+    - Titles containing "shall" (requirement prose)
+    - Titles matching invalid_header_patterns
+    - Titles with > 15 words (too long for header)
+    """
+```
+
+**Invalid Header Patterns:**
+```python
+invalid_header_patterns = [
+    r'^\d{3,}',              # Starts with 3+ digits (e.g., "505")
+    r'^this\s+is\s+',        # Sentence "This is..."
+    r'^the\s+\w+\s+shall',   # Requirement "The contractor shall..."
+    r'^\w+\s+shall\s+',      # Requirement "... shall ..."
+    r'^solicitation',        # "Solicitation" is not a header
+    r'^competitive',         # "Competitive" is not a header
+    r'^offeror',            # Requirement about offeror
+]
+```
+
+### 21.4 Semantic Match Update
+
+The `_semantic_match` method now applies Iron Triangle validation before scoring:
+
+```python
+for vol in skeleton.get('volumes', []):
+    vol_type = self._classify_volume_type(vol['title'])
+
+    # Check Iron Triangle validity BEFORE scoring
+    is_valid, violation_reason = self._is_valid_iron_triangle_mapping(
+        iron_req_type, vol_type
+    )
+    if not is_valid:
+        print(f"[v5.0.7] Iron Triangle block: {violation_reason}")
+        continue  # Skip this volume entirely
+```
+
+**Score Boost for Correct Mappings:**
+```python
+# Boost for correct Iron Triangle mapping
+if iron_req_type == 'section_c' and vol_type == 'technical':
+    score += 25  # Strong boost
+    match_reasons.append("Iron Triangle: Section C → Technical")
+```
+
+### 21.5 Expected Behavior
+
+| Requirement | Before v5.0.7 | After v5.0.7 |
+|-------------|--------------|--------------|
+| "Key Personnel 100% assigned" | Volume 3: Personnel Security | Volume 1: Technical (Staffing) |
+| "Infrastructure approach" | Volume 3 (keyword match) | Volume 1: Technical |
+| "SF1449 form" | Volume 1 (incorrect) | Volume 3: Contract Documentation |
+| "505.. This is competitive..." | Section header | Rejected (invalid) |
 
 ---
 
