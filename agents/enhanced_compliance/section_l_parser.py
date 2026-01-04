@@ -5,9 +5,11 @@ This is the bridge between raw RFP text and StrictStructureBuilder.
 It extracts ONLY structure information, not content requirements.
 
 Key Principle: Parse explicitly stated structure. DO NOT infer or assume.
+
+v5.0.6: Added table-first extraction strategy for page limits and volume promotion.
 """
 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 import re
 
 from .section_l_schema import (
@@ -91,6 +93,26 @@ class SectionLParser:
             'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
             'eleven': 11, 'twelve': 12
         }
+
+        # v5.0.6: Table structure patterns for extracting volume/page limit associations
+        # Tables often have: Volume | Title | Page Limit | Copies
+        self.table_row_patterns = [
+            # "Volume 1" or "1" followed by title and page limit
+            # Pattern: Vol#/Number | Title Text | ## Pages
+            r"(?:Volume\s*)?([1-3IVX]+)\s*[|\t]+\s*([A-Za-z][^|\t\n]{3,50})\s*[|\t]+\s*(\d+)\s*(?:pages?)?",
+            # Simpler: Number | Title | Pages (tab or multiple spaces as delimiter)
+            r"([1-3IVX]+)\s{2,}([A-Za-z][^\t\n]{3,50})\s{2,}(\d+)\s*(?:pages?)?",
+        ]
+
+        # v5.0.6: Sections that should be promoted to volumes
+        self.volume_promotion_keywords = [
+            'contract documentation',
+            'representations and certifications',
+            'administrative volume',
+            'contractual documents',
+            'required forms',
+            'attachments volume',
+        ]
 
     def parse(
         self,
@@ -196,6 +218,99 @@ class SectionLParser:
                     return int(num_str)
         return None
 
+    def _extract_page_limits_from_table(
+        self,
+        text: str,
+        warnings: List[str]
+    ) -> Dict[str, Tuple[str, int]]:
+        """
+        v5.0.6: Extract volume page limits from table structures.
+
+        Tables in Section L often define volume structure like:
+        | Volume | Title | Page Limit | Copies |
+        |   1    | Technical | 8 Pages | 1 |
+        |   2    | Cost/Price | No Limit | 1 |
+
+        Returns:
+            Dict mapping volume_key (lowercase title) to (title, page_limit)
+        """
+        table_data: Dict[str, Tuple[str, int]] = {}
+
+        # Look for table-like structures with headers
+        # First, try to find a table header row
+        table_header_patterns = [
+            r"(?:volume|vol\.?)\s*[|\t].*?(?:page\s*limit|pages?)[|\t\n]",
+            r"(?:title|description)\s*[|\t].*?(?:page\s*limit|pages?)[|\t\n]",
+        ]
+
+        has_table = False
+        for pattern in table_header_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                has_table = True
+                break
+
+        if not has_table:
+            # Also check for consistent row-like structures
+            # Lines with multiple tab/pipe separators
+            lines = text.split('\n')
+            table_like_lines = [
+                l for l in lines
+                if (l.count('|') >= 2 or l.count('\t') >= 2)
+                and re.search(r'\d+\s*pages?', l, re.IGNORECASE)
+            ]
+            if len(table_like_lines) >= 2:
+                has_table = True
+
+        if not has_table:
+            return table_data
+
+        # Extract table rows
+        for pattern in self.table_row_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                vol_num_str = match.group(1).strip()
+                title = match.group(2).strip()
+                page_limit_str = match.group(3).strip()
+
+                try:
+                    page_limit = int(page_limit_str)
+                    if 1 <= page_limit <= 500:  # Sanity check
+                        # Clean title
+                        title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+                        table_data[title.lower()] = (title, page_limit)
+                except ValueError:
+                    pass
+
+        # Also try a more flexible pattern for common table formats
+        # "Technical Proposal    8 Pages" or "Technical Proposal | 8 Pages"
+        flexible_patterns = [
+            # Title followed by page count (with separator)
+            r"(Technical\s+(?:Proposal|Volume))\s*[|\t:]+\s*(\d+)\s*pages?",
+            r"(Cost\s*(?:&|and)?\s*Price\s*(?:Proposal|Volume)?)\s*[|\t:]+\s*(\d+)\s*pages?",
+            r"(Contract\s+Documentation)\s*[|\t:]+\s*(\d+)\s*pages?",
+            # Volume N: Title ... ## pages (in same line/nearby)
+            r"Volume\s*[1-3IVX]+[:\s]+([A-Za-z][^|\n]{3,40})[^0-9]*?(\d+)\s*pages?",
+        ]
+
+        for pattern in flexible_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                title = match.group(1).strip()
+                page_limit_str = match.group(2).strip()
+
+                try:
+                    page_limit = int(page_limit_str)
+                    if 1 <= page_limit <= 500:
+                        title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+                        # Don't overwrite if we already have this
+                        if title.lower() not in table_data:
+                            table_data[title.lower()] = (title, page_limit)
+                except ValueError:
+                    pass
+
+        if table_data:
+            print(f"[v5.0.6] Extracted page limits from table: {table_data}")
+
+        return table_data
+
     def _extract_volumes(
         self,
         text: str,
@@ -204,10 +319,16 @@ class SectionLParser:
         """
         Extract volume instructions from text.
 
+        v5.0.6: Now uses table-first strategy - if page limits are found in
+        a table structure, those take precedence over nearby text extraction.
+
         Looks for explicit volume declarations like "Volume I: Technical Proposal".
         """
         volumes: List[VolumeInstruction] = []
         seen_titles: set = set()
+
+        # v5.0.6: Extract table data first for page limit lookup
+        table_page_limits = self._extract_page_limits_from_table(text, warnings)
 
         for pattern in self.volume_patterns:
             for match in re.finditer(pattern, text, re.IGNORECASE):
@@ -237,8 +358,31 @@ class SectionLParser:
                     continue
                 seen_titles.add(title.lower())
 
-                # Look for page limit near this volume mention
-                page_limit = self._find_page_limit_near(text, match.end(), title)
+                # v5.0.6: Table-first strategy for page limits
+                # Check table data first (higher priority), then fall back to nearby text
+                page_limit = None
+                page_limit_source = None
+
+                # Try exact match in table data
+                if title.lower() in table_page_limits:
+                    _, page_limit = table_page_limits[title.lower()]
+                    page_limit_source = "table"
+                else:
+                    # Try partial match (e.g., "Technical" matches "Technical Proposal")
+                    for table_key, (_, limit) in table_page_limits.items():
+                        if title.lower() in table_key or table_key in title.lower():
+                            page_limit = limit
+                            page_limit_source = "table_partial"
+                            break
+
+                # Fall back to nearby text extraction if table didn't have it
+                if page_limit is None:
+                    page_limit = self._find_page_limit_near(text, match.end(), title)
+                    if page_limit:
+                        page_limit_source = "nearby_text"
+
+                if page_limit and page_limit_source:
+                    print(f"[v5.0.6] Volume '{title}' page limit: {page_limit} (source: {page_limit_source})")
 
                 volumes.append(VolumeInstruction(
                     volume_id=f"VOL-{vol_num}",
@@ -248,6 +392,9 @@ class SectionLParser:
                     source_reference=f"Section L (Volume {vol_num_str})",
                     is_mandatory=True
                 ))
+
+        # v5.0.6: Check for sections that should be promoted to volumes
+        volumes = self._promote_sections_to_volumes(text, volumes, warnings)
 
         # Sort by volume number
         return sorted(volumes, key=lambda v: v['volume_number'])
@@ -322,6 +469,84 @@ class SectionLParser:
             )
 
         return sorted(volumes, key=lambda v: v['volume_number'])
+
+    def _promote_sections_to_volumes(
+        self,
+        text: str,
+        existing_volumes: List[VolumeInstruction],
+        warnings: List[str]
+    ) -> List[VolumeInstruction]:
+        """
+        v5.0.6: Promote certain sections to root-level volumes.
+
+        Some RFPs use section numbering (e.g., "Section 3: Contract Documentation")
+        but these should actually be separate volumes. This method checks for
+        known section types that must be elevated to volume status.
+
+        Promotion keywords:
+        - Contract Documentation
+        - Representations and Certifications
+        - Administrative Volume
+        - Required Forms/Attachments
+        """
+        volumes = list(existing_volumes)
+        existing_titles = {v['volume_title'].lower() for v in volumes}
+        max_vol_num = max([v['volume_number'] for v in volumes], default=0)
+
+        text_lower = text.lower()
+
+        for keyword in self.volume_promotion_keywords:
+            # Check if keyword exists but isn't already a volume
+            if keyword in text_lower and keyword not in existing_titles:
+                # Check if any existing volume already covers this
+                already_covered = False
+                for existing_title in existing_titles:
+                    if keyword in existing_title or existing_title in keyword:
+                        already_covered = True
+                        break
+
+                if already_covered:
+                    continue
+
+                # Find the section pattern for this keyword
+                # e.g., "Section 3: Contract Documentation" or "3. Contract Documentation"
+                section_patterns = [
+                    rf"(?:Section\s+)?(\d+)[.:\s]+\s*({re.escape(keyword)})",
+                    rf"({re.escape(keyword)})\s*(?:volume|section)?",
+                ]
+
+                for pattern in section_patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        # Determine volume number
+                        max_vol_num += 1
+
+                        # Get proper title casing
+                        title = keyword.title()
+
+                        # Look for page limit
+                        page_limit = self._find_page_limit_near(
+                            text, match.end(), keyword
+                        )
+
+                        volumes.append(VolumeInstruction(
+                            volume_id=f"VOL-{max_vol_num}",
+                            volume_title=title,
+                            volume_number=max_vol_num,
+                            page_limit=page_limit,
+                            source_reference="Section L (promoted from section)",
+                            is_mandatory=True
+                        ))
+
+                        print(f"[v5.0.6] Promoted '{title}' to Volume {max_vol_num}")
+                        warnings.append(
+                            f"'{title}' was promoted from section to volume. "
+                            f"Verify this matches RFP structure."
+                        )
+                        existing_titles.add(keyword)
+                        break
+
+        return volumes
 
     def _extract_sections(
         self,

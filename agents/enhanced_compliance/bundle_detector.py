@@ -274,23 +274,83 @@ class BundleDetector:
         return best_match, best_confidence
     
     def _extract_solicitation_number(self, text: str) -> Optional[str]:
-        """Extract solicitation number from filename or text"""
+        """
+        Extract solicitation number from filename or text.
+
+        v5.0.6: Added Air Force (FA), Army (W), and improved pattern matching.
+        Prioritizes official solicitation formats over internal IDs.
+        """
+        # v5.0.6: Air Force format: FA880625RB003, FA8806-25-R-B003
+        af_match = re.search(r"FA\d{4}[-]?\d{2}[-]?[RQ][-]?[A-Z0-9]+", text, re.IGNORECASE)
+        if af_match:
+            return af_match.group().upper().replace("-", "")
+
         # NIH format: 75N96025R00004
         nih_match = re.search(r"75N\d{11}", text)
         if nih_match:
             return nih_match.group()
-        
+
         # DoD Navy format: N0017826R30020003
         navy_match = re.search(r"N\d{5}\d{2}[RQ]\d+", text)
         if navy_match:
             return navy_match.group()
-        
-        # Generic format
+
+        # v5.0.6: Army format: W912DY-25-R-0001
+        army_match = re.search(r"W\d{3}[A-Z]{2}[-]?\d{2}[-]?[RQ][-]?\d+", text, re.IGNORECASE)
+        if army_match:
+            return army_match.group().upper()
+
+        # v5.0.6: GSA format: 47QFCA25R0001
+        gsa_match = re.search(r"\d{2}[A-Z]{4}\d{2}[RQ]\d+", text, re.IGNORECASE)
+        if gsa_match:
+            return gsa_match.group().upper()
+
+        # v5.0.6: Generic DoD format with alphanumeric: SPE4A6-25-R-0001
+        dod_generic = re.search(r"[A-Z]{3,5}\d[A-Z0-9][-]?\d{2}[-]?[RQ][-]?\d+", text, re.IGNORECASE)
+        if dod_generic:
+            return dod_generic.group().upper()
+
+        # Generic format (lower priority)
         generic_match = re.search(r"(?:RFP|SOL)[-_]?(\S+)", text, re.IGNORECASE)
         if generic_match:
             return generic_match.group(1)
-        
+
         return None
+
+    def extract_solicitation_from_content(self, text: str) -> Optional[str]:
+        """
+        v5.0.6: Extract solicitation number from document content.
+
+        This method searches document text for solicitation numbers,
+        prioritizing header/footer patterns and official format patterns.
+
+        Args:
+            text: Full document text content
+
+        Returns:
+            Extracted solicitation number or None
+        """
+        if not text:
+            return None
+
+        # Look for explicit labels first (highest confidence)
+        label_patterns = [
+            r"Solicitation\s*(?:No\.?|Number|#)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"RFP\s*(?:No\.?|Number|#)?[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"Contract\s*(?:No\.?|Number)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+            r"Reference\s*(?:No\.?|Number)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+        ]
+
+        for pattern in label_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                sol_num = match.group(1).strip()
+                # Validate it looks like a real solicitation number (not internal ID)
+                if len(sol_num) >= 10 and not sol_num.startswith("RFP-"):
+                    return sol_num.upper()
+
+        # Fall back to pattern extraction
+        return self._extract_solicitation_number(text)
     
     def _extract_research_outline_id(self, filename: str) -> str:
         """Extract Research Outline ID (e.g., 'RO-I', 'RO-III')"""
