@@ -48,6 +48,13 @@
     - [19.7 Test Results](#197-test-results)
     - [19.8 Endpoint Consolidation (v5.0.5-hotfix)](#198-endpoint-consolidation-v505-hotfix)
     - [19.9 Complete Test Results (v5.0.5-hotfix)](#199-complete-test-results-v505-hotfix)
+20. [Parsing Remediation v5.0.6](#20-parsing-remediation-v506)
+    - [20.1 Root Cause Analysis](#201-root-cause-analysis)
+    - [20.2 Fix 1: Table-First Page Limit Extraction](#202-fix-1-table-first-page-limit-extraction)
+    - [20.3 Fix 2: Volume Promotion for Administrative Sections](#203-fix-2-volume-promotion-for-administrative-sections)
+    - [20.4 Fix 3: Content-First Solicitation Extraction](#204-fix-3-content-first-solicitation-extraction)
+    - [20.5 Updated Parser Flow](#205-updated-parser-flow)
+    - [20.6 Solicitation Extraction Flow](#206-solicitation-extraction-flow)
 
 ---
 
@@ -83,6 +90,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | QA Test Infrastructure | 114 tests with GoldenRFP fixtures and CI/CD pipeline | v5.0.3 |
 | Decoupled Outline v3.0 | StrictStructureBuilder + ContentInjector + UI/Export fixes | v5.0.4 |
 | Outline Remediation | Validation gate, data source fix, fallback removal | v5.0.5 |
+| Parsing Remediation | Table-first extraction, volume promotion, content-first solicitation | v5.0.6 |
 
 ### 1.3 Technology Stack
 
@@ -4587,6 +4595,178 @@ Skeleton valid: True
 Volumes generated: 2 (Technical Approach, Cost Proposal)
 Requirements mapped: 45
 ✓ PASSED - Generated exactly 2 volumes (no hallucination)
+```
+
+---
+
+## 20. Parsing Remediation v5.0.6
+
+**Location:** `agents/enhanced_compliance/section_l_parser.py`, `agents/enhanced_compliance/bundle_detector.py`, `api/main.py`
+
+Despite v5.0.5 fixing phantom volume hallucination, forensic analysis of RFP-C5B27A6A revealed three new parsing failures that would cause proposal disqualification.
+
+### 20.1 Root Cause Analysis
+
+| Bug | Symptom | Impact |
+|-----|---------|--------|
+| **Table Blindness** | "Page Limit: No limit specified" when table says "8 Pages" | Proposal exceeds page limit → disqualified |
+| **Section Nesting** | Contract Documentation nested under Volume 1 | SF1449/DD254 forms count against Tech page limit |
+| **Wrong Solicitation** | Cover shows "RFP-C5B27A6A" instead of "FA880625RB003" | Administrative non-compliance |
+
+### 20.2 Fix 1: Table-First Page Limit Extraction
+
+**Problem:** The parser read text flow but ignored tabular associations between Volume and Page Limit columns.
+
+**New Method:** `_extract_page_limits_from_table()` in `section_l_parser.py`
+
+```python
+def _extract_page_limits_from_table(
+    self,
+    text: str,
+    warnings: List[str]
+) -> Dict[str, Tuple[str, int]]:
+    """
+    v5.0.6: Extract volume page limits from table structures.
+
+    Tables in Section L often define volume structure like:
+    | Volume | Title | Page Limit | Copies |
+    |   1    | Technical | 8 Pages | 1 |
+    |   2    | Cost/Price | No Limit | 1 |
+    """
+    # Detect table-like structures
+    table_header_patterns = [
+        r"(?:volume|vol\.?)\s*[|\t].*?(?:page\s*limit|pages?)[|\t\n]",
+        r"(?:title|description)\s*[|\t].*?(?:page\s*limit|pages?)[|\t\n]",
+    ]
+
+    # Extract rows with: Volume# | Title | ## Pages
+    table_row_patterns = [
+        r"(?:Volume\s*)?([1-3IVX]+)\s*[|\t]+\s*([A-Za-z][^|\t\n]{3,50})\s*[|\t]+\s*(\d+)\s*(?:pages?)?",
+    ]
+```
+
+**Priority Chain:**
+1. Table data (highest priority)
+2. Partial match in table (e.g., "Technical" → "Technical Proposal")
+3. Nearby text extraction (fallback)
+
+### 20.3 Fix 2: Volume Promotion for Administrative Sections
+
+**Problem:** "Section 3: Contract Documentation" was nested under Volume 1 instead of being a separate volume.
+
+**New Method:** `_promote_sections_to_volumes()` in `section_l_parser.py`
+
+```python
+def _promote_sections_to_volumes(
+    self,
+    text: str,
+    existing_volumes: List[VolumeInstruction],
+    warnings: List[str]
+) -> List[VolumeInstruction]:
+    """
+    v5.0.6: Promote certain sections to root-level volumes.
+    """
+    volume_promotion_keywords = [
+        'contract documentation',
+        'representations and certifications',
+        'administrative volume',
+        'contractual documents',
+        'required forms',
+        'attachments volume',
+    ]
+```
+
+**Behavior:**
+- Scans for promotion keywords not already in volume list
+- Creates new volume with next available number
+- Adds warning for user verification
+
+### 20.4 Fix 3: Content-First Solicitation Extraction
+
+**Problem:** System used internal job ID (`RFP-C5B27A6A`) instead of official solicitation number (`FA880625RB003`).
+
+**Root Cause:** Filename extraction had higher priority than document content.
+
+**New Method:** `extract_solicitation_from_content()` in `bundle_detector.py`
+
+```python
+def extract_solicitation_from_content(self, text: str) -> Optional[str]:
+    """
+    v5.0.6: Extract solicitation number from document content.
+    Prioritizes header/footer patterns and official format patterns.
+    """
+    # Labeled patterns (highest confidence)
+    label_patterns = [
+        r"Solicitation\s*(?:No\.?|Number|#)[:\s]+([A-Z0-9][-A-Z0-9]+)",
+        r"RFP\s*(?:No\.?|Number|#)?[:\s]+([A-Z0-9][-A-Z0-9]+)",
+    ]
+```
+
+**New Agency Patterns Added:**
+
+| Agency | Pattern | Example |
+|--------|---------|---------|
+| Air Force | `FA\d{4}[-]?\d{2}[-]?[RQ][-]?[A-Z0-9]+` | FA880625RB003 |
+| Army | `W\d{3}[A-Z]{2}[-]?\d{2}[-]?[RQ][-]?\d+` | W912DY-25-R-0001 |
+| GSA | `\d{2}[A-Z]{4}\d{2}[RQ]\d+` | 47QFCA25R0001 |
+| Generic DoD | `[A-Z]{3,5}\d[A-Z0-9][-]?\d{2}[-]?[RQ][-]?\d+` | SPE4A6-25-R-0001 |
+
+**Priority Change in `api/main.py`:**
+
+```python
+# v5.0.6: CONTENT-FIRST strategy
+# 1. Document content (most reliable - official headers/footers)
+# 2. Filename patterns (may contain internal IDs)
+# 3. Files array
+
+# Skip internal ID patterns
+if filename.startswith("RFP-") and len(filename.split("-")[1]) == 8:
+    continue  # Skip internal UUID-like IDs
+```
+
+### 20.5 Updated Parser Flow
+
+```
+Section L Text
+      ↓
+┌─────────────────────────────────────┐
+│ _extract_page_limits_from_table()   │ ← NEW: Table detection
+│ Returns: {title: (title, limit)}    │
+└─────────────────────────────────────┘
+      ↓
+┌─────────────────────────────────────┐
+│ _extract_volumes()                  │
+│ - Uses table data for page limits   │ ← UPDATED: Table-first
+│ - Falls back to nearby text         │
+└─────────────────────────────────────┘
+      ↓
+┌─────────────────────────────────────┐
+│ _promote_sections_to_volumes()      │ ← NEW: Volume promotion
+│ - Contract Documentation → Volume 3 │
+│ - Reps & Certs → Volume N           │
+└─────────────────────────────────────┘
+      ↓
+Validated Volume List
+```
+
+### 20.6 Solicitation Extraction Flow
+
+```
+Document Processing
+      ↓
+┌─────────────────────────────────────┐
+│ extract_solicitation_from_content() │ ← Priority 1 (NEW)
+│ - Check labeled patterns            │
+│ - Check agency-specific formats     │
+└─────────────────────────────────────┘
+      ↓ (if not found)
+┌─────────────────────────────────────┐
+│ _extract_solicitation_number()      │ ← Priority 2
+│ - Skip RFP-XXXXXXXX internal IDs    │
+│ - Check filename patterns           │
+└─────────────────────────────────────┘
+      ↓
+Official Solicitation Number
 ```
 
 ---
