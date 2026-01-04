@@ -11,6 +11,8 @@ This component:
 - Produces annotated_outline for ProposalState
 
 Key Principle: The skeleton is IMMUTABLE. We only fill the slots.
+
+v5.0.7: Added Iron Triangle validation to enforce Section C → Technical Volume only.
 """
 
 from typing import Dict, List, Optional, Any, Tuple
@@ -128,6 +130,38 @@ class ContentInjector:
                 'protection', 'safeguard', 'access'
             ],
         }
+
+        # v5.0.7: Iron Triangle validation rules
+        # Section C (PWS/SOW) requirements MUST go to Technical volumes
+        # Section M (Evaluation) criteria map to appropriate volumes
+        # Administrative forms go to Contract Documentation volumes
+
+        # Volume types for Iron Triangle validation
+        self.technical_volume_indicators = [
+            'technical', 'approach', 'solution', 'methodology',
+            'management', 'staffing', 'transition', 'quality'
+        ]
+        self.cost_volume_indicators = [
+            'cost', 'price', 'pricing', 'budget', 'financial'
+        ]
+        self.admin_volume_indicators = [
+            'contract documentation', 'administrative', 'representations',
+            'certifications', 'forms', 'attachments', 'sf1449', 'dd254'
+        ]
+
+        # Section C/PWS requirement indicators (should go to Technical)
+        self.section_c_indicators = [
+            'shall', 'must', 'contractor', 'offeror shall', 'vendor',
+            'provide', 'deliver', 'perform', 'support', 'maintain',
+            'infrastructure', 'staffing', 'approach', 'methodology'
+        ]
+
+        # Administrative form indicators (should go to Admin volumes)
+        self.admin_form_indicators = [
+            'sf1449', 'sf-1449', 'dd254', 'dd-254', 'dd form',
+            'certification', 'representation', 'disclosure',
+            'conflict of interest', 'organizational conflict'
+        ]
 
     def inject(
         self,
@@ -354,6 +388,78 @@ class ContentInjector:
 
         return None
 
+    def _classify_volume_type(self, vol_title: str) -> str:
+        """
+        v5.0.7: Classify volume as 'technical', 'cost', or 'admin'.
+
+        Used for Iron Triangle validation.
+        """
+        title_lower = vol_title.lower()
+
+        # Check admin first (most restrictive)
+        for indicator in self.admin_volume_indicators:
+            if indicator in title_lower:
+                return 'admin'
+
+        # Check cost
+        for indicator in self.cost_volume_indicators:
+            if indicator in title_lower:
+                return 'cost'
+
+        # Default to technical (most common)
+        for indicator in self.technical_volume_indicators:
+            if indicator in title_lower:
+                return 'technical'
+
+        return 'technical'  # Default
+
+    def _classify_requirement_type(self, requirement: Dict) -> str:
+        """
+        v5.0.7: Classify requirement as 'section_c', 'admin_form', or 'other'.
+
+        Used for Iron Triangle validation.
+        """
+        req_text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
+        req_section = requirement.get('section', '').upper()
+        req_category = requirement.get('category', '').lower()
+
+        # Check if it's from Section C/PWS/SOW
+        if req_section in ['C', 'PWS', 'SOW'] or req_category in ['technical', 'c_requirement']:
+            return 'section_c'
+
+        # Check for admin form indicators
+        for indicator in self.admin_form_indicators:
+            if indicator in req_text:
+                return 'admin_form'
+
+        # Check for Section C content indicators
+        section_c_matches = sum(1 for ind in self.section_c_indicators if ind in req_text)
+        if section_c_matches >= 2:
+            return 'section_c'
+
+        return 'other'
+
+    def _is_valid_iron_triangle_mapping(
+        self,
+        req_type: str,
+        vol_type: str
+    ) -> Tuple[bool, str]:
+        """
+        v5.0.7: Validate mapping against Iron Triangle rules.
+
+        Section C (PWS/SOW) requirements → Technical Volume ONLY
+        Admin forms → Admin Volume ONLY
+        """
+        # Section C requirements MUST go to Technical volumes
+        if req_type == 'section_c' and vol_type == 'admin':
+            return False, "Section C/PWS requirements cannot go in Administrative volumes"
+
+        # Admin forms should go to Admin volumes (but not a hard block)
+        if req_type == 'admin_form' and vol_type == 'technical':
+            return True, "Admin form in Technical volume - may need review"
+
+        return True, ""
+
     def _semantic_match(
         self,
         requirement: Dict,
@@ -363,22 +469,50 @@ class ContentInjector:
         """
         Use semantic matching to find best section for requirement.
 
+        v5.0.7: Now enforces Iron Triangle validation:
+        - Section C/PWS requirements → Technical Volume ONLY
+        - Admin forms → Admin Volume (preferred)
+
         Scores each section based on keyword overlap between
         requirement text and section title/type.
         """
         req_text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
         req_type = requirement.get('requirement_type', '').lower()
 
+        # v5.0.7: Classify requirement for Iron Triangle validation
+        iron_req_type = self._classify_requirement_type(requirement)
+
         best_match = None
         best_score = 0
+        best_vol_type = None
 
         for vol in skeleton.get('volumes', []):
             vol_title_lower = vol['title'].lower()
+
+            # v5.0.7: Classify volume type
+            vol_type = self._classify_volume_type(vol['title'])
+
+            # v5.0.7: Check Iron Triangle validity before scoring
+            is_valid, violation_reason = self._is_valid_iron_triangle_mapping(
+                iron_req_type, vol_type
+            )
+            if not is_valid:
+                # Skip this volume - Iron Triangle violation
+                print(f"[v5.0.7] Iron Triangle block: {violation_reason}")
+                continue
 
             for sec in vol.get('sections', []):
                 sec_title_lower = sec['title'].lower()
                 score = 0
                 match_reasons = []
+
+                # v5.0.7: Boost for correct Iron Triangle mapping
+                if iron_req_type == 'section_c' and vol_type == 'technical':
+                    score += 25
+                    match_reasons.append("Iron Triangle: Section C → Technical")
+                elif iron_req_type == 'admin_form' and vol_type == 'admin':
+                    score += 25
+                    match_reasons.append("Iron Triangle: Admin form → Admin volume")
 
                 # Score based on keyword overlap
                 for category, keywords in self.section_keywords.items():
@@ -420,6 +554,7 @@ class ContentInjector:
 
                 if score > best_score:
                     best_score = score
+                    best_vol_type = vol_type
                     best_match = {
                         'section_id': sec['id'],
                         'volume_id': vol['id'],

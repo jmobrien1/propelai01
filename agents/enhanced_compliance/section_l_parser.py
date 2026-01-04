@@ -63,12 +63,25 @@ class SectionLParser:
         ]
 
         self.section_patterns = [
-            # "1.0 Executive Summary"
-            r"(\d+\.\d*)\s+([A-Z][^\n]{4,60})",
+            # "1.0 Executive Summary" - v5.0.7: Limited to max 2 digits before decimal
+            r"(\d{1,2}\.\d*)\s+([A-Z][^\n]{4,60})",
             # "Section 1: Technical Approach"
             r"Section\s+(\d+)\s*[:\-]\s*([^\n]+)",
             # "(a) Technical Approach"
             r"\(([a-z])\)\s+([A-Z][^\n]{4,60})",
+        ]
+
+        # v5.0.7: Invalid section header patterns (false positives)
+        # These patterns indicate the matched text is NOT a valid section header
+        self.invalid_header_patterns = [
+            r'^\d{3,}',  # Starts with 3+ digits (e.g., "505", "1000")
+            r'^this\s+is\s+',  # Sentence starting with "This is"
+            r'^the\s+\w+\s+shall',  # Requirement text "The contractor shall..."
+            r'^a\s+\w+\s+is\s+',  # Sentence starting with "A ... is"
+            r'^\w+\s+shall\s+',  # Requirement "... shall ..."
+            r'^solicitation',  # "Solicitation" is not a section header
+            r'^competitive',  # "Competitive" is not a section header
+            r'^offeror',  # Requirement about offeror
         ]
 
         self.page_limit_patterns = [
@@ -614,6 +627,11 @@ class SectionLParser:
                     if sec_title.lower().startswith(('the ', 'a ', 'an ')):
                         continue
 
+                    # v5.0.7: Validate section header is not a false positive
+                    if not self._is_valid_section_header(sec_id, sec_title):
+                        print(f"[v5.0.7] Rejected invalid header: '{sec_id}. {sec_title[:50]}...'")
+                        continue
+
                     # Find page limit for this section
                     page_limit = self._find_page_limit_near(
                         vol_text, match.end(), sec_title
@@ -631,6 +649,41 @@ class SectionLParser:
                     order += 1
 
         return sections
+
+    def _is_valid_section_header(self, sec_id: str, sec_title: str) -> bool:
+        """
+        v5.0.7: Validate that a section header match is legitimate.
+
+        Rejects false positives like:
+        - "505. This is a competitive solicitation..."
+        - Section numbers > 99 (unrealistic)
+        - Title text that looks like requirement prose
+        """
+        # Check section ID - reject unrealistic numbers
+        try:
+            # Extract numeric portion before decimal
+            num_part = sec_id.split('.')[0]
+            if num_part.isdigit() and int(num_part) > 50:
+                return False  # Section numbers > 50 are almost never real
+        except (ValueError, IndexError):
+            pass
+
+        # Check title against invalid patterns
+        title_lower = sec_title.lower()
+        for pattern in self.invalid_header_patterns:
+            if re.search(pattern, title_lower, re.IGNORECASE):
+                return False
+
+        # Additional validation: titles should look like headers
+        # Real headers typically: start with capital, 2-8 words, no "shall"
+        words = sec_title.split()
+        if len(words) > 15:  # Too long for a header
+            return False
+
+        if 'shall' in title_lower:  # Requirements contain "shall", headers don't
+            return False
+
+        return True
 
     def _find_page_limit_near(
         self,
