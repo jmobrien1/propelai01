@@ -599,6 +599,22 @@ class ContentInjector:
                 score = 0
                 match_reasons = []
 
+                # v6.0.1: SECTION-LEVEL HARD FILTER
+                # Block Section C requirements from going into admin form sections
+                # even if they made it past the volume-level filter
+                if source_section in ['C', 'SOW', 'PWS'] or iron_req_type == 'section_c':
+                    # Check if this is an admin form section (not allowed for Section C)
+                    admin_section_keywords = [
+                        'sf1449', 'sf 1449', 'dd254', 'dd 254', 'dd form',
+                        'personnel security', 'security questionnaire',
+                        'representations and certifications', 'certifications',
+                        'evidence of', 'draft dd', 'online representation'
+                    ]
+                    if any(kw in sec_title_lower for kw in admin_section_keywords):
+                        print(f"[v6.0.1] SECTION-LEVEL BLOCK: Section C requirement "
+                              f"cannot go into admin section '{sec['title']}'")
+                        continue  # Skip this section entirely
+
                 # v5.0.7: Boost for correct Iron Triangle mapping
                 if iron_req_type == 'section_c' and vol_type == 'technical':
                     score += 25

@@ -136,18 +136,34 @@ class SupervisorValidator:
             ))
             confidence -= 0.5
 
-        # Check 2: Stated vs found volume count
+        # Check 2: Stated vs found volume count - v6.0.1: HARD VALIDATION GATE
+        # If RFP explicitly states N volumes and we found fewer, this is CRITICAL
+        # The system MUST NOT generate an outline with missing volumes
         stated = stated_volume_count or schema.get('stated_volume_count')
         if stated is not None and len(volumes) != stated:
-            severity = ValidationSeverity.ERROR if len(volumes) < stated else ValidationSeverity.WARNING
-            issues.append(ValidationIssue(
-                code="VOLUME_COUNT_MISMATCH",
-                message=f"RFP states {stated} volumes but found {len(volumes)}",
-                severity=severity,
-                recoverable=True,
-                suggested_action=f"Search for {stated - len(volumes)} missing volume(s)"
-            ))
-            confidence -= 0.3 if severity == ValidationSeverity.ERROR else 0.1
+            missing_count = stated - len(volumes)
+            if missing_count > 0:
+                # CRITICAL: Missing volumes - MUST block outline generation
+                issues.append(ValidationIssue(
+                    code="VOLUME_COUNT_MISMATCH",
+                    message=f"CRITICAL: RFP states {stated} volumes but only found {len(volumes)}. "
+                            f"Missing {missing_count} volume(s). Cannot generate compliant outline.",
+                    severity=ValidationSeverity.CRITICAL,
+                    recoverable=False,  # v6.0.1: No longer recoverable - hard block
+                    suggested_action=f"Manual review required: Search for {missing_count} missing volume(s) "
+                                    "using pdfplumber structural search or review source PDF"
+                ))
+                confidence = 0.0  # v6.0.1: Zero confidence = hard failure
+            else:
+                # Found more volumes than stated - warning only
+                issues.append(ValidationIssue(
+                    code="VOLUME_COUNT_EXCESS",
+                    message=f"RFP states {stated} volumes but found {len(volumes)} ({len(volumes) - stated} extra)",
+                    severity=ValidationSeverity.WARNING,
+                    recoverable=True,
+                    suggested_action="Review if extra volumes should be consolidated or removed"
+                ))
+                confidence -= 0.1
 
         # Check 3: Sections distribution
         orphan_sections = [s for s in sections if not s.get('parent_volume_id')]
@@ -407,6 +423,18 @@ class OutlineOrchestrator:
                     print(f"[v6.0 Supervisor] {issue.severity.value.upper()}: {issue.message}")
                     if issue.suggested_action:
                         print(f"[v6.0 Supervisor]   Suggested: {issue.suggested_action}")
+
+            # v6.0.1: HARD VALIDATION GATE - Block outline generation on CRITICAL issues
+            if schema_validation.has_critical_issues and self.strict_mode:
+                critical_issues = [
+                    i for i in schema_validation.issues
+                    if i.severity == ValidationSeverity.CRITICAL
+                ]
+                error_messages = "; ".join(i.message for i in critical_issues)
+                raise StructureValidationError(
+                    f"[v6.0.1 HARD BLOCK] Cannot generate outline due to critical validation failures: "
+                    f"{error_messages}"
+                )
 
         # Phase 2: Build skeleton from schema
         logger.info("Phase 2: Building skeleton from schema...")
