@@ -374,21 +374,16 @@ class SectionLParser:
         pdf_path: str
     ) -> Dict[str, Optional[str]]:
         """
-        v6.0.1: Extract metadata from SF1449 form using coordinate-based extraction.
+        v6.0.2: Extract metadata from SF1449 using Keyword Anchor Strategy.
 
-        SF1449 is the standard federal solicitation cover sheet with fixed field positions.
-        This method extracts from known bounding box coordinates on Letter-size (8.5x11") paper:
+        CRITICAL FIX: Abandons fixed-point coordinates which fail due to document
+        scaling/margins. Instead, uses text anchors to find field labels first,
+        then extracts values relative to those anchors.
 
-        Block 2 (Contract Number): Top-left area
-        Block 5 (Solicitation Number): Top-RIGHT area (~4.5-7.5", 0.5-1.0")
-        Block 8 (Offer Due Date/Time): Left side (~0.5-4.0", 1.3-2.0")
-        Block 9 (Issued By): Left side, below Block 8
-
-        IMPORTANT: Block 5 is the SOLICITATION NUMBER, not Block 2.
-        The coordinate system is:
-        - Origin at top-left
-        - Units in points (72 points = 1 inch)
-        - Letter paper = 612 x 792 points
+        Strategy:
+        1. Find anchor text ("Solicitation Number", "OFFER DUE DATE", etc.)
+        2. Extract value from bbox relative to anchor position
+        3. Fallback to full-page semantic search if anchor not found
 
         Args:
             pdf_path: Path to the PDF file
@@ -407,7 +402,18 @@ class SectionLParser:
         if not pdf_path or not PDFPLUMBER_AVAILABLE:
             return result
 
+        # Solicitation number patterns
+        sol_patterns = [
+            r'(FA\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Air Force: FA880625RB003
+            r'(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Army
+            r'(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Navy
+            r'([A-Z]{2}\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Generic agency
+        ]
+
         try:
+            import datetime
+            current_year = datetime.datetime.now().year
+
             with pdfplumber.open(pdf_path) as pdf:
                 if len(pdf.pages) == 0:
                     return result
@@ -416,118 +422,163 @@ class SectionLParser:
                 page_width = first_page.width
                 page_height = first_page.height
 
-                # Check if this looks like an SF1449 form
+                # Get full page text for detection and fallback
                 first_page_text = first_page.extract_text() or ""
+
+                # Check if this looks like an SF1449 form
                 if 'SOLICITATION/CONTRACT' not in first_page_text.upper() and 'SF 1449' not in first_page_text.upper():
-                    print("[v6.0.1] First page does not appear to be SF1449, skipping coordinate extraction")
-                    return result
+                    print("[v6.0.2] First page does not appear to be SF1449, using full-page search")
+                    # Fall through to full-page search below
+                else:
+                    print(f"[v6.0.2] SF1449 form detected, using Keyword Anchor Strategy")
 
-                print(f"[v6.0.1] SF1449 form detected (page size: {page_width:.0f}x{page_height:.0f} pts)")
+                # v6.0.2: KEYWORD ANCHOR STRATEGY
+                # Find text elements with their positions
+                words = first_page.extract_words()
 
-                # v6.0.1: Block 5 (SOLICITATION NUMBER) - TOP-RIGHT quadrant
-                # On SF1449, Block 5 is in the upper right: approximately 4.5" to 7.5" from left, 0.4" to 1.0" from top
-                # Convert to points: 4.5*72=324, 7.5*72=540, 0.4*72=29, 1.0*72=72
-                block5_bbox = (
-                    72 * 4.5,   # x0: 4.5 inches from left
-                    72 * 0.4,   # y0: 0.4 inches from top
-                    72 * 7.5,   # x1: 7.5 inches from left
-                    72 * 1.2    # y1: 1.2 inches from top
-                )
-                block5_text = self._extract_text_from_bbox(first_page, block5_bbox)
-                print(f"[v6.0.1] Block 5 raw text: {repr(block5_text)}")
+                # Strategy 1: Find "SOLICITATION" label and extract nearby value
+                sol_anchor = None
+                for word in words:
+                    word_text = word['text'].upper()
+                    if 'SOLICITATION' in word_text and 'NO' in word_text:
+                        sol_anchor = word
+                        break
+                    elif word_text == 'SOLICITATION':
+                        # Check if next word is "NO" or "NUMBER"
+                        sol_anchor = word
+                        break
 
-                if block5_text:
-                    # Extract Air Force solicitation format: FA8806-25-R-B003 or FA880625RB003
-                    sol_patterns = [
-                        r'(FA\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Air Force
-                        r'(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Army
-                        r'(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Navy
-                        r'([A-Z0-9]{2,}\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Generic
-                    ]
-                    for pattern in sol_patterns:
-                        sol_match = re.search(pattern, block5_text.upper())
-                        if sol_match:
-                            result['solicitation_number'] = sol_match.group(1)
-                            print(f"[v6.0.1] SF1449 Block 5 solicitation: {result['solicitation_number']}")
-                            break
+                if sol_anchor:
+                    # Extract from area to the RIGHT of the anchor (value field)
+                    anchor_right = sol_anchor['x1']
+                    anchor_top = sol_anchor['top'] - 10
+                    anchor_bottom = sol_anchor['bottom'] + 30
 
-                # v6.0.1: Also try Block 2 area (top-left) as fallback
-                if not result['solicitation_number']:
-                    block2_bbox = (
-                        72 * 1.0,   # x0: 1.0 inches
-                        72 * 0.4,   # y0: 0.4 inches
-                        72 * 4.0,   # x1: 4.0 inches
-                        72 * 1.2    # y1: 1.2 inches
+                    # Create bbox to the right of anchor
+                    value_bbox = (
+                        anchor_right,
+                        max(0, anchor_top),
+                        min(page_width, anchor_right + 200),
+                        min(page_height, anchor_bottom)
                     )
-                    block2_text = self._extract_text_from_bbox(first_page, block2_bbox)
-                    print(f"[v6.0.1] Block 2 fallback text: {repr(block2_text)}")
+                    value_text = self._extract_text_from_bbox(first_page, value_bbox)
+                    print(f"[v6.0.2] Solicitation anchor found at x={anchor_right:.0f}, value area: {repr(value_text)}")
 
-                    if block2_text:
+                    if value_text:
                         for pattern in sol_patterns:
-                            sol_match = re.search(pattern, block2_text.upper())
+                            sol_match = re.search(pattern, value_text.upper())
                             if sol_match:
                                 result['solicitation_number'] = sol_match.group(1)
-                                print(f"[v6.0.1] SF1449 Block 2 solicitation (fallback): {result['solicitation_number']}")
+                                print(f"[v6.0.2] Solicitation from anchor: {result['solicitation_number']}")
                                 break
 
-                # v6.0.1: Block 8 (Offer Due Date/Time) - approximately 0.5-4.5" from left, 1.3-2.2" from top
-                block8_bbox = (
-                    72 * 0.3,   # x0
-                    72 * 1.3,   # y0
-                    72 * 4.5,   # x1
-                    72 * 2.3    # y1
-                )
-                block8_text = self._extract_text_from_bbox(first_page, block8_bbox)
-                print(f"[v6.0.1] Block 8 raw text: {repr(block8_text)}")
-
-                if block8_text:
-                    # v6.0.1: Extract date with YEAR VALIDATION
-                    # Must be >= current year to avoid grabbing legacy header dates
-                    import datetime
-                    current_year = datetime.datetime.now().year
-
-                    # Try multiple date formats
-                    date_patterns = [
-                        r'(\d{1,2}\s+[A-Za-z]{3,9}\s+(\d{4}))',  # "03 Feb 2025" or "3 February 2025"
-                        r'([A-Za-z]{3,9}\s+\d{1,2},?\s+(\d{4}))',  # "February 3, 2025"
-                        r'(\d{1,2}[/-]\d{1,2}[/-](\d{4}))',  # "02/03/2025"
-                    ]
-
-                    for pattern in date_patterns:
-                        for match in re.finditer(pattern, block8_text):
-                            full_date = match.group(1)
-                            year = int(match.group(2))
-
-                            # v6.0.1: Year validation - reject dates from previous years
-                            if year >= current_year:
-                                result['due_date'] = full_date
-                                print(f"[v6.0.1] SF1449 Block 8 due date (validated): {result['due_date']}")
-                                break
-                            else:
-                                print(f"[v6.0.1] Rejected stale date {full_date} (year {year} < {current_year})")
-
-                        if result['due_date']:
+                # Strategy 2: Full-page regex search as fallback
+                if not result['solicitation_number']:
+                    print("[v6.0.2] Anchor strategy failed, using full-page search")
+                    for pattern in sol_patterns:
+                        sol_match = re.search(pattern, first_page_text.upper())
+                        if sol_match:
+                            result['solicitation_number'] = sol_match.group(1)
+                            print(f"[v6.0.2] Solicitation from full-page: {result['solicitation_number']}")
                             break
 
-                    # Extract time from block text - format "1700" or "5:00 PM"
-                    time_match = re.search(
-                        r'(\d{4})\s*(?:hrs?|hours?|local|pacific|eastern|central|mountain|[A-Z]{2,3}T)?',
-                        block8_text,
-                        re.IGNORECASE
+                # v6.0.2: OFFER DUE DATE - Keyword Anchor Strategy
+                due_date_anchor = None
+                for word in words:
+                    word_text = word['text'].upper()
+                    if 'OFFER' in word_text or 'DUE' in word_text:
+                        # Check if this is part of "OFFER DUE DATE" or "OFFERS DUE"
+                        due_date_anchor = word
+                        break
+
+                if due_date_anchor:
+                    # Extract from area BELOW and to the RIGHT of anchor
+                    anchor_x = due_date_anchor['x0']
+                    anchor_bottom = due_date_anchor['bottom']
+
+                    value_bbox = (
+                        max(0, anchor_x - 50),
+                        anchor_bottom,
+                        min(page_width, anchor_x + 300),
+                        min(page_height, anchor_bottom + 60)
                     )
-                    if time_match:
-                        time_val = time_match.group(1)
-                        # Validate it looks like a time (0000-2359)
-                        if 0 <= int(time_val) <= 2359:
-                            result['due_time'] = time_val
-                            print(f"[v6.0.1] SF1449 Block 8 due time: {result['due_time']}")
+                    value_text = self._extract_text_from_bbox(first_page, value_bbox)
+                    print(f"[v6.0.2] Due date anchor area: {repr(value_text)}")
+
+                    if value_text:
+                        result['due_date'], result['due_time'] = self._extract_validated_date_time(
+                            value_text, current_year
+                        )
+
+                # Strategy 2: Full-page date search with year validation
+                if not result['due_date']:
+                    print("[v6.0.2] Due date anchor failed, using full-page search with year >= 2025")
+                    result['due_date'], result['due_time'] = self._extract_validated_date_time(
+                        first_page_text, current_year
+                    )
 
         except Exception as e:
-            print(f"[v6.0.1] Error in SF1449 coordinate extraction: {e}")
+            print(f"[v6.0.2] Error in SF1449 extraction: {e}")
             import traceback
             traceback.print_exc()
 
         return result
+
+    def _extract_validated_date_time(
+        self,
+        text: str,
+        min_year: int
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        v6.0.2: Extract date and time with year validation.
+
+        Only returns dates with year >= min_year to avoid grabbing legacy dates.
+
+        Args:
+            text: Text to search
+            min_year: Minimum acceptable year (e.g., 2025)
+
+        Returns:
+            (due_date, due_time) tuple
+        """
+        due_date = None
+        due_time = None
+
+        # Date patterns with year capture group
+        date_patterns = [
+            r'(\d{1,2}\s+[A-Za-z]{3,9}\s+(\d{4}))',  # "03 Feb 2025"
+            r'([A-Za-z]{3,9}\s+\d{1,2},?\s+(\d{4}))',  # "February 3, 2025"
+            r'(\d{1,2}[/-]\d{1,2}[/-](\d{4}))',  # "02/03/2025"
+        ]
+
+        for pattern in date_patterns:
+            for match in re.finditer(pattern, text):
+                full_date = match.group(1)
+                year = int(match.group(2))
+
+                if year >= min_year:
+                    due_date = full_date
+                    print(f"[v6.0.2] Validated date: {due_date} (year {year} >= {min_year})")
+                    break
+                else:
+                    print(f"[v6.0.2] Rejected stale date: {full_date} (year {year} < {min_year})")
+
+            if due_date:
+                break
+
+        # Extract time (4-digit military format)
+        if text:
+            time_match = re.search(
+                r'\b(\d{4})\s*(?:hrs?|hours?|local|pacific|eastern|central|mountain|[A-Z]{2,3}T)?\b',
+                text,
+                re.IGNORECASE
+            )
+            if time_match:
+                time_val = time_match.group(1)
+                if 0 <= int(time_val) <= 2359:
+                    due_time = time_val
+
+        return due_date, due_time
 
     def _extract_text_from_bbox(self, page, bbox: Tuple[float, float, float, float]) -> Optional[str]:
         """
@@ -612,15 +663,17 @@ class SectionLParser:
         warnings: List[str]
     ) -> List[VolumeInstruction]:
         """
-        v6.0: Semantic search for missing volumes when stated_count > found.
+        v6.0.2: GREEDY VOLUME RECOVERY - Aggressive search for missing volumes.
 
-        This is the "Supervisor Agent" logic - instead of failing, we search
-        for common volume patterns that the regex might have missed.
+        CRITICAL FIX: Performs "Document Sweep" to find volumes missed by regex.
+        When stated_count (3) > found_volumes (2), this method MUST find the
+        missing volumes or the outline will fail the Iron Triangle gate.
 
         Strategy:
-        1. Identify which volume numbers are missing (e.g., if Vol 1 and 2 found, Vol 3 is missing)
-        2. Search for common keywords for that volume type
-        3. Look for section headers that indicate a volume boundary (e.g., "3. Contract Documentation")
+        1. Identify which volume numbers are missing
+        2. Search for lines starting with missing digit (e.g., "3.") containing keywords
+        3. Search for ANY line containing "Documentation" or "Contract" + "Volume"
+        4. Promote found lines immediately to VolumeInstruction
 
         Returns:
             List of newly found VolumeInstruction objects
@@ -631,103 +684,149 @@ class SectionLParser:
         found_numbers = {v['volume_number'] for v in found_volumes}
 
         # Common volume type keywords by position
-        # Volume 1 is typically Technical, Volume 2 is Cost/Price, Volume 3+ is Admin/Documentation
         volume_keywords = {
             1: ['technical', 'executive summary', 'management', 'approach'],
             2: ['cost', 'price', 'pricing', 'business'],
-            3: ['contract', 'documentation', 'administrative', 'certifications', 'forms', 'representations'],
+            3: ['contract', 'documentation', 'administrative', 'certifications', 'forms'],
             4: ['past performance', 'experience', 'references'],
             5: ['small business', 'subcontracting'],
         }
 
-        # Search for missing volumes
+        # v6.0.2: DOCUMENT SWEEP - Aggressive line-by-line search
+        lines = text.split('\n')
+
         for vol_num in range(1, stated_count + 1):
             if vol_num in found_numbers:
                 continue
+            if vol_num in {v['volume_number'] for v in missing_volumes}:
+                continue
 
-            print(f"[v6.0] Searching for missing Volume {vol_num}...")
+            print(f"[v6.0.2] GREEDY RECOVERY: Searching for missing Volume {vol_num}...")
 
             keywords = volume_keywords.get(vol_num, ['volume', 'section'])
 
-            # Strategy 1: Look for "N. Title" patterns at line start
-            for line in text.split('\n'):
+            # Strategy 1: Find lines starting with the missing digit
+            # Matches: "3. Contract Documentation Volume" or "3. Contract Documentation"
+            for line in lines:
                 line_stripped = line.strip()
 
-                # Match "3. Contract Documentation" or "3. Contract Documentation Volume"
-                numbered_match = re.match(
-                    rf'^{vol_num}\.\s+(.{{5,80}}?)(?:\s*Volume)?\s*$',
+                # v6.0.2: Greedy pattern - any line starting with "N." or "N " where N is missing vol
+                greedy_match = re.match(
+                    rf'^{vol_num}[\.\s]+(.{{3,100}})',
                     line_stripped,
                     re.IGNORECASE
                 )
 
-                if numbered_match:
-                    title = numbered_match.group(1).strip()
-
-                    # Check if title contains any expected keywords
+                if greedy_match:
+                    title = greedy_match.group(1).strip()
                     title_lower = title.lower()
-                    keyword_match = any(kw in title_lower for kw in keywords)
 
-                    if keyword_match or vol_num >= 3:  # Vol 3+ often has unexpected titles
+                    # Check if contains ANY volume-like keyword
+                    has_keyword = any(
+                        kw in title_lower
+                        for kw in keywords + ['volume', 'documentation', 'contract', 'admin']
+                    )
+
+                    if has_keyword or vol_num >= 3:  # Always accept Vol 3+ candidates
                         # Clean up title
-                        title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+                        title = re.sub(r'[\.\,\;\:\(\)]+$', '', title).strip()
+                        title = re.sub(r'\s+', ' ', title)
+
+                        # Truncate if too long
+                        if len(title) > 60:
+                            title = title[:60].rsplit(' ', 1)[0]
 
                         # Add "Volume" suffix if not present
-                        if not title.lower().endswith('volume'):
+                        if 'volume' not in title.lower():
                             title = f"{title} Volume"
 
-                        print(f"[v6.0] Found missing volume via numbered pattern: '{title}'")
+                        print(f"[v6.0.2] GREEDY MATCH: Found '{title}' for Volume {vol_num}")
 
                         missing_volumes.append(VolumeInstruction(
                             volume_id=f"VOL-{vol_num}",
                             volume_title=title,
                             volume_number=vol_num,
                             page_limit=None,
-                            source_reference=f"Section L (semantic search, heading {vol_num})",
+                            source_reference=f"Section L (greedy recovery, line pattern {vol_num}.)",
                             is_mandatory=True
                         ))
                         break
 
-            # Strategy 2: Search for keyword mentions if numbered pattern didn't match
+            # Strategy 2: Full-text keyword sweep if still not found
             if vol_num not in {v['volume_number'] for v in missing_volumes}:
+                print(f"[v6.0.2] Line pattern failed, trying keyword sweep...")
+
                 for keyword in keywords:
-                    # Look for "Contract Documentation Volume" or similar
-                    keyword_pattern = rf'\b({keyword})\s+Volume\b'
-                    match = re.search(keyword_pattern, text, re.IGNORECASE)
+                    # v6.0.2: Greedy patterns for keywords
+                    patterns = [
+                        rf'({keyword}\s+(?:documentation\s+)?volume)',  # "Contract Documentation Volume"
+                        rf'({keyword}\s+volume)',  # "Contract Volume"
+                        rf'(\d+\.\s*{keyword}[^\n]{{0,50}})',  # "3. Contract..."
+                    ]
 
-                    if match:
-                        # Extract surrounding context to build title
-                        start = max(0, match.start() - 20)
-                        end = min(len(text), match.end() + 20)
-                        context = text[start:end]
+                    for pattern in patterns:
+                        match = re.search(pattern, text, re.IGNORECASE)
+                        if match:
+                            title = match.group(1).strip()
+                            title = re.sub(r'[\.\,\;\:]+$', '', title)
 
-                        # Try to extract clean title
-                        title_match = re.search(
-                            rf'(\d+\.?\s*)?({keyword}[^\.]*?Volume)',
-                            context,
-                            re.IGNORECASE
-                        )
+                            # Capitalize properly
+                            title = title.title()
 
-                        if title_match:
-                            title = title_match.group(2).strip()
-                            title = title.title()  # Capitalize properly
+                            # Add Volume if not present
+                            if 'volume' not in title.lower():
+                                title = f"{title} Volume"
 
-                            print(f"[v6.0] Found missing volume via keyword search: '{title}'")
+                            print(f"[v6.0.2] KEYWORD SWEEP: Found '{title}' for Volume {vol_num}")
 
                             missing_volumes.append(VolumeInstruction(
                                 volume_id=f"VOL-{vol_num}",
                                 volume_title=title,
                                 volume_number=vol_num,
                                 page_limit=None,
-                                source_reference=f"Section L (semantic search, keyword '{keyword}')",
+                                source_reference=f"Section L (greedy recovery, keyword '{keyword}')",
                                 is_mandatory=True
                             ))
                             break
 
+                    if vol_num in {v['volume_number'] for v in missing_volumes}:
+                        break
+
+        # Strategy 3: Last resort - search for specific volume titles
+        still_missing = set(range(1, stated_count + 1)) - found_numbers - {v['volume_number'] for v in missing_volumes}
+        if still_missing:
+            print(f"[v6.0.2] Still missing volumes: {still_missing}, trying title patterns...")
+
+            # Common volume title patterns
+            title_patterns = [
+                (r'Contract\s+Documentation\s+Volume', 3),
+                (r'Administrative\s+Volume', 3),
+                (r'Past\s+Performance\s+Volume', 4),
+                (r'Technical\s+(?:Proposal\s+)?Volume', 1),
+                (r'Cost\s*[/&]\s*Price\s+Volume', 2),
+            ]
+
+            for pattern, default_vol in title_patterns:
+                if default_vol in still_missing:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        title = match.group(0).strip()
+                        print(f"[v6.0.2] TITLE PATTERN: Found '{title}' for Volume {default_vol}")
+
+                        missing_volumes.append(VolumeInstruction(
+                            volume_id=f"VOL-{default_vol}",
+                            volume_title=title,
+                            volume_number=default_vol,
+                            page_limit=None,
+                            source_reference=f"Section L (greedy recovery, title pattern)",
+                            is_mandatory=True
+                        ))
+
         if missing_volumes:
             warnings.append(
-                f"Found {len(missing_volumes)} volume(s) via semantic search: "
+                f"GREEDY RECOVERY: Found {len(missing_volumes)} volume(s): "
                 f"{[v['volume_title'] for v in missing_volumes]}. "
-                "These were not detected by primary regex patterns."
+                "These were missed by primary regex patterns."
             )
 
         return missing_volumes
@@ -961,18 +1060,20 @@ class SectionLParser:
         warnings: List[str]
     ) -> Dict[str, Tuple[str, int]]:
         """
-        v6.0.1: Aggressive spatial table extraction for page limits.
+        v6.0.2: DIGIT-TARGETING TABLE EXTRACTION for page limits.
 
-        This method scans ALL tables in the PDF looking for page limit data
-        using keyword-based row/column intersection. It handles:
-        - Tables without clear headers (like "Table 3" in Placement Procedures)
-        - Tables where column headers don't match expected patterns
-        - Tables with page limits in different column formats
+        CRITICAL FIX: Abandons keyword-first strategy which missed page limits
+        in tables where volume keywords weren't in the same row. Instead uses
+        Digit-to-Label Association:
 
-        Strategy:
-        1. For each table, find rows containing volume keywords (Technical, Cost, etc.)
-        2. Find columns containing numeric values that look like page limits
-        3. Link row keywords to column values based on cell intersection
+        1. DIGIT-FIRST: Find any cell containing a small integer (1-100)
+        2. CONTEXT-CHECK: Check if row OR adjacent cells contain volume keywords
+        3. LOCK: Associate the digit with the matching volume type
+
+        This fixes "Table 3" in Placement Procedures where:
+        - Row contains: "Technical" | "15" | "Pages"
+        - Old method: Missed because keyword matching was too narrow
+        - New method: Find "15", check left cell for "Technical", lock Vol 1 = 15 pages
 
         Args:
             pdf_path: Path to the PDF file
@@ -986,13 +1087,29 @@ class SectionLParser:
         if not pdf_path or not PDFPLUMBER_AVAILABLE:
             return page_limits
 
-        # Keywords that indicate a volume row
-        volume_keywords = {
-            'technical': ['technical', 'tech', 'executive', 'management', 'approach'],
-            'cost': ['cost', 'price', 'pricing', 'business'],
-            'contract': ['contract', 'documentation', 'administrative', 'admin', 'certifications'],
-            'past performance': ['past performance', 'experience', 'references'],
+        # v6.0.2: Volume keyword to volume number mapping for digit-targeting
+        volume_keyword_map = {
+            'technical': ('Technical Volume', 1),
+            'tech': ('Technical Volume', 1),
+            'executive': ('Executive Summary and Technical Volume', 1),
+            'management': ('Technical Volume', 1),
+            'approach': ('Technical Volume', 1),
+            'cost': ('Cost & Price Volume', 2),
+            'price': ('Cost & Price Volume', 2),
+            'pricing': ('Cost & Price Volume', 2),
+            'business': ('Cost & Price Volume', 2),
+            'contract': ('Contract Documentation Volume', 3),
+            'documentation': ('Contract Documentation Volume', 3),
+            'administrative': ('Contract Documentation Volume', 3),
+            'admin': ('Contract Documentation Volume', 3),
+            'certifications': ('Contract Documentation Volume', 3),
+            'past performance': ('Past Performance Volume', 4),
+            'experience': ('Past Performance Volume', 4),
+            'references': ('Past Performance Volume', 4),
         }
+
+        # Common page limits to target (digit-first search)
+        target_page_limits = [8, 10, 15, 20, 25, 30, 50, 100]
 
         try:
             with pdfplumber.open(pdf_path) as pdf:
@@ -1003,58 +1120,140 @@ class SectionLParser:
                         if not table or len(table) < 2:
                             continue
 
-                        print(f"[v6.0.1] Scanning table {table_idx + 1} on page {page_num + 1} "
-                              f"({len(table)} rows x {len(table[0]) if table else 0} cols)")
+                        print(f"[v6.0.2] DIGIT-TARGETING: Scanning table {table_idx + 1} "
+                              f"on page {page_num + 1} ({len(table)} rows x {len(table[0]) if table else 0} cols)")
 
-                        # v6.0.1: Scan each row for volume keywords AND page limits
+                        # v6.0.2: DIGIT-FIRST STRATEGY
+                        # Scan ALL cells for target page limits
                         for row_idx, row in enumerate(table):
-                            row_text = ' '.join(str(cell or '').lower() for cell in row)
-
-                            # Check if this row contains a volume keyword
-                            matched_volume_type = None
-                            for vol_type, keywords in volume_keywords.items():
-                                if any(kw in row_text for kw in keywords):
-                                    matched_volume_type = vol_type
-                                    break
-
-                            if not matched_volume_type:
-                                continue
-
-                            # Found a volume row - now look for a page limit in this row
                             for col_idx, cell in enumerate(row):
                                 cell_text = str(cell or '').strip()
 
-                                # Check if this cell contains a page limit
-                                # Pattern: number optionally followed by "pages" or standalone number 1-500
-                                limit_match = re.search(r'^(\d{1,3})\s*(?:pages?)?$', cell_text, re.IGNORECASE)
-                                if limit_match:
-                                    limit = int(limit_match.group(1))
-                                    if 1 <= limit <= 500:
-                                        # Build a title from the row
-                                        title = self._extract_volume_title_from_row(row, col_idx)
-                                        if title and title.lower() not in page_limits:
-                                            page_limits[title.lower()] = (title, limit)
-                                            print(f"[v6.0.1] Spatial table match: '{title}' -> {limit} pages "
-                                                  f"(page {page_num + 1}, row {row_idx})")
+                                # Check if this cell contains a target page limit
+                                digit_match = re.match(r'^(\d{1,3})(?:\s*pages?)?$', cell_text, re.IGNORECASE)
+                                if not digit_match:
+                                    continue
 
-                                # Also check for "N Pages" format
-                                limit_match2 = re.search(r'(\d{1,3})\s+pages?', cell_text, re.IGNORECASE)
-                                if limit_match2 and cell_text.lower() not in page_limits:
-                                    limit = int(limit_match2.group(1))
-                                    if 1 <= limit <= 500:
-                                        title = self._extract_volume_title_from_row(row, col_idx)
-                                        if title and title.lower() not in page_limits:
-                                            page_limits[title.lower()] = (title, limit)
-                                            print(f"[v6.0.1] Spatial table match: '{title}' -> {limit} pages "
-                                                  f"(page {page_num + 1}, row {row_idx})")
+                                digit_value = int(digit_match.group(1))
+
+                                # Skip if not in reasonable range (1-100 typical for page limits)
+                                if digit_value < 1 or digit_value > 100:
+                                    continue
+
+                                # Prioritize common page limits
+                                is_target_limit = digit_value in target_page_limits
+
+                                print(f"[v6.0.2] Found digit {digit_value} at row {row_idx}, col {col_idx}")
+
+                                # v6.0.2: CONTEXT-CHECK - Look for volume keywords
+                                # Check 1: Same row (all cells)
+                                row_text = ' '.join(str(c or '').lower() for c in row)
+
+                                # Check 2: Cell immediately to the left
+                                left_cell_text = ''
+                                if col_idx > 0:
+                                    left_cell_text = str(row[col_idx - 1] or '').lower()
+
+                                # Check 3: Cell to the right (might be "Pages" label)
+                                right_cell_text = ''
+                                if col_idx < len(row) - 1:
+                                    right_cell_text = str(row[col_idx + 1] or '').lower()
+
+                                # v6.0.2: Try to match volume keywords
+                                matched_volume = None
+                                matched_vol_num = None
+
+                                for keyword, (title, vol_num) in volume_keyword_map.items():
+                                    # Priority 1: Exact match in left cell (highest confidence)
+                                    if keyword in left_cell_text:
+                                        matched_volume = title
+                                        matched_vol_num = vol_num
+                                        print(f"[v6.0.2] LEFT-CELL MATCH: '{keyword}' -> {title}")
+                                        break
+
+                                    # Priority 2: Match anywhere in row
+                                    if keyword in row_text:
+                                        matched_volume = title
+                                        matched_vol_num = vol_num
+                                        print(f"[v6.0.2] ROW MATCH: '{keyword}' -> {title}")
+                                        break
+
+                                if matched_volume and matched_vol_num:
+                                    key = matched_volume.lower()
+                                    if key not in page_limits:
+                                        page_limits[key] = (matched_volume, digit_value)
+                                        print(f"[v6.0.2] DIGIT-TARGET LOCKED: '{matched_volume}' -> "
+                                              f"{digit_value} pages (page {page_num + 1}, row {row_idx})")
+
+                                        # Also add alternate keys for matching
+                                        if matched_vol_num == 1:
+                                            page_limits['technical'] = (matched_volume, digit_value)
+                                            page_limits['technical volume'] = (matched_volume, digit_value)
+                                        elif matched_vol_num == 2:
+                                            page_limits['cost'] = (matched_volume, digit_value)
+                                            page_limits['cost & price'] = (matched_volume, digit_value)
+                                        elif matched_vol_num == 3:
+                                            page_limits['contract'] = (matched_volume, digit_value)
+                                            page_limits['contract documentation'] = (matched_volume, digit_value)
+
+                        # v6.0.2: FALLBACK - Original keyword-first approach for other tables
+                        # Keep this as backup for tables without clear digit patterns
+                        if not page_limits:
+                            page_limits.update(
+                                self._extract_page_limits_keyword_first(table, page_num, table_idx)
+                            )
 
         except Exception as e:
-            print(f"[v6.0.1] Error in spatial table extraction: {e}")
+            print(f"[v6.0.2] Error in digit-targeting extraction: {e}")
             import traceback
             traceback.print_exc()
 
         if page_limits:
-            print(f"[v6.0.1] Extracted {len(page_limits)} page limits from PDF tables")
+            print(f"[v6.0.2] Extracted {len(page_limits)} page limits from PDF tables")
+
+        return page_limits
+
+    def _extract_page_limits_keyword_first(
+        self,
+        table: List[List[Any]],
+        page_num: int,
+        table_idx: int
+    ) -> Dict[str, Tuple[str, int]]:
+        """
+        v6.0.2: Fallback keyword-first extraction for page limits.
+
+        Used when digit-targeting doesn't find matches.
+        """
+        page_limits: Dict[str, Tuple[str, int]] = {}
+
+        volume_keywords = {
+            'technical': ['technical', 'tech', 'executive', 'management', 'approach'],
+            'cost': ['cost', 'price', 'pricing', 'business'],
+            'contract': ['contract', 'documentation', 'administrative', 'admin'],
+            'past performance': ['past performance', 'experience', 'references'],
+        }
+
+        for row_idx, row in enumerate(table):
+            row_text = ' '.join(str(cell or '').lower() for cell in row)
+
+            matched_volume_type = None
+            for vol_type, keywords in volume_keywords.items():
+                if any(kw in row_text for kw in keywords):
+                    matched_volume_type = vol_type
+                    break
+
+            if not matched_volume_type:
+                continue
+
+            for col_idx, cell in enumerate(row):
+                cell_text = str(cell or '').strip()
+                limit_match = re.search(r'^(\d{1,3})\s*(?:pages?)?$', cell_text, re.IGNORECASE)
+                if limit_match:
+                    limit = int(limit_match.group(1))
+                    if 1 <= limit <= 500:
+                        title = self._extract_volume_title_from_row(row, col_idx)
+                        if title and title.lower() not in page_limits:
+                            page_limits[title.lower()] = (title, limit)
 
         return page_limits
 

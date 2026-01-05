@@ -135,6 +135,23 @@ class ContentInjector:
             ],
         }
 
+        # v6.0.2: NEGATIVE MATCH FILTER - Technical operational keywords
+        # These indicate operational/infrastructure requirements that should NOT
+        # leak into Management or Personnel sections
+        self.technical_operational_keywords = [
+            'fault', 'isolation', 'hardware', 'noc', 'inc', '24x7', '24/7',
+            'monitoring', 'infrastructure', 'server', 'network', 'router',
+            'switch', 'firewall', 'database', 'cpu', 'memory', 'disk',
+            'incident', 'outage', 'troubleshoot', 'diagnostic', 'alert',
+            'ticketing', 'sla', 'mttr', 'mtbf', 'uptime', 'availability'
+        ]
+
+        # v6.0.2: Section types that should NOT receive technical operational content
+        self.non_technical_section_indicators = [
+            'management', 'personnel', 'staffing', 'organization',
+            'key personnel', 'resume', 'qualification', 'experience'
+        ]
+
         # v5.0.7: Iron Triangle validation rules
         # Section C (PWS/SOW) requirements MUST go to Technical volumes
         # Section M (Evaluation) criteria map to appropriate volumes
@@ -614,6 +631,25 @@ class ContentInjector:
                         print(f"[v6.0.1] SECTION-LEVEL BLOCK: Section C requirement "
                               f"cannot go into admin section '{sec['title']}'")
                         continue  # Skip this section entirely
+
+                # v6.0.2: NEGATIVE MATCH FILTER - Content Leakage Prevention
+                # Penalize technical operational content going into Management/Personnel sections
+                # This prevents requirements about NOC, Fault Isolation, Hardware, etc.
+                # from being assigned to Management Approach or Staffing sections
+                is_non_technical_section = any(
+                    ind in sec_title_lower for ind in self.non_technical_section_indicators
+                )
+                has_technical_operational_content = any(
+                    kw in req_text for kw in self.technical_operational_keywords
+                )
+
+                if is_non_technical_section and has_technical_operational_content:
+                    # Apply heavy penalty (-50) to prevent content leakage
+                    score -= 50
+                    match_reasons.append("PENALTY: Technical ops → Management/Personnel")
+                    print(f"[v6.0.2] NEGATIVE MATCH: Technical operational content "
+                          f"('{[kw for kw in self.technical_operational_keywords if kw in req_text][:3]}') "
+                          f"penalty applied for section '{sec['title']}'")
 
                 # v5.0.7: Boost for correct Iron Triangle mapping
                 if iron_req_type == 'section_c' and vol_type == 'technical':
