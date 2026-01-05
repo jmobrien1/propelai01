@@ -13,12 +13,16 @@ This component:
 Key Principle: The skeleton is IMMUTABLE. We only fill the slots.
 
 v5.0.7: Added Iron Triangle validation to enforce Section C → Technical Volume only.
+v5.0.8: Imported VOLUME_SECTION_RULES for hard volume filtering (Iron Triangle Determinism).
 """
 
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import re
+
+# v5.0.8: Import Iron Triangle rules from validation engine
+from .validation_engine import VOLUME_SECTION_RULES
 
 
 class MappingConfidence(Enum):
@@ -390,7 +394,10 @@ class ContentInjector:
 
     def _classify_volume_type(self, vol_title: str) -> str:
         """
-        v5.0.7: Classify volume as 'technical', 'cost', or 'admin'.
+        v5.0.7: Classify volume as 'technical', 'management', 'past_performance',
+                'cost', or 'administrative'.
+
+        v5.0.8: Enhanced classification to match VOLUME_SECTION_RULES keys.
 
         Used for Iron Triangle validation.
         """
@@ -399,12 +406,20 @@ class ContentInjector:
         # Check admin first (most restrictive)
         for indicator in self.admin_volume_indicators:
             if indicator in title_lower:
-                return 'admin'
+                return 'administrative'
+
+        # Check past performance
+        if any(kw in title_lower for kw in ['past performance', 'experience', 'reference']):
+            return 'past_performance'
 
         # Check cost
         for indicator in self.cost_volume_indicators:
             if indicator in title_lower:
                 return 'cost'
+
+        # Check management
+        if any(kw in title_lower for kw in ['management', 'staffing']):
+            return 'management'
 
         # Default to technical (most common)
         for indicator in self.technical_volume_indicators:
@@ -412,6 +427,71 @@ class ContentInjector:
                 return 'technical'
 
         return 'technical'  # Default
+
+    def _get_requirement_source_section(self, requirement: Dict) -> str:
+        """
+        v5.0.8: Extract the source section letter (C, L, M, etc.) from requirement.
+
+        Used for Hard Volume Filtering.
+        """
+        # Check explicit section field
+        section = requirement.get('section', '').upper()
+        if section in ['C', 'L', 'M', 'K', 'B', 'SOW', 'PWS']:
+            return section
+
+        # Check category
+        category = requirement.get('category', '').lower()
+        if category in ['c_requirement', 'technical', 'performance', 'sow', 'pws']:
+            return 'C'
+        if category in ['l_instruction', 'instruction', 'format']:
+            return 'L'
+        if category in ['m_evaluation', 'evaluation', 'criteria']:
+            return 'M'
+
+        # Check for Section C/PWS/SOW indicators in text
+        text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
+        if any(ind in text for ind in self.section_c_indicators):
+            return 'C'
+
+        return 'OTHER'
+
+    def _hard_volume_filter(
+        self,
+        source_section: str,
+        volume_type: str
+    ) -> Tuple[bool, str]:
+        """
+        v5.0.8: Hard Volume Filter using VOLUME_SECTION_RULES.
+
+        This is a BLOCKING filter - if it returns False, the requirement
+        CANNOT be placed in the volume, regardless of semantic matching score.
+
+        Args:
+            source_section: Source section letter (C, L, M, etc.)
+            volume_type: Volume type from _classify_volume_type()
+
+        Returns:
+            (is_allowed, reason) tuple
+        """
+        allowed_sections = VOLUME_SECTION_RULES.get(volume_type, [])
+
+        # If no rules defined for this volume type, allow anything
+        if not allowed_sections:
+            return True, ""
+
+        # Map SOW/PWS to C for rule matching
+        normalized_section = source_section
+        if source_section in ['SOW', 'PWS']:
+            normalized_section = 'C'
+
+        # Check if source section is allowed in this volume
+        if normalized_section in allowed_sections or source_section in allowed_sections:
+            return True, ""
+
+        return False, (
+            f"HARD BLOCK: Section {source_section} content cannot go in {volume_type} volume. "
+            f"Allowed sections for {volume_type}: {allowed_sections}"
+        )
 
     def _classify_requirement_type(self, requirement: Dict) -> str:
         """
@@ -473,6 +553,10 @@ class ContentInjector:
         - Section C/PWS requirements → Technical Volume ONLY
         - Admin forms → Admin Volume (preferred)
 
+        v5.0.8: Added HARD VOLUME FILTER using VOLUME_SECTION_RULES.
+        The hard filter runs BEFORE any semantic matching and blocks
+        volumes that are not allowed for the requirement's source section.
+
         Scores each section based on keyword overlap between
         requirement text and section title/type.
         """
@@ -482,6 +566,9 @@ class ContentInjector:
         # v5.0.7: Classify requirement for Iron Triangle validation
         iron_req_type = self._classify_requirement_type(requirement)
 
+        # v5.0.8: Get source section for hard volume filter
+        source_section = self._get_requirement_source_section(requirement)
+
         best_match = None
         best_score = 0
         best_vol_type = None
@@ -489,10 +576,16 @@ class ContentInjector:
         for vol in skeleton.get('volumes', []):
             vol_title_lower = vol['title'].lower()
 
-            # v5.0.7: Classify volume type
+            # v5.0.7/v5.0.8: Classify volume type
             vol_type = self._classify_volume_type(vol['title'])
 
-            # v5.0.7: Check Iron Triangle validity before scoring
+            # v5.0.8: HARD VOLUME FILTER (runs FIRST, before any scoring)
+            is_allowed, block_reason = self._hard_volume_filter(source_section, vol_type)
+            if not is_allowed:
+                print(f"[v5.0.8] {block_reason}")
+                continue  # HARD BLOCK - skip this volume entirely
+
+            # v5.0.7: Check Iron Triangle validity (soft filter)
             is_valid, violation_reason = self._is_valid_iron_triangle_mapping(
                 iron_req_type, vol_type
             )

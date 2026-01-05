@@ -7,10 +7,20 @@ It extracts ONLY structure information, not content requirements.
 Key Principle: Parse explicitly stated structure. DO NOT infer or assume.
 
 v5.0.6: Added table-first extraction strategy for page limits and volume promotion.
+v5.0.8: Iron Triangle Determinism - Structural table parsing with row-index linking,
+        enforced stated_volume_count validation, removed _promote_sections_to_volumes.
 """
 
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
+from dataclasses import dataclass, field
 import re
+
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+    pdfplumber = None
 
 from .section_l_schema import (
     SectionL_Schema,
@@ -19,6 +29,73 @@ from .section_l_schema import (
     FormatInstruction,
     SubmissionInstruction
 )
+
+
+class StructureValidationError(Exception):
+    """
+    v5.0.8: Raised when proposal structure cannot be deterministically extracted.
+
+    This is a hard failure - no guessing or fallback allowed.
+    """
+    pass
+
+
+@dataclass
+class TableCell:
+    """A single cell in a structured table."""
+    text: str
+    row_index: int
+    col_index: int
+    is_header: bool = False
+
+
+@dataclass
+class TableObject:
+    """
+    v5.0.8: Structured table representation maintaining row/column associations.
+
+    This preserves the relationship between volume titles and page limits
+    based on their row position, not text proximity.
+    """
+    headers: List[str] = field(default_factory=list)
+    rows: List[List[TableCell]] = field(default_factory=list)
+    column_mapping: Dict[str, int] = field(default_factory=dict)  # "page_limit" -> column 2
+
+    def get_cell_by_row_and_column_name(
+        self,
+        row_index: int,
+        column_name: str
+    ) -> Optional[TableCell]:
+        """Get cell value using row index and semantic column name."""
+        col_idx = self.column_mapping.get(column_name)
+        if col_idx is None or row_index >= len(self.rows):
+            return None
+        row = self.rows[row_index]
+        if col_idx >= len(row):
+            return None
+        return row[col_idx]
+
+    def get_volume_page_limit_by_row(self, row_index: int) -> Optional[Tuple[str, int]]:
+        """
+        Get (volume_title, page_limit) for a row by index.
+
+        This enforces row-based linking rather than text proximity.
+        """
+        title_cell = self.get_cell_by_row_and_column_name(row_index, "title")
+        limit_cell = self.get_cell_by_row_and_column_name(row_index, "page_limit")
+
+        if not title_cell or not limit_cell:
+            return None
+
+        try:
+            # Extract numeric page limit
+            limit_match = re.search(r'(\d+)', limit_cell.text)
+            if limit_match:
+                return (title_cell.text.strip(), int(limit_match.group(1)))
+        except (ValueError, AttributeError):
+            pass
+
+        return None
 
 
 class SectionLParser:
@@ -107,7 +184,7 @@ class SectionLParser:
             'eleven': 11, 'twelve': 12
         }
 
-        # v5.0.6: Table structure patterns for extracting volume/page limit associations
+        # v5.0.8: Table structure patterns for extracting volume/page limit associations
         # Tables often have: Volume | Title | Page Limit | Copies
         self.table_row_patterns = [
             # "Volume 1" or "1" followed by title and page limit
@@ -117,22 +194,26 @@ class SectionLParser:
             r"([1-3IVX]+)\s{2,}([A-Za-z][^\t\n]{3,50})\s{2,}(\d+)\s*(?:pages?)?",
         ]
 
-        # v5.0.6: Sections that should be promoted to volumes
-        self.volume_promotion_keywords = [
-            'contract documentation',
-            'representations and certifications',
-            'administrative volume',
-            'contractual documents',
-            'required forms',
-            'attachments volume',
-        ]
+        # v5.0.8: Column header patterns for semantic column identification
+        self.column_header_patterns = {
+            "volume": r"(?:volume|vol\.?)\s*(?:#|no\.?|number)?",
+            "title": r"(?:title|name|description|proposal\s+type)",
+            "page_limit": r"(?:page\s*limit|pages?|max\s*pages?|page\s*count)",
+            "copies": r"(?:copies|qty|quantity|number\s+of\s+copies)",
+        }
+
+        # v5.0.8: REMOVED volume_promotion_keywords
+        # Reason: This created "phantom volumes" by inferring structure from keywords.
+        # Iron Triangle Determinism requires explicit "Volume I:" patterns only.
 
     def parse(
         self,
         section_l_text: str,
         rfp_number: str = "",
         rfp_title: str = "",
-        attachment_texts: Optional[Dict[str, str]] = None
+        attachment_texts: Optional[Dict[str, str]] = None,
+        strict_mode: bool = True,
+        pdf_path: Optional[str] = None
     ) -> SectionL_Schema:
         """
         Parse Section L text into structured schema.
@@ -142,9 +223,16 @@ class SectionLParser:
             rfp_number: RFP/Solicitation number
             rfp_title: RFP title
             attachment_texts: Dict of attachment_name -> text for structural attachments
+            strict_mode: v5.0.8 - If True, raises StructureValidationError on
+                         volume count mismatch. If False, adds warnings only.
+            pdf_path: Optional path to PDF for pdfplumber structural table extraction
 
         Returns:
             SectionL_Schema ready for StrictStructureBuilder
+
+        Raises:
+            StructureValidationError: If strict_mode=True and volume count doesn't
+                                      match stated_volume_count from RFP
         """
         warnings: List[str] = []
         source_docs = ['Section L']
@@ -157,29 +245,42 @@ class SectionLParser:
                     full_text += f"\n\n--- {name} ---\n{text}"
                     source_docs.append(name)
 
+        # v5.0.8: Extract structured tables from PDF if available
+        structured_tables: List[TableObject] = []
+        if pdf_path and PDFPLUMBER_AVAILABLE:
+            structured_tables = self._extract_structured_tables_from_pdf(pdf_path)
+
         # Extract stated volume count first (for validation)
         stated_count = self._extract_stated_volume_count(full_text)
 
         # Extract volumes
-        volumes = self._extract_volumes(full_text, warnings)
+        volumes = self._extract_volumes(full_text, warnings, structured_tables)
 
         # v5.0.5: REMOVED mention-based fallback (_extract_volumes_from_mentions)
         # The fallback would infer volumes from keywords like "Technical Proposal"
         # which often created HALLUCINATED volumes not in the RFP.
-        # If no explicit "Volume I:" patterns found, we fail and ask user to review.
+        # v5.0.8: Now raises StructureValidationError in strict_mode.
         if not volumes:
-            warnings.append(
+            error_msg = (
                 "No explicit volume declarations found in Section L "
                 "(e.g., 'Volume I: Technical Approach'). "
-                "Please verify the document contains proposal structure instructions."
+                "Cannot determine proposal structure."
             )
+            if strict_mode:
+                raise StructureValidationError(error_msg)
+            warnings.append(error_msg)
 
-        # Validate against stated count
-        if stated_count and len(volumes) != stated_count:
-            warnings.append(
-                f"RFP states {stated_count} volumes but found {len(volumes)}. "
-                f"Please verify Section L structure."
+        # v5.0.8: MANDATORY volume count validation (Iron Triangle Determinism)
+        if stated_count is not None and len(volumes) != stated_count:
+            error_msg = (
+                f"VOLUME COUNT MISMATCH: RFP explicitly states {stated_count} volumes "
+                f"but parser found {len(volumes)}. "
+                f"Found volumes: {[v['volume_title'] for v in volumes]}. "
+                f"This is a deterministic failure - no guessing allowed."
             )
+            if strict_mode:
+                raise StructureValidationError(error_msg)
+            warnings.append(error_msg)
 
         # Extract sections for each volume
         sections = self._extract_sections(full_text, volumes, warnings)
@@ -324,24 +425,147 @@ class SectionLParser:
 
         return table_data
 
+    def _extract_structured_tables_from_pdf(
+        self,
+        pdf_path: str
+    ) -> List[TableObject]:
+        """
+        v5.0.8: Extract tables from PDF using pdfplumber structural extraction.
+
+        This method uses pdfplumber's table detection to extract tables with
+        proper row/column associations, enabling row-index based linking.
+
+        Args:
+            pdf_path: Path to the PDF file
+
+        Returns:
+            List of TableObject with cell associations preserved
+        """
+        if not PDFPLUMBER_AVAILABLE:
+            print("[v5.0.8] pdfplumber not available, skipping structural table extraction")
+            return []
+
+        structured_tables: List[TableObject] = []
+
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                for page_num, page in enumerate(pdf.pages):
+                    # Extract tables from this page
+                    tables = page.extract_tables()
+
+                    for table in tables:
+                        if not table or len(table) < 2:
+                            continue
+
+                        table_obj = TableObject()
+
+                        # First row is headers
+                        headers = [str(cell or '').strip().lower() for cell in table[0]]
+                        table_obj.headers = headers
+
+                        # Identify column types from headers
+                        for col_idx, header in enumerate(headers):
+                            for col_type, pattern in self.column_header_patterns.items():
+                                if re.search(pattern, header, re.IGNORECASE):
+                                    table_obj.column_mapping[col_type] = col_idx
+                                    break
+
+                        # Check if this looks like a volume/page limit table
+                        has_volume_or_title = (
+                            'volume' in table_obj.column_mapping or
+                            'title' in table_obj.column_mapping
+                        )
+                        has_page_limit = 'page_limit' in table_obj.column_mapping
+
+                        if not (has_volume_or_title and has_page_limit):
+                            continue
+
+                        # Extract data rows
+                        for row_idx, row in enumerate(table[1:]):
+                            cells: List[TableCell] = []
+                            for col_idx, cell_text in enumerate(row):
+                                cells.append(TableCell(
+                                    text=str(cell_text or '').strip(),
+                                    row_index=row_idx,
+                                    col_index=col_idx,
+                                    is_header=False
+                                ))
+                            table_obj.rows.append(cells)
+
+                        if table_obj.rows:
+                            structured_tables.append(table_obj)
+                            print(f"[v5.0.8] Found structured table on page {page_num + 1}: "
+                                  f"{len(table_obj.rows)} rows, columns: {table_obj.column_mapping}")
+
+        except Exception as e:
+            print(f"[v5.0.8] Error extracting structured tables: {e}")
+
+        return structured_tables
+
+    def _extract_page_limits_from_structured_tables(
+        self,
+        structured_tables: List[TableObject],
+        warnings: List[str]
+    ) -> Dict[str, Tuple[str, int]]:
+        """
+        v5.0.8: Extract volume page limits using row-index based linking.
+
+        This enforces that page limits are linked to volumes based on their
+        position in the table row, not text proximity heuristics.
+
+        Args:
+            structured_tables: List of TableObject from pdfplumber extraction
+            warnings: List to append extraction warnings
+
+        Returns:
+            Dict mapping volume_title.lower() to (title, page_limit)
+        """
+        page_limits: Dict[str, Tuple[str, int]] = {}
+
+        for table in structured_tables:
+            for row_idx in range(len(table.rows)):
+                result = table.get_volume_page_limit_by_row(row_idx)
+                if result:
+                    title, limit = result
+                    if 1 <= limit <= 500:  # Sanity check
+                        page_limits[title.lower()] = (title, limit)
+                        print(f"[v5.0.8] Row-index linked: '{title}' -> {limit} pages (row {row_idx})")
+
+        if not page_limits and structured_tables:
+            warnings.append(
+                "Found structured tables but could not extract page limits. "
+                "Check column headers match expected patterns."
+            )
+
+        return page_limits
+
     def _extract_volumes(
         self,
         text: str,
-        warnings: List[str]
+        warnings: List[str],
+        structured_tables: Optional[List[TableObject]] = None
     ) -> List[VolumeInstruction]:
         """
         Extract volume instructions from text.
 
         v5.0.6: Now uses table-first strategy - if page limits are found in
         a table structure, those take precedence over nearby text extraction.
+        v5.0.8: Uses row-index based linking from structured tables (pdfplumber).
 
         Looks for explicit volume declarations like "Volume I: Technical Proposal".
         """
         volumes: List[VolumeInstruction] = []
         seen_titles: set = set()
 
-        # v5.0.6: Extract table data first for page limit lookup
-        table_page_limits = self._extract_page_limits_from_table(text, warnings)
+        # v5.0.8: Use structured tables (row-index linking) if available
+        table_page_limits: Dict[str, Tuple[str, int]] = {}
+        if structured_tables:
+            table_page_limits = self._extract_page_limits_from_structured_tables(
+                structured_tables, warnings
+            )
+        else:
+            # Fallback to text-based extraction
+            table_page_limits = self._extract_page_limits_from_table(text, warnings)
 
         for pattern in self.volume_patterns:
             for match in re.finditer(pattern, text, re.IGNORECASE):
@@ -406,8 +630,11 @@ class SectionLParser:
                     is_mandatory=True
                 ))
 
-        # v5.0.6: Check for sections that should be promoted to volumes
-        volumes = self._promote_sections_to_volumes(text, volumes, warnings)
+        # v5.0.8: REMOVED _promote_sections_to_volumes
+        # Reason: This created "phantom volumes" by inferring structure from keywords
+        # like "Contract Documentation". Iron Triangle Determinism requires explicit
+        # "Volume I:" patterns ONLY. If the RFP has a different structure, the user
+        # must upload the correct Section L document.
 
         # Sort by volume number
         return sorted(volumes, key=lambda v: v['volume_number'])
@@ -483,83 +710,11 @@ class SectionLParser:
 
         return sorted(volumes, key=lambda v: v['volume_number'])
 
-    def _promote_sections_to_volumes(
-        self,
-        text: str,
-        existing_volumes: List[VolumeInstruction],
-        warnings: List[str]
-    ) -> List[VolumeInstruction]:
-        """
-        v5.0.6: Promote certain sections to root-level volumes.
-
-        Some RFPs use section numbering (e.g., "Section 3: Contract Documentation")
-        but these should actually be separate volumes. This method checks for
-        known section types that must be elevated to volume status.
-
-        Promotion keywords:
-        - Contract Documentation
-        - Representations and Certifications
-        - Administrative Volume
-        - Required Forms/Attachments
-        """
-        volumes = list(existing_volumes)
-        existing_titles = {v['volume_title'].lower() for v in volumes}
-        max_vol_num = max([v['volume_number'] for v in volumes], default=0)
-
-        text_lower = text.lower()
-
-        for keyword in self.volume_promotion_keywords:
-            # Check if keyword exists but isn't already a volume
-            if keyword in text_lower and keyword not in existing_titles:
-                # Check if any existing volume already covers this
-                already_covered = False
-                for existing_title in existing_titles:
-                    if keyword in existing_title or existing_title in keyword:
-                        already_covered = True
-                        break
-
-                if already_covered:
-                    continue
-
-                # Find the section pattern for this keyword
-                # e.g., "Section 3: Contract Documentation" or "3. Contract Documentation"
-                section_patterns = [
-                    rf"(?:Section\s+)?(\d+)[.:\s]+\s*({re.escape(keyword)})",
-                    rf"({re.escape(keyword)})\s*(?:volume|section)?",
-                ]
-
-                for pattern in section_patterns:
-                    match = re.search(pattern, text, re.IGNORECASE)
-                    if match:
-                        # Determine volume number
-                        max_vol_num += 1
-
-                        # Get proper title casing
-                        title = keyword.title()
-
-                        # Look for page limit
-                        page_limit = self._find_page_limit_near(
-                            text, match.end(), keyword
-                        )
-
-                        volumes.append(VolumeInstruction(
-                            volume_id=f"VOL-{max_vol_num}",
-                            volume_title=title,
-                            volume_number=max_vol_num,
-                            page_limit=page_limit,
-                            source_reference="Section L (promoted from section)",
-                            is_mandatory=True
-                        ))
-
-                        print(f"[v5.0.6] Promoted '{title}' to Volume {max_vol_num}")
-                        warnings.append(
-                            f"'{title}' was promoted from section to volume. "
-                            f"Verify this matches RFP structure."
-                        )
-                        existing_titles.add(keyword)
-                        break
-
-        return volumes
+    # v5.0.8: DELETED _promote_sections_to_volumes
+    # This method was removed as part of Iron Triangle Determinism enforcement.
+    # It hallucinated volumes by inferring structure from keywords like
+    # "Contract Documentation" which often didn't match actual RFP structure.
+    # See StructureValidationError for the new enforcement mechanism.
 
     def _extract_sections(
         self,
