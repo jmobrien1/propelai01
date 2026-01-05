@@ -358,7 +358,8 @@ class OutlineOrchestrator:
         evaluation_criteria: List[Dict],
         rfp_number: str = "",
         rfp_title: str = "",
-        attachment_texts: Optional[Dict[str, str]] = None
+        attachment_texts: Optional[Dict[str, str]] = None,
+        pdf_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate annotated outline using two-phase pipeline.
@@ -372,6 +373,7 @@ class OutlineOrchestrator:
             rfp_number: Solicitation number
             rfp_title: RFP title
             attachment_texts: Optional dict of structural attachment texts
+            pdf_path: v6.0.2 - Path to source PDF for spatial extraction (SF1449, tables)
 
         Returns:
             Dict containing:
@@ -382,21 +384,27 @@ class OutlineOrchestrator:
 
         Raises:
             StructureValidationError: If strict_mode and structure is invalid
+                                      OR if Supervisor detects CRITICAL validation issues
         """
         logger.info(f"Starting outline generation for RFP: {rfp_number}")
         logger.info(f"Section L text length: {len(section_l_text)} chars")
         logger.info(f"Requirements count: {len(requirements)}")
+        if pdf_path:
+            logger.info(f"[v6.0.2] PDF path provided for spatial extraction: {pdf_path}")
 
         # Debug: Print for Render logs
         print(f"[v3.0 Parser] Section L text preview (first 500 chars): {section_l_text[:500]}")
 
         # Phase 1: Parse Section L into schema
+        # v6.0.2: Pass pdf_path for spatial extraction (SF1449, digit-targeting tables)
         logger.info("Phase 1: Parsing Section L into schema...")
         schema = self.parser.parse(
             section_l_text=section_l_text,
             rfp_number=rfp_number,
             rfp_title=rfp_title,
-            attachment_texts=attachment_texts
+            attachment_texts=attachment_texts,
+            strict_mode=self.strict_mode,
+            pdf_path=pdf_path
         )
 
         # Debug: Print parser results for Render logs
@@ -536,7 +544,7 @@ class OutlineOrchestrator:
             }
         }
 
-    def generate_from_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_from_state(self, state: Dict[str, Any], pdf_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate outline directly from ProposalState.
 
@@ -545,6 +553,7 @@ class OutlineOrchestrator:
 
         Args:
             state: ProposalState TypedDict
+            pdf_path: v6.0.2 - Path to source PDF for spatial extraction
 
         Returns:
             Dict with updates to apply to state
@@ -559,13 +568,18 @@ class OutlineOrchestrator:
             raw_text = state.get('rfp_raw_text', '')
             section_l_text = self._extract_section_l_from_raw(raw_text)
 
+        # v6.0.2: Try to get pdf_path from state if not provided
+        if not pdf_path:
+            pdf_path = state.get('pdf_path') or state.get('source_pdf_path')
+
         return self.generate_outline(
             section_l_text=section_l_text,
             requirements=state.get('requirements', []),
             evaluation_criteria=state.get('evaluation_criteria', []),
             rfp_number=state.get('solicitation_number', ''),
             rfp_title=state.get('opportunity_name', ''),
-            attachment_texts=None  # Could be extended to pull from state
+            attachment_texts=None,  # Could be extended to pull from state
+            pdf_path=pdf_path
         )
 
     def _extract_section_l_text(self, instructions: List[Dict]) -> str:
@@ -646,7 +660,8 @@ def generate_outline_v3(
     evaluation_criteria: Optional[List[Dict]] = None,
     rfp_number: str = "",
     rfp_title: str = "",
-    strict_mode: bool = True
+    strict_mode: bool = True,
+    pdf_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Convenience function for outline generation.
@@ -661,9 +676,14 @@ def generate_outline_v3(
         rfp_number: Solicitation number
         rfp_title: RFP title
         strict_mode: If True, fail on validation errors
+        pdf_path: v6.0.2 - Path to source PDF for spatial extraction
 
     Returns:
         Dict with skeleton, outline, and metadata
+
+    Raises:
+        StructureValidationError: If strict_mode and validation fails
+                                  (CRITICAL issues detected by Supervisor)
 
     Example:
         from agents.enhanced_compliance.outline_orchestrator import generate_outline_v3
@@ -671,6 +691,7 @@ def generate_outline_v3(
         result = generate_outline_v3(
             section_l_text="Volume I: Technical Proposal (25 pages max)...",
             requirements=[{"id": "REQ-001", "text": "The contractor shall..."}],
+            pdf_path="/path/to/rfp.pdf"  # v6.0.2: Enable spatial extraction
         )
 
         skeleton = result['proposal_skeleton']
@@ -682,5 +703,6 @@ def generate_outline_v3(
         requirements=requirements,
         evaluation_criteria=evaluation_criteria or [],
         rfp_number=rfp_number,
-        rfp_title=rfp_title
+        rfp_title=rfp_title,
+        pdf_path=pdf_path
     )
