@@ -291,7 +291,8 @@ class SectionLParser:
         stated_count = self._extract_stated_volume_count(full_text)
 
         # Extract volumes
-        volumes = self._extract_volumes(full_text, warnings, structured_tables)
+        # v6.0.1: Pass pdf_path to enable aggressive spatial table extraction
+        volumes = self._extract_volumes(full_text, warnings, structured_tables, pdf_path)
 
         # v5.0.5: REMOVED mention-based fallback (_extract_volumes_from_mentions)
         # The fallback would infer volumes from keywords like "Technical Proposal"
@@ -373,17 +374,21 @@ class SectionLParser:
         pdf_path: str
     ) -> Dict[str, Optional[str]]:
         """
-        v6.0: Extract metadata from SF1449 form using coordinate-based extraction.
+        v6.0.1: Extract metadata from SF1449 form using coordinate-based extraction.
 
         SF1449 is the standard federal solicitation cover sheet with fixed field positions.
-        This method extracts from known bounding box coordinates:
+        This method extracts from known bounding box coordinates on Letter-size (8.5x11") paper:
 
-        Block 2 (Solicitation Number): Top-left area, ~(1.5", 0.7")
-        Block 5 (Issue Date): Top-right area, ~(6.5", 0.7")
-        Block 8 (Offer Due Date/Time): ~(1.5", 1.8")
-        Block 9 (Issued By): Left side, ~(0.5", 3.5")
+        Block 2 (Contract Number): Top-left area
+        Block 5 (Solicitation Number): Top-RIGHT area (~4.5-7.5", 0.5-1.0")
+        Block 8 (Offer Due Date/Time): Left side (~0.5-4.0", 1.3-2.0")
+        Block 9 (Issued By): Left side, below Block 8
 
-        Coordinates are normalized percentages (0.0-1.0) of page dimensions.
+        IMPORTANT: Block 5 is the SOLICITATION NUMBER, not Block 2.
+        The coordinate system is:
+        - Origin at top-left
+        - Units in points (72 points = 1 inch)
+        - Letter paper = 612 x 792 points
 
         Args:
             pdf_path: Path to the PDF file
@@ -411,56 +416,116 @@ class SectionLParser:
                 page_width = first_page.width
                 page_height = first_page.height
 
-                # Check if this looks like an SF1449 form (look for "SOLICITATION/CONTRACT/ORDER" header)
+                # Check if this looks like an SF1449 form
                 first_page_text = first_page.extract_text() or ""
                 if 'SOLICITATION/CONTRACT' not in first_page_text.upper() and 'SF 1449' not in first_page_text.upper():
-                    print("[v6.0] First page does not appear to be SF1449, skipping coordinate extraction")
+                    print("[v6.0.1] First page does not appear to be SF1449, skipping coordinate extraction")
                     return result
 
-                print("[v6.0] SF1449 form detected, extracting from coordinates...")
+                print(f"[v6.0.1] SF1449 form detected (page size: {page_width:.0f}x{page_height:.0f} pts)")
 
-                # SF1449 Block 2 (Solicitation Number) - approximately at:
-                # x: 1.0-3.5 inches from left, y: 0.6-0.9 inches from top
-                # Convert inches to points (72 points/inch) then to page coordinates
-                block2_bbox = (
-                    72 * 1.0,  # x0: 1.0 inches
-                    72 * 0.6,  # y0: 0.6 inches from top
-                    72 * 3.5,  # x1: 3.5 inches
-                    72 * 1.0   # y1: 1.0 inches from top
+                # v6.0.1: Block 5 (SOLICITATION NUMBER) - TOP-RIGHT quadrant
+                # On SF1449, Block 5 is in the upper right: approximately 4.5" to 7.5" from left, 0.4" to 1.0" from top
+                # Convert to points: 4.5*72=324, 7.5*72=540, 0.4*72=29, 1.0*72=72
+                block5_bbox = (
+                    72 * 4.5,   # x0: 4.5 inches from left
+                    72 * 0.4,   # y0: 0.4 inches from top
+                    72 * 7.5,   # x1: 7.5 inches from left
+                    72 * 1.2    # y1: 1.2 inches from top
                 )
-                block2_text = self._extract_text_from_bbox(first_page, block2_bbox)
-                if block2_text:
-                    # Extract solicitation number from block text
-                    sol_match = re.search(r'([A-Z0-9][-A-Z0-9]{8,})', block2_text.upper())
-                    if sol_match:
-                        result['solicitation_number'] = sol_match.group(1)
-                        print(f"[v6.0] SF1449 Block 2 solicitation: {result['solicitation_number']}")
+                block5_text = self._extract_text_from_bbox(first_page, block5_bbox)
+                print(f"[v6.0.1] Block 5 raw text: {repr(block5_text)}")
 
-                # SF1449 Block 8 (Offer Due Date/Time) - approximately at:
-                # x: 0.5-4.0 inches, y: 1.5-2.0 inches from top
+                if block5_text:
+                    # Extract Air Force solicitation format: FA8806-25-R-B003 or FA880625RB003
+                    sol_patterns = [
+                        r'(FA\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Air Force
+                        r'(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Army
+                        r'(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Navy
+                        r'([A-Z0-9]{2,}\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Generic
+                    ]
+                    for pattern in sol_patterns:
+                        sol_match = re.search(pattern, block5_text.upper())
+                        if sol_match:
+                            result['solicitation_number'] = sol_match.group(1)
+                            print(f"[v6.0.1] SF1449 Block 5 solicitation: {result['solicitation_number']}")
+                            break
+
+                # v6.0.1: Also try Block 2 area (top-left) as fallback
+                if not result['solicitation_number']:
+                    block2_bbox = (
+                        72 * 1.0,   # x0: 1.0 inches
+                        72 * 0.4,   # y0: 0.4 inches
+                        72 * 4.0,   # x1: 4.0 inches
+                        72 * 1.2    # y1: 1.2 inches
+                    )
+                    block2_text = self._extract_text_from_bbox(first_page, block2_bbox)
+                    print(f"[v6.0.1] Block 2 fallback text: {repr(block2_text)}")
+
+                    if block2_text:
+                        for pattern in sol_patterns:
+                            sol_match = re.search(pattern, block2_text.upper())
+                            if sol_match:
+                                result['solicitation_number'] = sol_match.group(1)
+                                print(f"[v6.0.1] SF1449 Block 2 solicitation (fallback): {result['solicitation_number']}")
+                                break
+
+                # v6.0.1: Block 8 (Offer Due Date/Time) - approximately 0.5-4.5" from left, 1.3-2.2" from top
                 block8_bbox = (
-                    72 * 0.5,  # x0
-                    72 * 1.4,  # y0
-                    72 * 4.5,  # x1
-                    72 * 2.2   # y1
+                    72 * 0.3,   # x0
+                    72 * 1.3,   # y0
+                    72 * 4.5,   # x1
+                    72 * 2.3    # y1
                 )
                 block8_text = self._extract_text_from_bbox(first_page, block8_bbox)
+                print(f"[v6.0.1] Block 8 raw text: {repr(block8_text)}")
+
                 if block8_text:
-                    # Extract date from block text - formats like "03 Feb 2025" or "February 3, 2025"
-                    date_match = re.search(r'(\d{1,2}\s+[A-Za-z]+\s+\d{4})', block8_text)
-                    if not date_match:
-                        date_match = re.search(r'([A-Za-z]+\s+\d{1,2},?\s+\d{4})', block8_text)
-                    if date_match:
-                        result['due_date'] = date_match.group(1)
-                        print(f"[v6.0] SF1449 Block 8 due date: {result['due_date']}")
+                    # v6.0.1: Extract date with YEAR VALIDATION
+                    # Must be >= current year to avoid grabbing legacy header dates
+                    import datetime
+                    current_year = datetime.datetime.now().year
+
+                    # Try multiple date formats
+                    date_patterns = [
+                        r'(\d{1,2}\s+[A-Za-z]{3,9}\s+(\d{4}))',  # "03 Feb 2025" or "3 February 2025"
+                        r'([A-Za-z]{3,9}\s+\d{1,2},?\s+(\d{4}))',  # "February 3, 2025"
+                        r'(\d{1,2}[/-]\d{1,2}[/-](\d{4}))',  # "02/03/2025"
+                    ]
+
+                    for pattern in date_patterns:
+                        for match in re.finditer(pattern, block8_text):
+                            full_date = match.group(1)
+                            year = int(match.group(2))
+
+                            # v6.0.1: Year validation - reject dates from previous years
+                            if year >= current_year:
+                                result['due_date'] = full_date
+                                print(f"[v6.0.1] SF1449 Block 8 due date (validated): {result['due_date']}")
+                                break
+                            else:
+                                print(f"[v6.0.1] Rejected stale date {full_date} (year {year} < {current_year})")
+
+                        if result['due_date']:
+                            break
 
                     # Extract time from block text - format "1700" or "5:00 PM"
-                    time_match = re.search(r'(\d{4})\s*(?:hrs?|hours?|local|pacific|eastern|central|mountain)?', block8_text, re.IGNORECASE)
+                    time_match = re.search(
+                        r'(\d{4})\s*(?:hrs?|hours?|local|pacific|eastern|central|mountain|[A-Z]{2,3}T)?',
+                        block8_text,
+                        re.IGNORECASE
+                    )
                     if time_match:
-                        result['due_time'] = time_match.group(1)
+                        time_val = time_match.group(1)
+                        # Validate it looks like a time (0000-2359)
+                        if 0 <= int(time_val) <= 2359:
+                            result['due_time'] = time_val
+                            print(f"[v6.0.1] SF1449 Block 8 due time: {result['due_time']}")
 
         except Exception as e:
-            print(f"[v6.0] Error in SF1449 coordinate extraction: {e}")
+            print(f"[v6.0.1] Error in SF1449 coordinate extraction: {e}")
+            import traceback
+            traceback.print_exc()
 
         return result
 
@@ -890,11 +955,155 @@ class SectionLParser:
 
         return page_limits
 
+    def _extract_page_limits_from_pdf_tables(
+        self,
+        pdf_path: str,
+        warnings: List[str]
+    ) -> Dict[str, Tuple[str, int]]:
+        """
+        v6.0.1: Aggressive spatial table extraction for page limits.
+
+        This method scans ALL tables in the PDF looking for page limit data
+        using keyword-based row/column intersection. It handles:
+        - Tables without clear headers (like "Table 3" in Placement Procedures)
+        - Tables where column headers don't match expected patterns
+        - Tables with page limits in different column formats
+
+        Strategy:
+        1. For each table, find rows containing volume keywords (Technical, Cost, etc.)
+        2. Find columns containing numeric values that look like page limits
+        3. Link row keywords to column values based on cell intersection
+
+        Args:
+            pdf_path: Path to the PDF file
+            warnings: List to append extraction warnings
+
+        Returns:
+            Dict mapping volume_title.lower() to (title, page_limit)
+        """
+        page_limits: Dict[str, Tuple[str, int]] = {}
+
+        if not pdf_path or not PDFPLUMBER_AVAILABLE:
+            return page_limits
+
+        # Keywords that indicate a volume row
+        volume_keywords = {
+            'technical': ['technical', 'tech', 'executive', 'management', 'approach'],
+            'cost': ['cost', 'price', 'pricing', 'business'],
+            'contract': ['contract', 'documentation', 'administrative', 'admin', 'certifications'],
+            'past performance': ['past performance', 'experience', 'references'],
+        }
+
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                for page_num, page in enumerate(pdf.pages):
+                    tables = page.extract_tables()
+
+                    for table_idx, table in enumerate(tables):
+                        if not table or len(table) < 2:
+                            continue
+
+                        print(f"[v6.0.1] Scanning table {table_idx + 1} on page {page_num + 1} "
+                              f"({len(table)} rows x {len(table[0]) if table else 0} cols)")
+
+                        # v6.0.1: Scan each row for volume keywords AND page limits
+                        for row_idx, row in enumerate(table):
+                            row_text = ' '.join(str(cell or '').lower() for cell in row)
+
+                            # Check if this row contains a volume keyword
+                            matched_volume_type = None
+                            for vol_type, keywords in volume_keywords.items():
+                                if any(kw in row_text for kw in keywords):
+                                    matched_volume_type = vol_type
+                                    break
+
+                            if not matched_volume_type:
+                                continue
+
+                            # Found a volume row - now look for a page limit in this row
+                            for col_idx, cell in enumerate(row):
+                                cell_text = str(cell or '').strip()
+
+                                # Check if this cell contains a page limit
+                                # Pattern: number optionally followed by "pages" or standalone number 1-500
+                                limit_match = re.search(r'^(\d{1,3})\s*(?:pages?)?$', cell_text, re.IGNORECASE)
+                                if limit_match:
+                                    limit = int(limit_match.group(1))
+                                    if 1 <= limit <= 500:
+                                        # Build a title from the row
+                                        title = self._extract_volume_title_from_row(row, col_idx)
+                                        if title and title.lower() not in page_limits:
+                                            page_limits[title.lower()] = (title, limit)
+                                            print(f"[v6.0.1] Spatial table match: '{title}' -> {limit} pages "
+                                                  f"(page {page_num + 1}, row {row_idx})")
+
+                                # Also check for "N Pages" format
+                                limit_match2 = re.search(r'(\d{1,3})\s+pages?', cell_text, re.IGNORECASE)
+                                if limit_match2 and cell_text.lower() not in page_limits:
+                                    limit = int(limit_match2.group(1))
+                                    if 1 <= limit <= 500:
+                                        title = self._extract_volume_title_from_row(row, col_idx)
+                                        if title and title.lower() not in page_limits:
+                                            page_limits[title.lower()] = (title, limit)
+                                            print(f"[v6.0.1] Spatial table match: '{title}' -> {limit} pages "
+                                                  f"(page {page_num + 1}, row {row_idx})")
+
+        except Exception as e:
+            print(f"[v6.0.1] Error in spatial table extraction: {e}")
+            import traceback
+            traceback.print_exc()
+
+        if page_limits:
+            print(f"[v6.0.1] Extracted {len(page_limits)} page limits from PDF tables")
+
+        return page_limits
+
+    def _extract_volume_title_from_row(
+        self,
+        row: List[Any],
+        exclude_col: int
+    ) -> Optional[str]:
+        """
+        v6.0.1: Extract a meaningful volume title from a table row.
+
+        Args:
+            row: List of cell values
+            exclude_col: Column index to exclude (the page limit column)
+
+        Returns:
+            Extracted title or None
+        """
+        # Find the cell with the most text content (excluding the page limit column)
+        best_title = None
+        best_length = 0
+
+        for col_idx, cell in enumerate(row):
+            if col_idx == exclude_col:
+                continue
+
+            cell_text = str(cell or '').strip()
+
+            # Skip cells that are just numbers or very short
+            if re.match(r'^\d+$', cell_text) or len(cell_text) < 3:
+                continue
+
+            # Prefer cells containing volume keywords
+            if any(kw in cell_text.lower() for kw in ['technical', 'cost', 'price', 'contract', 'volume']):
+                return cell_text
+
+            # Otherwise use the longest non-numeric cell
+            if len(cell_text) > best_length:
+                best_title = cell_text
+                best_length = len(cell_text)
+
+        return best_title
+
     def _extract_volumes(
         self,
         text: str,
         warnings: List[str],
-        structured_tables: Optional[List[TableObject]] = None
+        structured_tables: Optional[List[TableObject]] = None,
+        pdf_path: Optional[str] = None
     ) -> List[VolumeInstruction]:
         """
         Extract volume instructions from text.
@@ -904,6 +1113,7 @@ class SectionLParser:
         v5.0.8: Uses row-index based linking from structured tables (pdfplumber).
         v5.0.9: Added numbered volume patterns ("1. Technical Volume") for RFPs
                 that use numbered headings instead of "Volume I:" format.
+        v6.0.1: Added aggressive spatial table extraction from PDF.
 
         Looks for explicit volume declarations like "Volume I: Technical Proposal"
         or "1. Executive Summary and Technical Volume".
@@ -920,6 +1130,16 @@ class SectionLParser:
         else:
             # Fallback to text-based extraction
             table_page_limits = self._extract_page_limits_from_table(text, warnings)
+
+        # v6.0.1: Aggressive spatial table extraction from PDF
+        # This scans ALL tables looking for page limits using keyword matching
+        if pdf_path and PDFPLUMBER_AVAILABLE:
+            spatial_page_limits = self._extract_page_limits_from_pdf_tables(pdf_path, warnings)
+            # Merge spatial limits (higher priority - more accurate)
+            for key, value in spatial_page_limits.items():
+                if key not in table_page_limits:
+                    table_page_limits[key] = value
+                    print(f"[v6.0.1] Added spatial page limit: '{key}' -> {value[1]} pages")
 
         # v5.0.9: Also extract from inline table format (Table 1 style)
         inline_page_limits = self._extract_page_limits_from_inline_table(text, warnings)
