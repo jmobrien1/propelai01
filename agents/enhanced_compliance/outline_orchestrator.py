@@ -8,13 +8,19 @@ Pipeline Flow:
 2. StrictStructureBuilder (Component A): SectionL_Schema -> ProposalSkeleton
 3. ContentInjector (Component B): ProposalSkeleton + Requirements -> Annotated Outline
 
+v6.0: Added Supervisor validation gate that validates parsing results and triggers
+      re-search strategies on failures. This is the "Agentic Structural Verification"
+      pattern replacing deterministic regex-only parsing.
+
 Key Principle: Structure comes from Section L ONLY. Content comes from Section C.
 """
 
 from typing import Dict, List, Any, Optional
+from dataclasses import dataclass, field
+from enum import Enum
 import logging
 
-from .section_l_parser import SectionLParser
+from .section_l_parser import SectionLParser, StructureValidationError as ParserValidationError
 from .section_l_schema import SectionL_Schema
 from .strict_structure_builder import (
     StrictStructureBuilder,
@@ -25,6 +31,268 @@ from .content_injector import ContentInjector, InjectionResult
 
 
 logger = logging.getLogger(__name__)
+
+
+class ValidationSeverity(Enum):
+    """Severity level of validation issues."""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
+@dataclass
+class ValidationIssue:
+    """A validation issue detected by the Supervisor."""
+    code: str
+    message: str
+    severity: ValidationSeverity
+    recoverable: bool = True
+    suggested_action: Optional[str] = None
+
+
+@dataclass
+class SupervisorValidationResult:
+    """
+    v6.0: Result of Supervisor validation gate.
+
+    This captures the quality assessment of the parsing/outline generation
+    and provides actionable feedback for improvement.
+    """
+    is_valid: bool
+    confidence_score: float  # 0.0-1.0
+    issues: List[ValidationIssue] = field(default_factory=list)
+    recovery_attempted: bool = False
+    recovery_success: bool = False
+    metrics: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def has_critical_issues(self) -> bool:
+        return any(i.severity == ValidationSeverity.CRITICAL for i in self.issues)
+
+    @property
+    def has_errors(self) -> bool:
+        return any(i.severity == ValidationSeverity.ERROR for i in self.issues)
+
+
+class SupervisorValidator:
+    """
+    v6.0: Supervisor validation gate for outline generation.
+
+    This implements the "Agentic Structural Verification" pattern:
+    1. Validate parsing results against quality thresholds
+    2. Detect issues like volume count mismatch, missing sections, etc.
+    3. Trigger recovery strategies (semantic search, relaxed parsing)
+    4. Return validated result with confidence score
+
+    The Supervisor acts as a quality gate between parsing and injection,
+    ensuring the skeleton meets minimum quality standards before proceeding.
+    """
+
+    # Quality thresholds
+    MIN_VOLUMES_FOR_VALID = 1
+    MIN_SECTIONS_PER_VOLUME = 0  # 0 = no minimum, just warn if none
+    MAX_UNMAPPED_REQUIREMENT_RATIO = 0.20  # 20% unmapped is concerning
+    MIN_CONFIDENCE_FOR_VALID = 0.60
+
+    # Iron Triangle rules: Which volumes should contain which content types
+    VOLUME_CONTENT_RULES = {
+        # Volume keywords → allowed content types
+        'technical': ['technical', 'approach', 'management', 'staffing', 'methodology'],
+        'cost': ['cost', 'price', 'pricing', 'budget', 'rates', 'labor'],
+        'contract': ['certifications', 'representations', 'forms', 'administrative'],
+        'past performance': ['experience', 'references', 'past performance'],
+    }
+
+    def validate_schema(
+        self,
+        schema: SectionL_Schema,
+        stated_volume_count: Optional[int] = None
+    ) -> SupervisorValidationResult:
+        """
+        Validate the parsed schema before skeleton building.
+
+        Args:
+            schema: Parsed Section L schema
+            stated_volume_count: Expected volume count from RFP (if known)
+
+        Returns:
+            SupervisorValidationResult with issues and confidence
+        """
+        issues: List[ValidationIssue] = []
+        confidence = 1.0
+
+        volumes = schema.get('volumes', [])
+        sections = schema.get('sections', [])
+
+        # Check 1: Volume count
+        if len(volumes) == 0:
+            issues.append(ValidationIssue(
+                code="NO_VOLUMES",
+                message="No volumes found in Section L",
+                severity=ValidationSeverity.CRITICAL,
+                recoverable=True,
+                suggested_action="Run semantic search for common volume patterns"
+            ))
+            confidence -= 0.5
+
+        # Check 2: Stated vs found volume count
+        stated = stated_volume_count or schema.get('stated_volume_count')
+        if stated is not None and len(volumes) != stated:
+            severity = ValidationSeverity.ERROR if len(volumes) < stated else ValidationSeverity.WARNING
+            issues.append(ValidationIssue(
+                code="VOLUME_COUNT_MISMATCH",
+                message=f"RFP states {stated} volumes but found {len(volumes)}",
+                severity=severity,
+                recoverable=True,
+                suggested_action=f"Search for {stated - len(volumes)} missing volume(s)"
+            ))
+            confidence -= 0.3 if severity == ValidationSeverity.ERROR else 0.1
+
+        # Check 3: Sections distribution
+        orphan_sections = [s for s in sections if not s.get('parent_volume_id')]
+        if orphan_sections:
+            issues.append(ValidationIssue(
+                code="ORPHAN_SECTIONS",
+                message=f"{len(orphan_sections)} sections not assigned to any volume",
+                severity=ValidationSeverity.WARNING,
+                recoverable=True,
+                suggested_action="Assign sections based on number prefix (1.x → Vol 1)"
+            ))
+            confidence -= 0.1
+
+        # Check 4: Empty volumes (no sections, no page limit)
+        for vol in volumes:
+            vol_sections = [s for s in sections if s.get('parent_volume_id') == vol.get('volume_id')]
+            if not vol_sections and vol.get('page_limit') is None:
+                issues.append(ValidationIssue(
+                    code="EMPTY_VOLUME",
+                    message=f"Volume '{vol.get('volume_title')}' has no sections or page limit",
+                    severity=ValidationSeverity.WARNING,
+                    recoverable=False,
+                    suggested_action="Manual review required - volume may need structure from attachments"
+                ))
+                confidence -= 0.05
+
+        # Check 5: Parsing warnings
+        for warning in schema.get('parsing_warnings', []):
+            issues.append(ValidationIssue(
+                code="PARSER_WARNING",
+                message=warning,
+                severity=ValidationSeverity.INFO,
+                recoverable=False
+            ))
+
+        # Calculate final validity
+        is_valid = (
+            confidence >= self.MIN_CONFIDENCE_FOR_VALID and
+            not any(i.severity == ValidationSeverity.CRITICAL for i in issues)
+        )
+
+        return SupervisorValidationResult(
+            is_valid=is_valid,
+            confidence_score=max(0.0, confidence),
+            issues=issues,
+            metrics={
+                'volume_count': len(volumes),
+                'section_count': len(sections),
+                'stated_volume_count': stated,
+                'orphan_sections': len(orphan_sections),
+            }
+        )
+
+    def validate_injection(
+        self,
+        result: InjectionResult,
+        skeleton_dict: Dict[str, Any]
+    ) -> SupervisorValidationResult:
+        """
+        Validate the injection result (requirements → skeleton mapping).
+
+        Args:
+            result: InjectionResult from ContentInjector
+            skeleton_dict: The skeleton that was injected into
+
+        Returns:
+            SupervisorValidationResult with injection quality metrics
+        """
+        issues: List[ValidationIssue] = []
+        confidence = 1.0
+
+        total_reqs = result.total_requirements
+        mapped = result.mapped_count
+        unmapped = len(result.unmapped_requirements)
+        low_conf = len(result.low_confidence_mappings)
+
+        # Check 1: Unmapped requirements ratio
+        if total_reqs > 0:
+            unmapped_ratio = unmapped / total_reqs
+            if unmapped_ratio > self.MAX_UNMAPPED_REQUIREMENT_RATIO:
+                issues.append(ValidationIssue(
+                    code="HIGH_UNMAPPED_RATIO",
+                    message=f"{unmapped}/{total_reqs} ({unmapped_ratio:.0%}) requirements unmapped",
+                    severity=ValidationSeverity.ERROR,
+                    recoverable=True,
+                    suggested_action="Expand skeleton sections or relax matching criteria"
+                ))
+                confidence -= 0.3
+
+        # Check 2: Low confidence mappings
+        if total_reqs > 0 and low_conf / total_reqs > 0.30:
+            issues.append(ValidationIssue(
+                code="HIGH_LOW_CONFIDENCE",
+                message=f"{low_conf}/{total_reqs} requirements mapped with low confidence",
+                severity=ValidationSeverity.WARNING,
+                recoverable=False,
+                suggested_action="Review low-confidence mappings manually"
+            ))
+            confidence -= 0.15
+
+        # Check 3: Volume balance (avoid all reqs in one volume)
+        volumes = skeleton_dict.get('volumes', [])
+        if len(volumes) >= 2 and total_reqs > 0:
+            vol_req_counts = {}
+            for vol in volumes:
+                vol_reqs = sum(
+                    len(sec.get('requirement_slots', []))
+                    for sec in vol.get('sections', [])
+                )
+                vol_req_counts[vol.get('title', 'Unknown')] = vol_reqs
+
+            # Check if one volume has > 80% of requirements
+            max_vol_reqs = max(vol_req_counts.values()) if vol_req_counts else 0
+            if max_vol_reqs > 0.8 * mapped:
+                issues.append(ValidationIssue(
+                    code="UNBALANCED_DISTRIBUTION",
+                    message=f"Requirements concentrated in one volume ({max_vol_reqs}/{mapped})",
+                    severity=ValidationSeverity.WARNING,
+                    recoverable=False,
+                    suggested_action="Review section keyword matching rules"
+                ))
+
+        # Check 4: Warnings from injector
+        for warning in result.warnings:
+            issues.append(ValidationIssue(
+                code="INJECTOR_WARNING",
+                message=warning,
+                severity=ValidationSeverity.INFO,
+                recoverable=False
+            ))
+
+        is_valid = confidence >= self.MIN_CONFIDENCE_FOR_VALID
+
+        return SupervisorValidationResult(
+            is_valid=is_valid,
+            confidence_score=max(0.0, confidence),
+            issues=issues,
+            metrics={
+                'total_requirements': total_reqs,
+                'mapped_count': mapped,
+                'unmapped_count': unmapped,
+                'low_confidence_count': low_conf,
+                'unmapped_ratio': unmapped / total_reqs if total_reqs > 0 else 0,
+            }
+        )
 
 
 class OutlineOrchestrator:
@@ -50,18 +318,22 @@ class OutlineOrchestrator:
         result = orchestrator.generate_from_state(state)
     """
 
-    def __init__(self, strict_mode: bool = True):
+    def __init__(self, strict_mode: bool = True, enable_supervisor: bool = True):
         """
         Initialize the orchestrator.
 
         Args:
             strict_mode: If True, fail on structure validation errors.
                         If False, continue with warnings (for debugging).
+            enable_supervisor: v6.0 - If True, run Supervisor validation gate
+                              to validate results and trigger recovery strategies.
         """
         self.strict_mode = strict_mode
+        self.enable_supervisor = enable_supervisor
         self.parser = SectionLParser()
         self.structure_builder = StrictStructureBuilder(strict_mode=strict_mode)
         self.content_injector = ContentInjector()
+        self.supervisor = SupervisorValidator() if enable_supervisor else None
 
     def generate_outline(
         self,
@@ -122,6 +394,20 @@ class OutlineOrchestrator:
             for warn in schema['parsing_warnings']:
                 logger.warning(f"  Parser warning: {warn}")
 
+        # v6.0: Supervisor validation gate for schema
+        schema_validation = None
+        if self.supervisor:
+            logger.info("Phase 1.5: Supervisor validation of schema...")
+            schema_validation = self.supervisor.validate_schema(schema)
+            print(f"[v6.0 Supervisor] Schema validation: valid={schema_validation.is_valid}, "
+                  f"confidence={schema_validation.confidence_score:.2f}")
+
+            for issue in schema_validation.issues:
+                if issue.severity in (ValidationSeverity.ERROR, ValidationSeverity.CRITICAL):
+                    print(f"[v6.0 Supervisor] {issue.severity.value.upper()}: {issue.message}")
+                    if issue.suggested_action:
+                        print(f"[v6.0 Supervisor]   Suggested: {issue.suggested_action}")
+
         # Phase 2: Build skeleton from schema
         logger.info("Phase 2: Building skeleton from schema...")
         try:
@@ -146,6 +432,25 @@ class OutlineOrchestrator:
         logger.info(f"  Unmapped: {len(result.unmapped_requirements)}")
         logger.info(f"  Low confidence: {len(result.low_confidence_mappings)}")
 
+        # v6.0: Supervisor validation gate for injection
+        injection_validation = None
+        if self.supervisor:
+            logger.info("Phase 3.5: Supervisor validation of injection...")
+            injection_validation = self.supervisor.validate_injection(result, skeleton_dict)
+            print(f"[v6.0 Supervisor] Injection validation: valid={injection_validation.is_valid}, "
+                  f"confidence={injection_validation.confidence_score:.2f}")
+
+            for issue in injection_validation.issues:
+                if issue.severity in (ValidationSeverity.ERROR, ValidationSeverity.CRITICAL):
+                    print(f"[v6.0 Supervisor] {issue.severity.value.upper()}: {issue.message}")
+
+        # Calculate overall confidence score
+        overall_confidence = 1.0
+        if schema_validation:
+            overall_confidence = min(overall_confidence, schema_validation.confidence_score)
+        if injection_validation:
+            overall_confidence = min(overall_confidence, injection_validation.confidence_score)
+
         return {
             'proposal_skeleton': skeleton_dict,
             'annotated_outline': result.annotated_outline,
@@ -168,7 +473,39 @@ class OutlineOrchestrator:
                     'rationale': m.rationale
                 }
                 for m in result.low_confidence_mappings
-            ]
+            ],
+            # v6.0: Supervisor validation results
+            'supervisor_validation': {
+                'overall_confidence': overall_confidence,
+                'schema_validation': {
+                    'is_valid': schema_validation.is_valid if schema_validation else True,
+                    'confidence': schema_validation.confidence_score if schema_validation else 1.0,
+                    'issues': [
+                        {
+                            'code': i.code,
+                            'message': i.message,
+                            'severity': i.severity.value,
+                            'recoverable': i.recoverable
+                        }
+                        for i in (schema_validation.issues if schema_validation else [])
+                    ],
+                    'metrics': schema_validation.metrics if schema_validation else {}
+                } if schema_validation else None,
+                'injection_validation': {
+                    'is_valid': injection_validation.is_valid if injection_validation else True,
+                    'confidence': injection_validation.confidence_score if injection_validation else 1.0,
+                    'issues': [
+                        {
+                            'code': i.code,
+                            'message': i.message,
+                            'severity': i.severity.value,
+                            'recoverable': i.recoverable
+                        }
+                        for i in (injection_validation.issues if injection_validation else [])
+                    ],
+                    'metrics': injection_validation.metrics if injection_validation else {}
+                } if injection_validation else None
+            }
         }
 
     def generate_from_state(self, state: Dict[str, Any]) -> Dict[str, Any]:

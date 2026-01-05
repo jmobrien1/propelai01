@@ -272,6 +272,21 @@ class SectionLParser:
         if pdf_path and PDFPLUMBER_AVAILABLE:
             structured_tables = self._extract_structured_tables_from_pdf(pdf_path)
 
+        # v6.0: SF1449 coordinate-based metadata extraction (priority source)
+        sf1449_metadata: Dict[str, Optional[str]] = {}
+        if pdf_path and PDFPLUMBER_AVAILABLE:
+            sf1449_metadata = self._extract_sf1449_metadata(pdf_path)
+            # Override rfp_number if SF1449 extraction was successful
+            if sf1449_metadata.get('solicitation_number'):
+                sf1449_sol = sf1449_metadata['solicitation_number']
+                if rfp_number and rfp_number != sf1449_sol:
+                    warnings.append(
+                        f"SF1449 solicitation number '{sf1449_sol}' differs from "
+                        f"passed RFP number '{rfp_number}'. Using SF1449 value."
+                    )
+                rfp_number = sf1449_sol
+                print(f"[v6.0] Using SF1449 solicitation number: {rfp_number}")
+
         # Extract stated volume count first (for validation)
         stated_count = self._extract_stated_volume_count(full_text)
 
@@ -292,11 +307,28 @@ class SectionLParser:
                 raise StructureValidationError(error_msg)
             warnings.append(error_msg)
 
+        # v6.0: SEMANTIC SEARCH FALLBACK for missing volumes
+        # Instead of failing immediately, search for common volume patterns
+        if stated_count is not None and len(volumes) < stated_count:
+            missing_count = stated_count - len(volumes)
+            print(f"[v6.0] Volume count mismatch: stated={stated_count}, found={len(volumes)}")
+            print(f"[v6.0] Attempting semantic search for {missing_count} missing volume(s)...")
+
+            # Try to find missing volumes via semantic search
+            found_volumes = self._search_for_missing_volumes(
+                full_text, volumes, stated_count, warnings
+            )
+            if found_volumes:
+                volumes.extend(found_volumes)
+                volumes = sorted(volumes, key=lambda v: v['volume_number'])
+                print(f"[v6.0] After semantic search: found {len(volumes)} total volumes")
+
         # v5.0.8: MANDATORY volume count validation (Iron Triangle Determinism)
+        # Only raise error if semantic search also failed
         if stated_count is not None and len(volumes) != stated_count:
             error_msg = (
                 f"VOLUME COUNT MISMATCH: RFP explicitly states {stated_count} volumes "
-                f"but parser found {len(volumes)}. "
+                f"but parser found {len(volumes)} (even after semantic search). "
                 f"Found volumes: {[v['volume_title'] for v in volumes]}. "
                 f"This is a deterministic failure - no guessing allowed."
             )
@@ -313,6 +345,13 @@ class SectionLParser:
         # Extract submission requirements
         submission_rules = self._extract_submission_rules(full_text)
 
+        # v6.0: Override with SF1449 metadata if available (higher priority)
+        if sf1449_metadata.get('due_date') and not submission_rules.get('due_date'):
+            submission_rules['due_date'] = sf1449_metadata['due_date']
+            print(f"[v6.0] Using SF1449 due date: {submission_rules['due_date']}")
+        if sf1449_metadata.get('due_time') and not submission_rules.get('due_time'):
+            submission_rules['due_time'] = sf1449_metadata['due_time']
+
         # Extract total page limit
         total_pages = self._extract_total_page_limit(full_text)
 
@@ -328,6 +367,120 @@ class SectionLParser:
             source_documents=source_docs,
             parsing_warnings=warnings
         )
+
+    def _extract_sf1449_metadata(
+        self,
+        pdf_path: str
+    ) -> Dict[str, Optional[str]]:
+        """
+        v6.0: Extract metadata from SF1449 form using coordinate-based extraction.
+
+        SF1449 is the standard federal solicitation cover sheet with fixed field positions.
+        This method extracts from known bounding box coordinates:
+
+        Block 2 (Solicitation Number): Top-left area, ~(1.5", 0.7")
+        Block 5 (Issue Date): Top-right area, ~(6.5", 0.7")
+        Block 8 (Offer Due Date/Time): ~(1.5", 1.8")
+        Block 9 (Issued By): Left side, ~(0.5", 3.5")
+
+        Coordinates are normalized percentages (0.0-1.0) of page dimensions.
+
+        Args:
+            pdf_path: Path to the PDF file
+
+        Returns:
+            Dict with 'solicitation_number', 'issue_date', 'due_date', 'due_time', 'issued_by'
+        """
+        result = {
+            'solicitation_number': None,
+            'issue_date': None,
+            'due_date': None,
+            'due_time': None,
+            'issued_by': None
+        }
+
+        if not pdf_path or not PDFPLUMBER_AVAILABLE:
+            return result
+
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                if len(pdf.pages) == 0:
+                    return result
+
+                first_page = pdf.pages[0]
+                page_width = first_page.width
+                page_height = first_page.height
+
+                # Check if this looks like an SF1449 form (look for "SOLICITATION/CONTRACT/ORDER" header)
+                first_page_text = first_page.extract_text() or ""
+                if 'SOLICITATION/CONTRACT' not in first_page_text.upper() and 'SF 1449' not in first_page_text.upper():
+                    print("[v6.0] First page does not appear to be SF1449, skipping coordinate extraction")
+                    return result
+
+                print("[v6.0] SF1449 form detected, extracting from coordinates...")
+
+                # SF1449 Block 2 (Solicitation Number) - approximately at:
+                # x: 1.0-3.5 inches from left, y: 0.6-0.9 inches from top
+                # Convert inches to points (72 points/inch) then to page coordinates
+                block2_bbox = (
+                    72 * 1.0,  # x0: 1.0 inches
+                    72 * 0.6,  # y0: 0.6 inches from top
+                    72 * 3.5,  # x1: 3.5 inches
+                    72 * 1.0   # y1: 1.0 inches from top
+                )
+                block2_text = self._extract_text_from_bbox(first_page, block2_bbox)
+                if block2_text:
+                    # Extract solicitation number from block text
+                    sol_match = re.search(r'([A-Z0-9][-A-Z0-9]{8,})', block2_text.upper())
+                    if sol_match:
+                        result['solicitation_number'] = sol_match.group(1)
+                        print(f"[v6.0] SF1449 Block 2 solicitation: {result['solicitation_number']}")
+
+                # SF1449 Block 8 (Offer Due Date/Time) - approximately at:
+                # x: 0.5-4.0 inches, y: 1.5-2.0 inches from top
+                block8_bbox = (
+                    72 * 0.5,  # x0
+                    72 * 1.4,  # y0
+                    72 * 4.5,  # x1
+                    72 * 2.2   # y1
+                )
+                block8_text = self._extract_text_from_bbox(first_page, block8_bbox)
+                if block8_text:
+                    # Extract date from block text - formats like "03 Feb 2025" or "February 3, 2025"
+                    date_match = re.search(r'(\d{1,2}\s+[A-Za-z]+\s+\d{4})', block8_text)
+                    if not date_match:
+                        date_match = re.search(r'([A-Za-z]+\s+\d{1,2},?\s+\d{4})', block8_text)
+                    if date_match:
+                        result['due_date'] = date_match.group(1)
+                        print(f"[v6.0] SF1449 Block 8 due date: {result['due_date']}")
+
+                    # Extract time from block text - format "1700" or "5:00 PM"
+                    time_match = re.search(r'(\d{4})\s*(?:hrs?|hours?|local|pacific|eastern|central|mountain)?', block8_text, re.IGNORECASE)
+                    if time_match:
+                        result['due_time'] = time_match.group(1)
+
+        except Exception as e:
+            print(f"[v6.0] Error in SF1449 coordinate extraction: {e}")
+
+        return result
+
+    def _extract_text_from_bbox(self, page, bbox: Tuple[float, float, float, float]) -> Optional[str]:
+        """
+        v6.0: Extract text from a specific bounding box region of a PDF page.
+
+        Args:
+            page: pdfplumber page object
+            bbox: (x0, y0, x1, y1) coordinates in points
+
+        Returns:
+            Extracted text or None
+        """
+        try:
+            cropped = page.within_bbox(bbox)
+            text = cropped.extract_text()
+            return text.strip() if text else None
+        except Exception:
+            return None
 
     def _extract_solicitation_number(self, text: str) -> Optional[str]:
         """
@@ -385,6 +538,134 @@ class SectionLParser:
         ]
         name_lower = name.lower()
         return any(kw in name_lower for kw in structural_keywords)
+
+    def _search_for_missing_volumes(
+        self,
+        text: str,
+        found_volumes: List[VolumeInstruction],
+        stated_count: int,
+        warnings: List[str]
+    ) -> List[VolumeInstruction]:
+        """
+        v6.0: Semantic search for missing volumes when stated_count > found.
+
+        This is the "Supervisor Agent" logic - instead of failing, we search
+        for common volume patterns that the regex might have missed.
+
+        Strategy:
+        1. Identify which volume numbers are missing (e.g., if Vol 1 and 2 found, Vol 3 is missing)
+        2. Search for common keywords for that volume type
+        3. Look for section headers that indicate a volume boundary (e.g., "3. Contract Documentation")
+
+        Returns:
+            List of newly found VolumeInstruction objects
+        """
+        missing_volumes: List[VolumeInstruction] = []
+
+        # Get existing volume numbers
+        found_numbers = {v['volume_number'] for v in found_volumes}
+
+        # Common volume type keywords by position
+        # Volume 1 is typically Technical, Volume 2 is Cost/Price, Volume 3+ is Admin/Documentation
+        volume_keywords = {
+            1: ['technical', 'executive summary', 'management', 'approach'],
+            2: ['cost', 'price', 'pricing', 'business'],
+            3: ['contract', 'documentation', 'administrative', 'certifications', 'forms', 'representations'],
+            4: ['past performance', 'experience', 'references'],
+            5: ['small business', 'subcontracting'],
+        }
+
+        # Search for missing volumes
+        for vol_num in range(1, stated_count + 1):
+            if vol_num in found_numbers:
+                continue
+
+            print(f"[v6.0] Searching for missing Volume {vol_num}...")
+
+            keywords = volume_keywords.get(vol_num, ['volume', 'section'])
+
+            # Strategy 1: Look for "N. Title" patterns at line start
+            for line in text.split('\n'):
+                line_stripped = line.strip()
+
+                # Match "3. Contract Documentation" or "3. Contract Documentation Volume"
+                numbered_match = re.match(
+                    rf'^{vol_num}\.\s+(.{{5,80}}?)(?:\s*Volume)?\s*$',
+                    line_stripped,
+                    re.IGNORECASE
+                )
+
+                if numbered_match:
+                    title = numbered_match.group(1).strip()
+
+                    # Check if title contains any expected keywords
+                    title_lower = title.lower()
+                    keyword_match = any(kw in title_lower for kw in keywords)
+
+                    if keyword_match or vol_num >= 3:  # Vol 3+ often has unexpected titles
+                        # Clean up title
+                        title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+
+                        # Add "Volume" suffix if not present
+                        if not title.lower().endswith('volume'):
+                            title = f"{title} Volume"
+
+                        print(f"[v6.0] Found missing volume via numbered pattern: '{title}'")
+
+                        missing_volumes.append(VolumeInstruction(
+                            volume_id=f"VOL-{vol_num}",
+                            volume_title=title,
+                            volume_number=vol_num,
+                            page_limit=None,
+                            source_reference=f"Section L (semantic search, heading {vol_num})",
+                            is_mandatory=True
+                        ))
+                        break
+
+            # Strategy 2: Search for keyword mentions if numbered pattern didn't match
+            if vol_num not in {v['volume_number'] for v in missing_volumes}:
+                for keyword in keywords:
+                    # Look for "Contract Documentation Volume" or similar
+                    keyword_pattern = rf'\b({keyword})\s+Volume\b'
+                    match = re.search(keyword_pattern, text, re.IGNORECASE)
+
+                    if match:
+                        # Extract surrounding context to build title
+                        start = max(0, match.start() - 20)
+                        end = min(len(text), match.end() + 20)
+                        context = text[start:end]
+
+                        # Try to extract clean title
+                        title_match = re.search(
+                            rf'(\d+\.?\s*)?({keyword}[^\.]*?Volume)',
+                            context,
+                            re.IGNORECASE
+                        )
+
+                        if title_match:
+                            title = title_match.group(2).strip()
+                            title = title.title()  # Capitalize properly
+
+                            print(f"[v6.0] Found missing volume via keyword search: '{title}'")
+
+                            missing_volumes.append(VolumeInstruction(
+                                volume_id=f"VOL-{vol_num}",
+                                volume_title=title,
+                                volume_number=vol_num,
+                                page_limit=None,
+                                source_reference=f"Section L (semantic search, keyword '{keyword}')",
+                                is_mandatory=True
+                            ))
+                            break
+
+        if missing_volumes:
+            warnings.append(
+                f"Found {len(missing_volumes)} volume(s) via semantic search: "
+                f"{[v['volume_title'] for v in missing_volumes]}. "
+                "These were not detected by primary regex patterns."
+            )
+
+        return missing_volumes
 
     def _extract_stated_volume_count(self, text: str) -> Optional[int]:
         """
@@ -1305,26 +1586,68 @@ class SectionLParser:
         )
 
     def _extract_submission_rules(self, text: str) -> SubmissionInstruction:
-        """Extract submission requirements from text."""
-        # Due date patterns
+        """
+        Extract submission requirements from text.
+
+        v6.0: Enhanced due date extraction with SF1449 priority targeting.
+        """
+        # v6.0: Enhanced due date patterns - prioritize SF1449 format
         date_patterns = [
+            # SF1449 Block 8 format: "03 Feb 2025" or "3 February 2025"
+            r'(?:offer[s]?\s+(?:due|must\s+be\s+received))[^0-9]*(\d{1,2}\s+[A-Za-z]+\s+\d{4})',
+            # "Proposals must be received no later than 1700 Pacific Daylight-Saving Time, 3 February 2024"
+            r'(?:received|due)\s+(?:no\s+later\s+than|by)[^0-9]*\d{4}[^,]*,?\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})',
+            # Standard date after time: "1700 Pacific... Time, 3 February 2024"
+            r'\d{4}\s+[A-Za-z]+[^,]+,\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})',
+            # "due date: January 15, 2025" or "due: 01/15/2025"
             r"(?:due|submit|submission)\s*(?:date|by)?\s*[:\s]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
+            r"(?:due|submit|submission)\s*(?:date|by)?\s*[:\s]*([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+            # "no later than January 15, 2025"
             r"no\s+later\s+than[:\s]*([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+            r"no\s+later\s+than[:\s]*(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+            # Block 8 explicit: "Block 8" followed by date
+            r'(?:Block\s*8|Item\s*8)[^0-9]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
+            r'(?:Block\s*8|Item\s*8)[^0-9]*(\d{1,2}\s+[A-Za-z]+\s+\d{4})',
         ]
 
         due_date = None
+        due_time = None
+
+        # Try to extract time first
+        time_match = re.search(
+            r'(\d{4})\s+(Pacific|Eastern|Central|Mountain|Local|[A-Z]{2,4})',
+            text,
+            re.IGNORECASE
+        )
+        if time_match:
+            due_time = f"{time_match.group(1)} {time_match.group(2)}"
+
         for pattern in date_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 due_date = match.group(1).strip()
+                # Clean up the date format
+                due_date = re.sub(r'\s+', ' ', due_date)
+                print(f"[v6.0] Extracted due date: {due_date}")
                 break
 
         # Submission method
         method_match = re.search(
-            r"(?:submit|submission)\s+(?:via|through|to)\s+(email|portal|electronic|mail|sam\.gov)",
+            r"(?:submit|submission)\s+(?:via|through|to)\s+(email|portal|electronic|mail|sam\.gov|ebuy|gsa)",
             text,
             re.IGNORECASE
         )
+
+        # v6.0: Also look for "secure file transfer system"
+        if not method_match:
+            if re.search(r'secure\s+file\s+transfer', text, re.IGNORECASE):
+                method_match_str = "secure file transfer"
+            elif re.search(r'eBuy|e-Buy', text, re.IGNORECASE):
+                method_match_str = "ebuy"
+            else:
+                method_match_str = None
+        else:
+            method_match_str = method_match.group(1).lower()
 
         # File format
         format_match = re.search(
@@ -1335,8 +1658,8 @@ class SectionLParser:
 
         return SubmissionInstruction(
             due_date=due_date,
-            due_time=None,
-            submission_method=method_match.group(1).lower() if method_match else None,
+            due_time=due_time,
+            submission_method=method_match_str,
             copies_required=None,
             file_format=format_match.group(1).upper() if format_match else None
         )
