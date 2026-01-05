@@ -1,6 +1,6 @@
 # PropelAI v5.0 As-Built Technical Document
 
-**Version:** 5.0.8
+**Version:** 5.0.9
 **Date:** January 2025
 **Classification:** Technical Architecture Documentation
 
@@ -70,6 +70,15 @@
     - [22.6 Task 4: Purge Legacy Templates](#226-task-4-purge-legacy-templates)
     - [22.7 Expected Behavior](#227-expected-behavior)
     - [22.8 Migration Guide](#228-migration-guide)
+23. [Numbered Volume Parsing v5.0.9](#23-numbered-volume-parsing-v509)
+    - [23.1 Root Cause Analysis](#231-root-cause-analysis)
+    - [23.2 Fix 1: Numbered Volume Pattern](#232-fix-1-numbered-volume-pattern)
+    - [23.3 Fix 2: Prefix-Based Section Assignment](#233-fix-2-prefix-based-section-assignment)
+    - [23.4 Fix 3: Double Period Prevention](#234-fix-3-double-period-prevention)
+    - [23.5 Fix 4: Inline Table Page Limit Extraction](#235-fix-4-inline-table-page-limit-extraction)
+    - [23.6 Fix 5: Official Solicitation Number Extraction](#236-fix-5-official-solicitation-number-extraction)
+    - [23.7 Expected Behavior](#237-expected-behavior)
+    - [23.8 Test Results](#238-test-results)
 
 ---
 
@@ -5162,6 +5171,140 @@ try:
 except StructureValidationError as e:
     # Handle deterministic failure - structure cannot be extracted
     log.error(f"Structure extraction failed: {e}")
+```
+
+---
+
+## 23. Numbered Volume Parsing v5.0.9
+
+### 23.1 Root Cause Analysis
+
+**Regression Report:** The v5.0.8 release introduced structural failures when processing RFPs that use numbered volume format:
+- **Format:** "1. Executive Summary and Technical Volume" instead of "Volume I: Technical Proposal"
+- **Failure Modes:**
+  - Section 3.x nested in Volume 1 and Volume 2 (duplicate contamination)
+  - Double period in headers ("3.. Contract Documentation Volume")
+  - Page limits not extracted from Table 1 inline format
+  - Wrong solicitation number (internal ID vs official FA8806... format)
+
+**Root Causes:**
+1. Volume patterns only matched "Volume I:" format, not "1. Title Volume" format
+2. Section-to-volume assignment based on text proximity, not numeric prefix
+3. Section pattern captured trailing periods in IDs like "3."
+4. No extraction of official solicitation numbers from SF1449/standard formats
+5. Table 1 inline format not parsed for page limits
+
+### 23.2 Fix 1: Numbered Volume Pattern
+
+**File:** `agents/enhanced_compliance/section_l_parser.py`
+
+Added new volume patterns to match numbered format:
+```python
+# v5.0.9: Numbered volume patterns (e.g., "1. Executive Summary and Technical Volume")
+self.numbered_volume_patterns = [
+    r"^(\d+)\.\s+([^\n]+?Volume)\s*$",
+    r"^(\d+)\.\s+([^\n]*(?:Cost|Price|Technical|Contract|Documentation)[^\n]*Volume)\s*$",
+]
+```
+
+New method `_extract_numbered_volumes()` handles these patterns when standard patterns fail.
+
+### 23.3 Fix 2: Prefix-Based Section Assignment
+
+**Iron Triangle Enforcement:** Sections are now assigned to volumes based on their numeric prefix:
+- Section 1.x → Volume 1
+- Section 2.x → Volume 2
+- Section 3.x → Volume 3
+
+```python
+def _extract_sections_by_prefix(self, text, vol_num_to_id, vol_num_to_title, warnings):
+    """v5.0.9: Extract sections using number prefix matching."""
+    # "1.1" → vol 1, "2.3" → vol 2, "3.4" → vol 3
+    prefix = sec_id.split('.')[0]
+    if prefix.isdigit():
+        vol_num = int(prefix)
+
+    if vol_num not in vol_num_to_id:
+        continue  # Skip sections with no matching volume
+```
+
+This prevents Section 3.4 (Personnel Security) from being dumped into Volume 1 (Technical).
+
+### 23.4 Fix 3: Double Period Prevention
+
+**Section Pattern Update:** Changed from `\d*` (zero or more) to `\d+` (one or more):
+```python
+# Before (v5.0.8): Captured "3." as valid section
+r"(\d{1,2}\.\d*)\s+([A-Z][^\n]{4,60})"
+
+# After (v5.0.9): Requires at least one decimal digit
+r"(\d{1,2}\.\d+)\s+([A-Z][^\n]{4,60})"
+```
+
+Also added explicit cleanup:
+```python
+# v5.0.9: Clean section ID - remove trailing periods
+sec_id = sec_id.rstrip('.')
+```
+
+### 23.5 Fix 4: Inline Table Page Limit Extraction
+
+New method `_extract_page_limits_from_inline_table()` parses Table 1 format:
+```
+1       Technical               8 Pages
+        Executive Summary       1         Y
+SF 1    Management Approach     10        Y
+SF 2    Infrastructure Approach 10        Y
+```
+
+Patterns match volume/subfactor rows with page limits.
+
+### 23.6 Fix 5: Official Solicitation Number Extraction
+
+New method `_extract_solicitation_number()` detects official solicitation numbers:
+```python
+sol_patterns = [
+    # Air Force format: FA8806-25-R-B003
+    r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(FA\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{4,})',
+    # Army format: W911NF-25-R-0001
+    r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',
+    # Navy format: N00024-25-R-0001
+    r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',
+    # Generic with explicit label
+    r'Solicitation\s*(?:No\.?|Number|#)?\s*[:=]\s*([A-Z0-9][-A-Z0-9]{8,})',
+]
+```
+
+Detected numbers override passed-in internal IDs (like "RFP-80561923").
+
+### 23.7 Expected Behavior
+
+| Scenario | Before v5.0.9 | After v5.0.9 |
+|----------|--------------|--------------|
+| "1. Technical Volume" format | Not detected | Correctly parsed |
+| Section 3.4 → Volume 1 | Yes (proximity-based) | No (prefix-based to Vol 3) |
+| "3.. Contract Documentation" | Generated | Prevented |
+| Table 1 inline page limits | Not extracted | Extracted |
+| Internal ID vs FA8806... | Uses internal | Detects official |
+
+### 23.8 Test Results
+
+```
+=== VOLUMES ===
+  Volume 1: Executive Summary and Technical Volume
+  Volume 2: Cost & Price Volume
+  Volume 3: Contract Documentation Volume
+
+=== SECTIONS ===
+  1.1 -> VOL-1: Executive Summary
+  1.2 -> VOL-1: Sub Factor 1: Management Approach
+  1.3 -> VOL-1: Sub Factor 2: Infrastructure Approach
+  2.1 -> VOL-2: Criteria 1: Supply Pricing
+  2.2 -> VOL-2: Criteria 2: Labor Rate Compliance
+  3.1 -> VOL-3: Evidence of Online Representation
+  3.2 -> VOL-3: SF1449
+  3.3 -> VOL-3: Draft DD Form 254
+  3.4 -> VOL-3: Personnel Security Questionnaire
 ```
 
 ---

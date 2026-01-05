@@ -128,6 +128,15 @@ class SectionLParser:
             r"Volume\s+([IVX\d]+)\s*[-–]\s*([^\n]+)",
         ]
 
+        # v5.0.9: Numbered volume patterns (e.g., "1. Executive Summary and Technical Volume")
+        # These RFPs use "N. Title Volume" instead of "Volume N: Title"
+        self.numbered_volume_patterns = [
+            # "1. Executive Summary and Technical Volume"
+            r"^(\d+)\.\s+([^\n]+?Volume)\s*$",
+            # "2. Cost & Price Volume" or "2. Cost/Price Volume"
+            r"^(\d+)\.\s+([^\n]*(?:Cost|Price|Technical|Contract|Documentation)[^\n]*Volume)\s*$",
+        ]
+
         self.volume_count_patterns = [
             # "proposal shall consist of two (2) volumes"
             r"proposal\s+shall\s+consist\s+of\s+(\w+)\s*\(?\d*\)?\s*volumes?",
@@ -140,8 +149,9 @@ class SectionLParser:
         ]
 
         self.section_patterns = [
-            # "1.0 Executive Summary" - v5.0.7: Limited to max 2 digits before decimal
-            r"(\d{1,2}\.\d*)\s+([A-Z][^\n]{4,60})",
+            # v5.0.9: "1.1 Executive Summary" - requires at least one digit after decimal
+            # This prevents "3." from matching and causing double-period issues
+            r"(\d{1,2}\.\d+)\s+([A-Z][^\n]{4,60})",
             # "Section 1: Technical Approach"
             r"Section\s+(\d+)\s*[:\-]\s*([^\n]+)",
             # "(a) Technical Approach"
@@ -245,6 +255,18 @@ class SectionLParser:
                     full_text += f"\n\n--- {name} ---\n{text}"
                     source_docs.append(name)
 
+        # v5.0.9: Extract official solicitation number from text
+        # Prefer detected number over passed-in rfp_number (which may be internal ID)
+        detected_sol_number = self._extract_solicitation_number(full_text)
+        if detected_sol_number:
+            print(f"[v5.0.9] Detected official solicitation number: {detected_sol_number}")
+            if rfp_number and rfp_number != detected_sol_number:
+                warnings.append(
+                    f"Passed RFP number '{rfp_number}' differs from detected "
+                    f"solicitation number '{detected_sol_number}'. Using detected number."
+                )
+            rfp_number = detected_sol_number
+
         # v5.0.8: Extract structured tables from PDF if available
         structured_tables: List[TableObject] = []
         if pdf_path and PDFPLUMBER_AVAILABLE:
@@ -306,6 +328,54 @@ class SectionLParser:
             source_documents=source_docs,
             parsing_warnings=warnings
         )
+
+    def _extract_solicitation_number(self, text: str) -> Optional[str]:
+        """
+        v5.0.9: Extract official solicitation number from RFP text.
+
+        Looks for standard government solicitation number formats:
+        - Air Force: FA8806-25-R-B003 or FA880625RB003
+        - Army: W911NF-25-R-0001 or W911NF25R0001
+        - Navy: N00024-25-R-0001 or N0002425R0001
+        - NIH: 75N96025R00004
+        - GSA: GS-23F-0001
+        - DoD: SPRXXXXXXX
+
+        Returns:
+            Detected solicitation number or None
+        """
+        # Official solicitation number patterns (high confidence)
+        sol_patterns = [
+            # Air Force format: FA8806-25-R-B003 or FA880625RB003
+            r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(FA\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{4,})',
+            # Army format: W911NF-25-R-0001
+            r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',
+            # Navy format: N00024-25-R-0001
+            r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',
+            # NIH/HHS format: 75N96025R00004
+            r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(\d{2}[A-Z]\d{5}[A-Z]\d{5,})',
+            # GSA format: GS-23F-0001 or similar
+            r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(GS[-]?\d{2}[A-Z][-]?\d{4,})',
+            # SPR format
+            r'(?:Solicitation\s*(?:No\.?|Number|#)?:?\s*)?(SPR[A-Z0-9]{6,})',
+            # Generic with explicit label: "Solicitation Number: XYZ123"
+            r'Solicitation\s*(?:No\.?|Number|#)?\s*[:=]\s*([A-Z0-9][-A-Z0-9]{8,})',
+            # SF1449 field pattern
+            r'(?:SF\s*1449|SF-1449).*?Solicitation[^:]*[:=]?\s*([A-Z0-9][-A-Z0-9]{8,})',
+        ]
+
+        for pattern in sol_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                sol_number = match.group(1).upper()
+                # Validate it looks like a real solicitation number
+                # Should have letters and numbers, 10+ chars
+                if len(sol_number) >= 10 and re.search(r'[A-Z]', sol_number) and re.search(r'\d', sol_number):
+                    # Clean up - remove internal whitespace
+                    sol_number = re.sub(r'\s+', '', sol_number)
+                    return sol_number
+
+        return None
 
     def _is_structural_attachment(self, name: str) -> bool:
         """Check if attachment contains structure instructions."""
@@ -551,8 +621,11 @@ class SectionLParser:
         v5.0.6: Now uses table-first strategy - if page limits are found in
         a table structure, those take precedence over nearby text extraction.
         v5.0.8: Uses row-index based linking from structured tables (pdfplumber).
+        v5.0.9: Added numbered volume patterns ("1. Technical Volume") for RFPs
+                that use numbered headings instead of "Volume I:" format.
 
-        Looks for explicit volume declarations like "Volume I: Technical Proposal".
+        Looks for explicit volume declarations like "Volume I: Technical Proposal"
+        or "1. Executive Summary and Technical Volume".
         """
         volumes: List[VolumeInstruction] = []
         seen_titles: set = set()
@@ -567,6 +640,14 @@ class SectionLParser:
             # Fallback to text-based extraction
             table_page_limits = self._extract_page_limits_from_table(text, warnings)
 
+        # v5.0.9: Also extract from inline table format (Table 1 style)
+        inline_page_limits = self._extract_page_limits_from_inline_table(text, warnings)
+        # Merge inline limits (lower priority than structured tables)
+        for key, value in inline_page_limits.items():
+            if key not in table_page_limits:
+                table_page_limits[key] = value
+
+        # Standard "Volume I: Title" patterns
         for pattern in self.volume_patterns:
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 vol_num_str = match.group(1)
@@ -596,27 +677,9 @@ class SectionLParser:
                 seen_titles.add(title.lower())
 
                 # v5.0.6: Table-first strategy for page limits
-                # Check table data first (higher priority), then fall back to nearby text
-                page_limit = None
-                page_limit_source = None
-
-                # Try exact match in table data
-                if title.lower() in table_page_limits:
-                    _, page_limit = table_page_limits[title.lower()]
-                    page_limit_source = "table"
-                else:
-                    # Try partial match (e.g., "Technical" matches "Technical Proposal")
-                    for table_key, (_, limit) in table_page_limits.items():
-                        if title.lower() in table_key or table_key in title.lower():
-                            page_limit = limit
-                            page_limit_source = "table_partial"
-                            break
-
-                # Fall back to nearby text extraction if table didn't have it
-                if page_limit is None:
-                    page_limit = self._find_page_limit_near(text, match.end(), title)
-                    if page_limit:
-                        page_limit_source = "nearby_text"
+                page_limit, page_limit_source = self._find_volume_page_limit(
+                    title, table_page_limits, text, match.end()
+                )
 
                 if page_limit and page_limit_source:
                     print(f"[v5.0.6] Volume '{title}' page limit: {page_limit} (source: {page_limit_source})")
@@ -630,14 +693,187 @@ class SectionLParser:
                     is_mandatory=True
                 ))
 
-        # v5.0.8: REMOVED _promote_sections_to_volumes
-        # Reason: This created "phantom volumes" by inferring structure from keywords
-        # like "Contract Documentation". Iron Triangle Determinism requires explicit
-        # "Volume I:" patterns ONLY. If the RFP has a different structure, the user
-        # must upload the correct Section L document.
+        # v5.0.9: Try numbered volume patterns if standard patterns found nothing
+        # These handle RFPs like "1. Executive Summary and Technical Volume"
+        if not volumes:
+            volumes = self._extract_numbered_volumes(text, table_page_limits, warnings)
+            if volumes:
+                print(f"[v5.0.9] Found {len(volumes)} volumes using numbered pattern")
 
         # Sort by volume number
         return sorted(volumes, key=lambda v: v['volume_number'])
+
+    def _extract_numbered_volumes(
+        self,
+        text: str,
+        table_page_limits: Dict[str, Tuple[str, int]],
+        warnings: List[str]
+    ) -> List[VolumeInstruction]:
+        """
+        v5.0.9: Extract volumes from numbered heading format.
+
+        Handles RFPs that use "1. Executive Summary and Technical Volume" instead
+        of "Volume I: Technical Proposal".
+
+        This is NOT inference - it looks for explicit "N. Title Volume" patterns.
+        """
+        volumes: List[VolumeInstruction] = []
+        seen_titles: set = set()
+
+        # Split text into lines for line-by-line matching
+        lines = text.split('\n')
+
+        for line in lines:
+            line = line.strip()
+
+            # v5.0.9: Match "N. Title Volume" pattern
+            # Examples: "1. Executive Summary and Technical Volume"
+            #           "2. Cost & Price Volume"
+            #           "3. Contract Documentation Volume"
+            numbered_match = re.match(
+                r'^(\d+)\.\s+(.+?Volume)\s*$',
+                line,
+                re.IGNORECASE
+            )
+
+            if numbered_match:
+                vol_num = int(numbered_match.group(1))
+                title = numbered_match.group(2).strip()
+
+                # Clean title - remove trailing punctuation but preserve "Volume"
+                title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+
+                # Skip duplicates
+                if title.lower() in seen_titles:
+                    continue
+                seen_titles.add(title.lower())
+
+                # Find page limit
+                page_limit, page_limit_source = self._find_volume_page_limit(
+                    title, table_page_limits, text, text.find(line)
+                )
+
+                print(f"[v5.0.9] Numbered volume found: '{title}' (Vol {vol_num}), "
+                      f"page_limit={page_limit}, source={page_limit_source}")
+
+                volumes.append(VolumeInstruction(
+                    volume_id=f"VOL-{vol_num}",
+                    volume_title=title,
+                    volume_number=vol_num,
+                    page_limit=page_limit,
+                    source_reference=f"Section L (numbered heading {vol_num})",
+                    is_mandatory=True
+                ))
+
+        return volumes
+
+    def _find_volume_page_limit(
+        self,
+        title: str,
+        table_page_limits: Dict[str, Tuple[str, int]],
+        text: str,
+        position: int
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """
+        v5.0.9: Unified page limit lookup for volumes.
+
+        Checks in order:
+        1. Exact match in table data
+        2. Partial match in table data (e.g., "Technical" in "Technical Volume")
+        3. Nearby text extraction
+        """
+        page_limit = None
+        page_limit_source = None
+
+        # Try exact match in table data
+        if title.lower() in table_page_limits:
+            _, page_limit = table_page_limits[title.lower()]
+            page_limit_source = "table"
+        else:
+            # Try partial match (e.g., "Technical" matches "Technical Proposal")
+            for table_key, (_, limit) in table_page_limits.items():
+                # Check both directions for partial match
+                if title.lower() in table_key or table_key in title.lower():
+                    page_limit = limit
+                    page_limit_source = "table_partial"
+                    break
+                # Also check key words (Technical, Cost, Contract, etc.)
+                title_words = set(title.lower().split())
+                key_words = set(table_key.split())
+                if title_words & key_words:  # Intersection
+                    page_limit = limit
+                    page_limit_source = "table_keyword"
+                    break
+
+        # Fall back to nearby text extraction if table didn't have it
+        if page_limit is None:
+            page_limit = self._find_page_limit_near(text, position, title)
+            if page_limit:
+                page_limit_source = "nearby_text"
+
+        return page_limit, page_limit_source
+
+    def _extract_page_limits_from_inline_table(
+        self,
+        text: str,
+        warnings: List[str]
+    ) -> Dict[str, Tuple[str, int]]:
+        """
+        v5.0.9: Extract page limits from inline table format like Table 1 in RFPs.
+
+        Handles tables formatted like:
+            1       Technical               8 Pages
+                    Executive Summary       1         Y
+            SF 1    Management Approach     10        Y
+            SF 2    Infrastructure Approach 10        Y
+            2       Cost & Price            None
+
+        Returns:
+            Dict mapping title.lower() to (title, page_limit)
+        """
+        page_limits: Dict[str, Tuple[str, int]] = {}
+
+        # Pattern for table rows with page limits
+        # Matches: "1    Technical    8 Pages" or "SF 1   Management   10   Y"
+        table_row_patterns = [
+            # Volume number | Title | Pages (with optional "Pages" suffix)
+            r"^\s*(?:SF\s*)?(\d+)\s{2,}([A-Za-z][A-Za-z &/\-]+?)\s{2,}(\d+)\s*(?:Pages?)?\s*(?:Y|N|NA)?\s*$",
+            # Subfactor label | Title | Page limit
+            r"^\s*(?:SF|Criteria)\s*(\d+)\s+([A-Za-z][A-Za-z &/\-]+?)\s+(\d+)\s*(?:Pages?)?\s+[YN]",
+            # Title only | Pages (for subrows like "Executive Summary   1   Y")
+            r"^\s*([A-Z][A-Za-z &/\-]+?)\s{2,}(\d+)\s*(?:Pages?)?\s+Y",
+        ]
+
+        lines = text.split('\n')
+
+        for line in lines:
+            # Skip empty lines
+            if not line.strip():
+                continue
+
+            # Try each pattern
+            for i, pattern in enumerate(table_row_patterns):
+                match = re.match(pattern, line, re.IGNORECASE)
+                if match:
+                    if i < 2:  # Patterns with number prefix
+                        title = match.group(2).strip()
+                        page_limit_str = match.group(3)
+                    else:  # Title-only pattern
+                        title = match.group(1).strip()
+                        page_limit_str = match.group(2)
+
+                    try:
+                        page_limit = int(page_limit_str)
+                        if 1 <= page_limit <= 500:
+                            # Clean title
+                            title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+                            page_limits[title.lower()] = (title, page_limit)
+                            print(f"[v5.0.9] Inline table: '{title}' -> {page_limit} pages")
+                    except ValueError:
+                        pass
+                    break
+
+        return page_limits
 
     def _extract_volumes_from_mentions(
         self,
@@ -725,13 +961,152 @@ class SectionLParser:
         """
         Extract section instructions for each volume.
 
-        Looks for numbered sections like "1.0 Executive Summary" within
+        v5.0.9: Uses prefix-based assignment for numbered volumes.
+        Section 1.x → Volume 1, Section 2.x → Volume 2, etc.
+        This prevents cross-contamination where Section 3.x appears in Volume 1.
+
+        Looks for numbered sections like "1.1 Executive Summary" within
         the context of each volume.
         """
         sections: List[SectionInstruction] = []
 
         if not volumes:
             return sections
+
+        # v5.0.9: Build volume number to ID mapping for prefix-based assignment
+        vol_num_to_id: Dict[int, str] = {}
+        vol_num_to_title: Dict[int, str] = {}
+        for vol in volumes:
+            vol_num_to_id[vol['volume_number']] = vol['volume_id']
+            vol_num_to_title[vol['volume_number']] = vol['volume_title']
+
+        # Check if we have numbered volumes (1, 2, 3 format)
+        has_numbered_volumes = all(
+            vol['volume_number'] in [1, 2, 3, 4, 5] for vol in volumes
+        )
+
+        if has_numbered_volumes and len(volumes) >= 2:
+            # v5.0.9: Use prefix-based assignment
+            sections = self._extract_sections_by_prefix(
+                text, vol_num_to_id, vol_num_to_title, warnings
+            )
+        else:
+            # Legacy: Use proximity-based assignment
+            sections = self._extract_sections_by_proximity(
+                text, volumes, warnings
+            )
+
+        return sections
+
+    def _extract_sections_by_prefix(
+        self,
+        text: str,
+        vol_num_to_id: Dict[int, str],
+        vol_num_to_title: Dict[int, str],
+        warnings: List[str]
+    ) -> List[SectionInstruction]:
+        """
+        v5.0.9: Extract sections using number prefix matching.
+
+        Section 1.1 → Volume 1
+        Section 2.1 → Volume 2
+        Section 3.4 → Volume 3
+
+        This prevents "Section 3.4 Personnel Security" from being assigned
+        to Volume 1 just because it appears early in the text.
+        """
+        sections: List[SectionInstruction] = []
+        seen_sections: set = set()
+        order_by_volume: Dict[int, int] = {}
+
+        # Extract all sections from entire text
+        for pattern in self.section_patterns:
+            for match in re.finditer(pattern, text):
+                sec_id = match.group(1)
+                sec_title = match.group(2).strip()
+
+                # Clean up title
+                sec_title = re.sub(r'[\.\,\;\:]+$', '', sec_title).strip()
+
+                # Skip if too short (likely noise)
+                if len(sec_title) < 5:
+                    continue
+
+                # Skip if title looks like a requirement
+                if sec_title.lower().startswith(('the ', 'a ', 'an ')):
+                    continue
+
+                # v5.0.7: Validate section header
+                if not self._is_valid_section_header(sec_id, sec_title):
+                    continue
+
+                # v5.0.9: Clean section ID - remove trailing periods
+                sec_id = sec_id.rstrip('.')
+                if not sec_id:
+                    continue
+
+                # v5.0.9: Extract volume number from section ID prefix
+                # "1.1" → vol 1, "2.3" → vol 2, "3.4" → vol 3
+                try:
+                    prefix = sec_id.split('.')[0]
+                    if prefix.isdigit():
+                        vol_num = int(prefix)
+                    else:
+                        # For patterns like "(a)" - assign to volume 1
+                        vol_num = 1
+                except (ValueError, IndexError):
+                    vol_num = 1
+
+                # Check if this volume exists
+                if vol_num not in vol_num_to_id:
+                    print(f"[v5.0.9] Section {sec_id} prefix={vol_num} has no matching volume, skipping")
+                    continue
+
+                vol_id = vol_num_to_id[vol_num]
+                vol_title = vol_num_to_title.get(vol_num, f"Volume {vol_num}")
+
+                # Skip duplicates
+                section_key = f"{vol_id}:{sec_id}"
+                if section_key in seen_sections:
+                    continue
+                seen_sections.add(section_key)
+
+                # Get order within volume
+                if vol_num not in order_by_volume:
+                    order_by_volume[vol_num] = 0
+                order = order_by_volume[vol_num]
+                order_by_volume[vol_num] += 1
+
+                # Find page limit
+                page_limit = self._find_page_limit_near(text, match.end(), sec_title)
+
+                print(f"[v5.0.9] Section '{sec_id}' -> Volume {vol_num} ({vol_title})")
+
+                sections.append(SectionInstruction(
+                    section_id=sec_id,
+                    section_title=sec_title,
+                    parent_volume_id=vol_id,
+                    page_limit=page_limit,
+                    order=order,
+                    source_reference=f"Section L ({vol_title})",
+                    required_content_types=[]
+                ))
+
+        return sections
+
+    def _extract_sections_by_proximity(
+        self,
+        text: str,
+        volumes: List[VolumeInstruction],
+        warnings: List[str]
+    ) -> List[SectionInstruction]:
+        """
+        Legacy: Extract sections using text proximity to volume headings.
+
+        Used for "Volume I: Technical" format RFPs where sections don't have
+        numeric prefixes that match volume numbers.
+        """
+        sections: List[SectionInstruction] = []
 
         for vol in volumes:
             vol_title = vol['volume_title']
