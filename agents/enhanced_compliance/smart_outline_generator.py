@@ -52,62 +52,26 @@ class VolumeType(Enum):
 
 
 # =============================================================================
-# Volume-Specific Section Templates (Master Architect Plan - P0 Fix)
+# v5.0.8: PURGED - Volume-Specific Section Templates
 # =============================================================================
-# Each volume type gets its own section structure instead of cloning Volume 1
+# These templates were REMOVED as part of Iron Triangle Determinism enforcement.
+#
+# REASON: These hardcoded "Shipley" templates caused the LLM to hallucinate
+# structure that didn't exist in the actual RFP. For example:
+# - Adding "Past Performance" volume when RFP didn't require it
+# - Creating "Transition Plan" sections that weren't in Section L
+#
+# REPLACEMENT: Use OutlineOrchestrator with StrictStructureBuilder which:
+# 1. Builds structure ONLY from explicit Section L instructions
+# 2. Validates volume count against stated RFP requirements
+# 3. Raises StructureValidationError if structure cannot be determined
+#
+# See CLAUDE.md Section 14 for migration guide.
+#
+# Keeping empty dict for backward compatibility with tests
 
 VOLUME_SECTION_TEMPLATES = {
-    VolumeType.TECHNICAL: [
-        ("1.0", "Executive Summary", "High-level overview demonstrating understanding of requirements and proposed solution"),
-        ("2.0", "Technical Approach", "Detailed methodology, tools, technologies, and technical solution design"),
-        ("3.0", "Management Approach", "Project management methodology, schedule, risk mitigation, QA/QC processes"),
-        ("4.0", "Transition Plan", "Transition-in approach, Day 1 readiness, knowledge transfer"),
-    ],
-    VolumeType.MANAGEMENT: [
-        ("1.0", "Management Philosophy", "Overall management approach and organizational structure"),
-        ("2.0", "Program Management", "Program/project management methodology and tools"),
-        ("3.0", "Quality Assurance", "QA/QC processes, continuous improvement, metrics"),
-        ("4.0", "Risk Management", "Risk identification, mitigation strategies, contingency planning"),
-        ("5.0", "Staffing Approach", "Recruitment, retention, training, and development"),
-    ],
-    VolumeType.PAST_PERFORMANCE: [
-        ("1.0", "Past Performance Summary", "Overview of relevant contract experience and qualifications"),
-        ("2.0", "Contract Reference 1", "Detailed description of most relevant prior contract"),
-        ("3.0", "Contract Reference 2", "Second relevant contract with comparable scope"),
-        ("4.0", "Contract Reference 3", "Third relevant contract demonstrating capability"),
-        ("5.0", "Past Performance Questionnaires", "PPQ submission instructions and references"),
-    ],
-    VolumeType.COST_PRICE: [
-        ("1.0", "Cost/Price Narrative", "Basis of estimate, assumptions, and pricing methodology"),
-        ("2.0", "Labor Categories & Rates", "Proposed labor categories, qualifications, and rates"),
-        ("3.0", "CLIN/Task Order Pricing", "Contract Line Item pricing breakdown"),
-        ("4.0", "Subcontractor Costs", "Subcontractor pricing and rationale"),
-        ("5.0", "Other Direct Costs", "ODCs, travel, materials, and other costs"),
-    ],
-    VolumeType.STAFFING: [
-        ("1.0", "Organizational Structure", "Proposed organization chart and reporting relationships"),
-        ("2.0", "Key Personnel", "Key personnel qualifications, availability, and commitment"),
-        ("3.0", "Resume Section", "Detailed resumes for proposed key personnel"),
-        ("4.0", "Staffing Plan", "Staffing levels, phase-in, and surge capacity"),
-    ],
-    VolumeType.SMALL_BUSINESS: [
-        ("1.0", "Small Business Participation", "Small business participation commitment and goals"),
-        ("2.0", "Subcontracting Plan", "Detailed subcontracting plan per FAR 19.704"),
-        ("3.0", "Mentor-Protégé Agreements", "Existing mentor-protégé relationships if applicable"),
-    ],
-    VolumeType.EXPERIENCE: [
-        ("1.0", "Corporate Experience", "Overview of organizational experience and capabilities"),
-        ("2.0", "Relevant Projects", "Detailed descriptions of similar completed projects"),
-        ("3.0", "Lessons Learned", "Knowledge gained and process improvements"),
-    ],
-    VolumeType.ADMINISTRATIVE: [
-        ("1.0", "Administrative Compliance", "Certifications, representations, and administrative forms"),
-        ("2.0", "Required Forms", "Completed required forms and attachments"),
-    ],
-    VolumeType.OTHER: [
-        ("1.0", "Section Overview", "Overview of this proposal section"),
-        ("2.0", "Requirements Response", "Detailed response to section requirements"),
-    ],
+    # v5.0.8: PURGED - No default templates. Use Section L extraction only.
 }
 
 
@@ -569,60 +533,40 @@ class SmartOutlineGenerator:
     
     def _create_default_volumes(self, rfp_format: str, section_m: List[Dict]) -> List[ProposalVolume]:
         """
-        Create default volumes if none were extracted.
+        v5.0.8: DEPRECATED - Default volume creation is disabled.
 
-        MASTER ARCHITECT FIX: Each volume now gets volume-type-specific sections
-        instead of cloning the Technical volume structure.
+        This method previously created hardcoded "Shipley" volumes which
+        caused hallucinated structures. Iron Triangle Determinism requires
+        that ALL structure come from explicit Section L parsing.
+
+        Use OutlineOrchestrator.generate_outline() instead.
         """
-        if rfp_format in ["GSA_BPA", "GSA_RFQ"]:
-            volume_configs = [
-                ("VOL-1", "Technical Approach", VolumeType.TECHNICAL, 0),
-                ("VOL-2", "Past Performance", VolumeType.PAST_PERFORMANCE, 1),
-                ("VOL-3", "Price", VolumeType.COST_PRICE, 2),
-            ]
-        else:
-            volume_configs = [
-                ("VOL-TECH", "Technical Proposal", VolumeType.TECHNICAL, 0),
-                ("VOL-MGMT", "Management Proposal", VolumeType.MANAGEMENT, 1),
-                ("VOL-PP", "Past Performance", VolumeType.PAST_PERFORMANCE, 2),
-                ("VOL-COST", "Cost/Price Proposal", VolumeType.COST_PRICE, 3),
-            ]
+        warnings.warn(
+            "v5.0.8: _create_default_volumes is deprecated. "
+            "Default volume creation is disabled to enforce Iron Triangle Determinism. "
+            "Use OutlineOrchestrator from agents.enhanced_compliance.outline_orchestrator instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
-        volumes = []
-        for vol_id, vol_name, vol_type, order in volume_configs:
-            # Create volume with type-specific sections
-            sections = self._create_sections_for_volume_type(vol_type)
-
-            volume = ProposalVolume(
-                id=vol_id,
-                name=vol_name,
-                volume_type=vol_type,
-                order=order,
-                sections=sections
-            )
-            volumes.append(volume)
-
-        return volumes
+        # Return empty list - do not create phantom volumes
+        print("[v5.0.8] WARNING: _create_default_volumes called but default "
+              "volume creation is disabled. Returning empty list.")
+        return []
 
     def _create_sections_for_volume_type(self, volume_type: VolumeType) -> List[ProposalSection]:
         """
-        Create volume-type-specific sections using VOLUME_SECTION_TEMPLATES.
+        v5.0.8: DEPRECATED - Template-based section creation is disabled.
 
-        This ensures Past Performance volumes get PP sections,
-        Cost volumes get pricing sections, etc.
+        This method previously used VOLUME_SECTION_TEMPLATES to create
+        hardcoded sections. These templates are now purged.
+
+        Use StrictStructureBuilder for Section L-based structure extraction.
         """
-        template = VOLUME_SECTION_TEMPLATES.get(volume_type, VOLUME_SECTION_TEMPLATES[VolumeType.OTHER])
-
-        sections = []
-        for sec_id, sec_name, sec_desc in template:
-            section = ProposalSection(
-                id=sec_id,
-                name=sec_name,
-                requirements=[sec_desc]  # Description becomes initial requirement guidance
-            )
-            sections.append(section)
-
-        return sections
+        # v5.0.8: Templates are purged - return empty list
+        print(f"[v5.0.8] WARNING: _create_sections_for_volume_type called for {volume_type}, "
+              "but templates are purged. Returning empty list.")
+        return []
     
     def _classify_volume_type(self, name: str) -> VolumeType:
         """Classify volume type from name"""

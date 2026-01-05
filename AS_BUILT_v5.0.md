@@ -1,6 +1,6 @@
 # PropelAI v5.0 As-Built Technical Document
 
-**Version:** 5.0.7
+**Version:** 5.0.8
 **Date:** January 2025
 **Classification:** Technical Architecture Documentation
 
@@ -61,6 +61,15 @@
     - [21.3 Fix 2: Section Header Validation](#213-fix-2-section-header-validation)
     - [21.4 Semantic Match Update](#214-semantic-match-update)
     - [21.5 Expected Behavior](#215-expected-behavior)
+22. [Iron Triangle Determinism v5.0.8](#22-iron-triangle-determinism-v508)
+    - [22.1 Root Cause Analysis](#221-root-cause-analysis)
+    - [22.2 Breaking Changes](#222-breaking-changes)
+    - [22.3 Task 1: Hard Volume Filtering](#223-task-1-hard-volume-filtering)
+    - [22.4 Task 2: Structural Table Parsing](#224-task-2-structural-table-parsing)
+    - [22.5 Task 3: Enforced Volume Count](#225-task-3-enforced-volume-count)
+    - [22.6 Task 4: Purge Legacy Templates](#226-task-4-purge-legacy-templates)
+    - [22.7 Expected Behavior](#227-expected-behavior)
+    - [22.8 Migration Guide](#228-migration-guide)
 
 ---
 
@@ -98,6 +107,7 @@ PropelAI is an AI-powered federal proposal automation platform that extracts req
 | Outline Remediation | Validation gate, data source fix, fallback removal | v5.0.5 |
 | Parsing Remediation | Table-first extraction, volume promotion, content-first solicitation | v5.0.6 |
 | Iron Triangle Enforcement | Volume classification, header validation, Section C blocking | v5.0.7 |
+| Iron Triangle Determinism | Hard volume filter, structural table parsing, purge legacy templates | v5.0.8 |
 
 ### 1.3 Technology Stack
 
@@ -4905,6 +4915,254 @@ if iron_req_type == 'section_c' and vol_type == 'technical':
 | "Infrastructure approach" | Volume 3 (keyword match) | Volume 1: Technical |
 | "SF1449 form" | Volume 1 (incorrect) | Volume 3: Contract Documentation |
 | "505.. This is competitive..." | Section header | Rejected (invalid) |
+
+---
+
+## 22. Iron Triangle Determinism v5.0.8
+
+**Release:** v5.0.8 (January 2025)
+**Goal:** Eliminate all heuristic-based "best guesses" and enforce deterministic structure extraction
+
+### 22.1 Root Cause Analysis
+
+Three categories of bugs persisted through v5.0.7:
+
+1. **Keyword Overlap Nesting**: Requirements placed in wrong volumes due to keyword matching
+   - Example: "Personnel" requirement → Admin volume (should be Technical)
+
+2. **Text Proximity Linking**: Page limits linked by nearby text instead of table row position
+   - Example: Table with Volume|Title|Pages parsed incorrectly
+
+3. **Phantom Volumes**: `_promote_sections_to_volumes` creating volumes from keywords
+   - Example: "Contract Documentation" section promoted to Volume 4
+
+### 22.2 Breaking Changes
+
+| Component | Before v5.0.8 | After v5.0.8 |
+|-----------|--------------|--------------|
+| SectionLParser | Warnings on mismatch | Raises `StructureValidationError` |
+| _promote_sections_to_volumes | Active (creates phantom volumes) | **DELETED** |
+| VOLUME_SECTION_TEMPLATES | 50+ hardcoded templates | **PURGED** (empty dict) |
+| _create_default_volumes | Returns default Shipley structure | Returns empty list |
+
+### 22.3 Task 1: Hard Volume Filtering
+
+**File:** `agents/enhanced_compliance/content_injector.py`
+
+The Hard Volume Filter runs **BEFORE** any semantic matching and uses `VOLUME_SECTION_RULES` to block invalid placements.
+
+**VOLUME_SECTION_RULES (from validation_engine.py):**
+```python
+VOLUME_SECTION_RULES = {
+    "technical": ["C", "SOW", "PWS"],      # Section C → Technical only
+    "management": ["C", "SOW"],
+    "past_performance": ["L"],              # PP written per L instructions
+    "cost": ["B", "PRICING"],
+    "administrative": ["K", "L"],           # Admin forms only
+}
+```
+
+**New Methods:**
+```python
+def _get_requirement_source_section(self, requirement: Dict) -> str:
+    """Extract source section letter (C, L, M, etc.) from requirement."""
+    section = requirement.get('section', '').upper()
+    if section in ['C', 'L', 'M', 'K', 'B', 'SOW', 'PWS']:
+        return section
+    # ... category and text-based detection
+    return 'OTHER'
+
+def _hard_volume_filter(
+    self,
+    source_section: str,
+    volume_type: str
+) -> Tuple[bool, str]:
+    """
+    BLOCKING filter - if False, requirement CANNOT go in volume.
+    """
+    allowed_sections = VOLUME_SECTION_RULES.get(volume_type, [])
+    if normalized_section in allowed_sections:
+        return True, ""
+    return False, f"HARD BLOCK: Section {source_section} cannot go in {volume_type}"
+```
+
+**Updated _semantic_match:**
+```python
+def _semantic_match(self, requirement, skeleton, section_lookup):
+    # v5.0.8: Get source section for hard volume filter
+    source_section = self._get_requirement_source_section(requirement)
+
+    for vol in skeleton.get('volumes', []):
+        vol_type = self._classify_volume_type(vol['title'])
+
+        # v5.0.8: HARD VOLUME FILTER (runs FIRST, before scoring)
+        is_allowed, block_reason = self._hard_volume_filter(source_section, vol_type)
+        if not is_allowed:
+            print(f"[v5.0.8] {block_reason}")
+            continue  # HARD BLOCK - skip this volume entirely
+```
+
+### 22.4 Task 2: Structural Table Parsing
+
+**File:** `agents/enhanced_compliance/section_l_parser.py`
+
+Uses pdfplumber for table extraction with row-index based linking instead of text proximity.
+
+**New Data Structures:**
+```python
+@dataclass
+class TableCell:
+    text: str
+    row_index: int
+    col_index: int
+    is_header: bool = False
+
+@dataclass
+class TableObject:
+    headers: List[str]
+    rows: List[List[TableCell]]
+    column_mapping: Dict[str, int]  # "page_limit" -> column 2
+
+    def get_volume_page_limit_by_row(self, row_index: int) -> Optional[Tuple[str, int]]:
+        """Get (volume_title, page_limit) by row position, not text proximity."""
+```
+
+**pdfplumber Integration:**
+```python
+def _extract_structured_tables_from_pdf(self, pdf_path: str) -> List[TableObject]:
+    """Extract tables with proper row/column associations."""
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            tables = page.extract_tables()
+            for table in tables:
+                # Identify columns by header patterns
+                for col_type, pattern in self.column_header_patterns.items():
+                    if re.search(pattern, header, re.IGNORECASE):
+                        table_obj.column_mapping[col_type] = col_idx
+
+def _extract_page_limits_from_structured_tables(
+    self,
+    structured_tables: List[TableObject],
+    warnings: List[str]
+) -> Dict[str, Tuple[str, int]]:
+    """Row-index based linking - not text proximity."""
+    for table in structured_tables:
+        for row_idx in range(len(table.rows)):
+            result = table.get_volume_page_limit_by_row(row_idx)
+            if result:
+                title, limit = result
+                page_limits[title.lower()] = (title, limit)
+                print(f"[v5.0.8] Row-index linked: '{title}' -> {limit} pages")
+```
+
+### 22.5 Task 3: Enforced Volume Count
+
+**File:** `agents/enhanced_compliance/section_l_parser.py`
+
+**New Exception:**
+```python
+class StructureValidationError(Exception):
+    """Raised when proposal structure cannot be deterministically extracted."""
+    pass
+```
+
+**Updated parse() Method:**
+```python
+def parse(
+    self,
+    section_l_text: str,
+    rfp_number: str = "",
+    strict_mode: bool = True,  # v5.0.8: Default to strict
+    pdf_path: Optional[str] = None
+) -> SectionL_Schema:
+    # v5.0.8: MANDATORY volume count validation
+    if stated_count is not None and len(volumes) != stated_count:
+        error_msg = (
+            f"VOLUME COUNT MISMATCH: RFP states {stated_count} volumes "
+            f"but parser found {len(volumes)}. "
+            f"Found: {[v['volume_title'] for v in volumes]}. "
+            f"This is a deterministic failure - no guessing allowed."
+        )
+        if strict_mode:
+            raise StructureValidationError(error_msg)
+        warnings.append(error_msg)
+```
+
+**DELETED Method:**
+```python
+# v5.0.8: DELETED _promote_sections_to_volumes
+# This method was removed as part of Iron Triangle Determinism enforcement.
+# It hallucinated volumes by inferring structure from keywords like
+# "Contract Documentation" which often didn't match actual RFP structure.
+```
+
+### 22.6 Task 4: Purge Legacy Templates
+
+**File:** `agents/enhanced_compliance/smart_outline_generator.py`
+
+**VOLUME_SECTION_TEMPLATES Purged:**
+```python
+# v5.0.8: PURGED - Volume-Specific Section Templates
+# These templates were REMOVED as part of Iron Triangle Determinism.
+#
+# REASON: Hardcoded "Shipley" templates caused hallucinated structure.
+#
+# REPLACEMENT: Use OutlineOrchestrator with StrictStructureBuilder.
+# See CLAUDE.md Section 14 for migration guide.
+
+VOLUME_SECTION_TEMPLATES = {
+    # v5.0.8: PURGED - No default templates. Use Section L extraction only.
+}
+```
+
+**Deprecated Methods:**
+```python
+def _create_default_volumes(self, rfp_format, section_m):
+    """v5.0.8: DEPRECATED - Returns empty list."""
+    warnings.warn(
+        "v5.0.8: _create_default_volumes is deprecated. "
+        "Use OutlineOrchestrator instead.",
+        DeprecationWarning
+    )
+    return []  # Do not create phantom volumes
+```
+
+### 22.7 Expected Behavior
+
+| Scenario | Before v5.0.8 | After v5.0.8 |
+|----------|--------------|--------------|
+| Section C "Personnel" req | Admin Volume (keyword match) | Technical Volume (HARD BLOCK) |
+| Table: "Vol 1 \| Tech \| 50 pages" | May parse incorrectly | Row-index linked |
+| "Contract Docs" section | Promoted to Volume 4 | Not promoted (stays section) |
+| stated_volume_count=3, found=2 | Warning only | `StructureValidationError` |
+| SmartOutlineGenerator defaults | 4 Shipley volumes | Empty list + deprecation |
+
+### 22.8 Migration Guide
+
+**From SmartOutlineGenerator to v3.0 Pipeline:**
+```python
+# OLD (DEPRECATED)
+from smart_outline_generator import SmartOutlineGenerator
+generator = SmartOutlineGenerator()
+outline = generator.generate_from_compliance_matrix(...)
+
+# NEW (v3.0 + v5.0.8)
+from outline_orchestrator import OutlineOrchestrator
+from section_l_parser import StructureValidationError
+
+orchestrator = OutlineOrchestrator()
+try:
+    outline = orchestrator.generate_outline(
+        rfp_id=rfp_id,
+        section_l_text=section_l_text,
+        requirements=requirements,
+        strict_mode=True,
+        pdf_path="/path/to/rfp.pdf"  # For pdfplumber table extraction
+    )
+except StructureValidationError as e:
+    # Handle deterministic failure - structure cannot be extracted
+    log.error(f"Structure extraction failed: {e}")
+```
 
 ---
 
