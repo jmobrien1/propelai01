@@ -1,6 +1,6 @@
 # PropelAI v5.0 As-Built Technical Document
 
-**Version:** 5.0.9
+**Version:** 6.0.0
 **Date:** January 2025
 **Classification:** Technical Architecture Documentation
 
@@ -79,6 +79,14 @@
     - [23.6 Fix 5: Official Solicitation Number Extraction](#236-fix-5-official-solicitation-number-extraction)
     - [23.7 Expected Behavior](#237-expected-behavior)
     - [23.8 Test Results](#238-test-results)
+24. [Agentic Structural Verification v6.0](#24-agentic-structural-verification-v60)
+    - [24.1 Architecture Overview](#241-architecture-overview)
+    - [24.2 Semantic Search Fallback](#242-semantic-search-fallback)
+    - [24.3 SF1449 Coordinate Extraction](#243-sf1449-coordinate-extraction)
+    - [24.4 Supervisor Validation Gate](#244-supervisor-validation-gate)
+    - [24.5 Key Classes](#245-key-classes)
+    - [24.6 Integration](#246-integration)
+    - [24.7 Test Results](#247-test-results)
 
 ---
 
@@ -5369,5 +5377,186 @@ httpx>=0.24.0
 
 ---
 
-*Document generated: December 2024*
-*PropelAI v5.0.0*
+## 24. Agentic Structural Verification v6.0
+
+### 24.1 Architecture Overview
+
+v6.0 introduces the **Agentic Structural Verification** pattern, transitioning from deterministic regex-only parsing to a hybrid approach that combines:
+
+1. **Deterministic Parsing** (v5.x): Regex patterns for known RFP formats
+2. **Semantic Search Fallback**: LLM-guided search for missing volumes when stated_count != found
+3. **SF1449 Coordinate Extraction**: pdfplumber-based extraction from known form field positions
+4. **Supervisor Validation Gate**: Quality gate with confidence scoring and recovery strategies
+
+**Philosophy:** "Regex First, Agentic Fallback"
+
+When primary regex patterns fail, the Supervisor triggers secondary search strategies rather than failing immediately. This maintains determinism for common formats while adding resilience for edge cases.
+
+### 24.2 Semantic Search Fallback
+
+**File:** `agents/enhanced_compliance/section_l_parser.py`
+
+When `stated_volume_count` (from RFP text) doesn't match found volumes, the parser attempts semantic search:
+
+```python
+def _search_for_missing_volumes(
+    self,
+    text: str,
+    found_volumes: List[VolumeInstruction],
+    stated_count: int,
+    warnings: List[str]
+) -> List[VolumeInstruction]:
+    """
+    v6.0: Semantic search for missing volumes when stated_count > found.
+
+    Strategy:
+    1. Identify missing volume numbers (e.g., if Vol 1 and 2 found, Vol 3 missing)
+    2. Search for numbered patterns ("3. Title") that weren't captured
+    3. Search for keyword patterns ("Contract Documentation Volume")
+    """
+```
+
+**Volume Keywords by Position:**
+| Volume | Keywords |
+|--------|----------|
+| 1 | technical, executive summary, management, approach |
+| 2 | cost, price, pricing, business |
+| 3 | contract, documentation, administrative, certifications |
+| 4 | past performance, experience, references |
+| 5 | small business, subcontracting |
+
+### 24.3 SF1449 Coordinate Extraction
+
+**File:** `agents/enhanced_compliance/section_l_parser.py`
+
+SF1449 is the standard federal solicitation cover sheet with fixed field positions. v6.0 extracts metadata directly from form coordinates using pdfplumber:
+
+```python
+def _extract_sf1449_metadata(self, pdf_path: str) -> Dict[str, Optional[str]]:
+    """
+    Extract from SF1449 using coordinate-based extraction.
+
+    Block 2 (Solicitation Number): ~(1.0-3.5", 0.6-1.0")
+    Block 8 (Offer Due Date/Time): ~(0.5-4.5", 1.4-2.2")
+    """
+```
+
+**Coordinates (inches from top-left):**
+| Block | Field | X Range | Y Range |
+|-------|-------|---------|---------|
+| 2 | Solicitation Number | 1.0-3.5" | 0.6-1.0" |
+| 8 | Due Date/Time | 0.5-4.5" | 1.4-2.2" |
+
+SF1449 values override text-extracted values (higher priority source).
+
+### 24.4 Supervisor Validation Gate
+
+**File:** `agents/enhanced_compliance/outline_orchestrator.py`
+
+The Supervisor validates parsing results at two checkpoints:
+
+1. **Schema Validation** (after parsing): Checks volume count, orphan sections, empty volumes
+2. **Injection Validation** (after mapping): Checks unmapped ratio, low confidence mappings
+
+```python
+class SupervisorValidator:
+    MIN_CONFIDENCE_FOR_VALID = 0.60
+    MAX_UNMAPPED_REQUIREMENT_RATIO = 0.20
+
+    def validate_schema(self, schema, stated_volume_count=None):
+        """Returns SupervisorValidationResult with confidence score."""
+
+    def validate_injection(self, result, skeleton_dict):
+        """Validates requirement mapping quality."""
+```
+
+**Validation Issue Codes:**
+| Code | Severity | Recoverable | Description |
+|------|----------|-------------|-------------|
+| NO_VOLUMES | CRITICAL | Yes | No volumes found in Section L |
+| VOLUME_COUNT_MISMATCH | ERROR | Yes | Stated vs found count differs |
+| ORPHAN_SECTIONS | WARNING | Yes | Sections not assigned to volumes |
+| EMPTY_VOLUME | WARNING | No | Volume has no sections or page limit |
+| HIGH_UNMAPPED_RATIO | ERROR | Yes | >20% requirements unmapped |
+| HIGH_LOW_CONFIDENCE | WARNING | No | >30% mappings have low confidence |
+
+### 24.5 Key Classes
+
+**ValidationSeverity (Enum):**
+- `INFO`: Informational, no action needed
+- `WARNING`: Potential issue, manual review suggested
+- `ERROR`: Quality issue, recovery may be attempted
+- `CRITICAL`: Hard failure, requires intervention
+
+**SupervisorValidationResult (dataclass):**
+```python
+@dataclass
+class SupervisorValidationResult:
+    is_valid: bool
+    confidence_score: float  # 0.0-1.0
+    issues: List[ValidationIssue]
+    recovery_attempted: bool
+    recovery_success: bool
+    metrics: Dict[str, Any]
+```
+
+### 24.6 Integration
+
+The OutlineOrchestrator now includes Supervisor validation:
+
+```python
+orchestrator = OutlineOrchestrator(
+    strict_mode=True,
+    enable_supervisor=True  # v6.0: Enable Supervisor validation gate
+)
+
+result = orchestrator.generate_outline(...)
+
+# Access Supervisor validation in response:
+validation = result['supervisor_validation']
+print(f"Overall confidence: {validation['overall_confidence']:.2f}")
+print(f"Schema valid: {validation['schema_validation']['is_valid']}")
+print(f"Injection valid: {validation['injection_validation']['is_valid']}")
+```
+
+### 24.7 Test Results
+
+```
+=== v6.0 Test Suite ===
+
+TEST 1: Numbered Volume Detection
+  ✓ Found 3 volumes using numbered pattern
+    - Executive Summary and Technical Volume: 3 sections
+    - Cost & Price Volume: 2 sections
+    - Contract Documentation Volume: 2 sections
+
+TEST 2: Prefix-Based Section Assignment
+  ✓ Section 1.x → Volume 1
+  ✓ Section 2.x → Volume 2
+  ✓ Section 3.x → Volume 3
+
+TEST 3: Supervisor Validation Gate
+  ✓ Schema valid: True
+  ✓ Confidence: 1.00
+  ✓ Volume count in metrics: 3
+  ✓ Section count in metrics: 7
+
+TEST 4: Volume Count Mismatch Detection
+  ✓ Detected mismatch when stated_count=5 but found 3
+  ✓ Validation confidence dropped to: 0.70
+
+TEST 5: Semantic Search Fallback
+  [v6.0] Volume count mismatch: stated=3, found=2
+  [v6.0] Attempting semantic search for 1 missing volume(s)...
+
+TEST 6: Solicitation Number Extraction
+  ✓ Detected solicitation number: FA8806-25-R-B003
+  ✓ Override internal ID with official number
+
+=== All v6.0 Tests Passed ===
+```
+
+---
+
+*Document generated: January 2025*
+*PropelAI v6.0.0*
