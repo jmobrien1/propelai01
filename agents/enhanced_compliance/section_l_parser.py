@@ -374,16 +374,16 @@ class SectionLParser:
         pdf_path: str
     ) -> Dict[str, Optional[str]]:
         """
-        v6.0.2: Extract metadata from SF1449 using Keyword Anchor Strategy.
+        v6.0.3: Extract metadata from SF1449 using TRUE Dynamic Keyword Anchoring.
 
-        CRITICAL FIX: Abandons fixed-point coordinates which fail due to document
-        scaling/margins. Instead, uses text anchors to find field labels first,
-        then extracts values relative to those anchors.
+        CRITICAL FIX: v6.0.2's word-level anchoring was too loose. This version:
+        1. Scans for exact phrase "SOLICITATION NO" or "5." block marker
+        2. Defines bbox RELATIVE to that anchor's right edge
+        3. Enforces year >= 2025 (hardcoded, not dynamic)
+        4. Rejects internal IDs (RFP-xxxxxxxx pattern)
 
-        Strategy:
-        1. Find anchor text ("Solicitation Number", "OFFER DUE DATE", etc.)
-        2. Extract value from bbox relative to anchor position
-        3. Fallback to full-page semantic search if anchor not found
+        The "Iron Triangle" rule: If we can't find the official solicitation number,
+        we MUST NOT fall back to internal IDs or filenames.
 
         Args:
             pdf_path: Path to the PDF file
@@ -402,18 +402,26 @@ class SectionLParser:
         if not pdf_path or not PDFPLUMBER_AVAILABLE:
             return result
 
-        # Solicitation number patterns
-        sol_patterns = [
+        # v6.0.3: Official agency solicitation patterns ONLY
+        # These are the ONLY valid patterns - internal IDs (RFP-xxx) are REJECTED
+        official_sol_patterns = [
             r'(FA\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Air Force: FA880625RB003
-            r'(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Army
-            r'(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Navy
-            r'([A-Z]{2}\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Generic agency
+            r'(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Army: W911NF-25-R-0001
+            r'(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Navy: N00024-25-R-0001
+            r'(SP\d{4}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # DLA: SP4701-25-R-0001
+            r'(\d{2}[A-Z]\d{5}[A-Z]\d{5,})',  # NIH: 75N96025R00004
         ]
 
-        try:
-            import datetime
-            current_year = datetime.datetime.now().year
+        # v6.0.3: REJECT patterns - internal IDs that should NEVER be used
+        reject_patterns = [
+            r'RFP[-_]?[A-F0-9]{6,}',  # Internal RFP ID
+            r'DRAFT[-_]',  # Draft markers
+        ]
 
+        # v6.0.3: FIXED minimum year for dates (proposal year, not current calendar year)
+        MIN_PROPOSAL_YEAR = 2025
+
+        try:
             with pdfplumber.open(pdf_path) as pdf:
                 if len(pdf.pages) == 0:
                     return result
@@ -422,103 +430,175 @@ class SectionLParser:
                 page_width = first_page.width
                 page_height = first_page.height
 
-                # Get full page text for detection and fallback
+                # Get full page text for detection
                 first_page_text = first_page.extract_text() or ""
 
-                # Check if this looks like an SF1449 form
-                if 'SOLICITATION/CONTRACT' not in first_page_text.upper() and 'SF 1449' not in first_page_text.upper():
-                    print("[v6.0.2] First page does not appear to be SF1449, using full-page search")
-                    # Fall through to full-page search below
-                else:
-                    print(f"[v6.0.2] SF1449 form detected, using Keyword Anchor Strategy")
+                # v6.0.3: TRUE KEYWORD ANCHOR STRATEGY
+                # Step 1: Find ALL words with positions
+                words = first_page.extract_words(keep_blank_chars=True, x_tolerance=3, y_tolerance=3)
 
-                # v6.0.2: KEYWORD ANCHOR STRATEGY
-                # Find text elements with their positions
-                words = first_page.extract_words()
+                print(f"[v6.0.3] Scanning {len(words)} words for SF1449 anchors...")
 
-                # Strategy 1: Find "SOLICITATION" label and extract nearby value
-                sol_anchor = None
+                # v6.0.3: Build word position map for phrase detection
+                # Group words by approximate Y position (same line)
+                lines: Dict[int, List[Dict]] = {}
                 for word in words:
-                    word_text = word['text'].upper()
-                    if 'SOLICITATION' in word_text and 'NO' in word_text:
-                        sol_anchor = word
-                        break
-                    elif word_text == 'SOLICITATION':
-                        # Check if next word is "NO" or "NUMBER"
-                        sol_anchor = word
-                        break
+                    y_key = int(word['top'] / 10) * 10  # Group by 10-point bands
+                    if y_key not in lines:
+                        lines[y_key] = []
+                    lines[y_key].append(word)
 
-                if sol_anchor:
-                    # Extract from area to the RIGHT of the anchor (value field)
-                    anchor_right = sol_anchor['x1']
-                    anchor_top = sol_anchor['top'] - 10
-                    anchor_bottom = sol_anchor['bottom'] + 30
+                # Sort words within each line by X position
+                for y_key in lines:
+                    lines[y_key].sort(key=lambda w: w['x0'])
 
-                    # Create bbox to the right of anchor
-                    value_bbox = (
-                        anchor_right,
-                        max(0, anchor_top),
-                        min(page_width, anchor_right + 200),
-                        min(page_height, anchor_bottom)
-                    )
-                    value_text = self._extract_text_from_bbox(first_page, value_bbox)
-                    print(f"[v6.0.2] Solicitation anchor found at x={anchor_right:.0f}, value area: {repr(value_text)}")
+                # v6.0.3: SOLICITATION NUMBER EXTRACTION
+                # Strategy 1: Find "SOLICITATION NO" or "5." anchor
+                sol_anchor = None
+                sol_anchor_method = None
 
-                    if value_text:
-                        for pattern in sol_patterns:
-                            sol_match = re.search(pattern, value_text.upper())
-                            if sol_match:
-                                result['solicitation_number'] = sol_match.group(1)
-                                print(f"[v6.0.2] Solicitation from anchor: {result['solicitation_number']}")
+                for y_key, line_words in sorted(lines.items()):
+                    line_text = ' '.join(w['text'] for w in line_words).upper()
+
+                    # Check for exact phrase "SOLICITATION NO" or "SOLICITATION NUMBER"
+                    if 'SOLICITATION' in line_text and ('NO' in line_text or 'NUMBER' in line_text):
+                        # Find the rightmost word in this phrase
+                        for w in line_words:
+                            if 'NO' in w['text'].upper() or 'NUMBER' in w['text'].upper():
+                                sol_anchor = w
+                                sol_anchor_method = "SOLICITATION_NO"
                                 break
-
-                # Strategy 2: Full-page regex search as fallback
-                if not result['solicitation_number']:
-                    print("[v6.0.2] Anchor strategy failed, using full-page search")
-                    for pattern in sol_patterns:
-                        sol_match = re.search(pattern, first_page_text.upper())
-                        if sol_match:
-                            result['solicitation_number'] = sol_match.group(1)
-                            print(f"[v6.0.2] Solicitation from full-page: {result['solicitation_number']}")
+                            elif 'SOLICITATION' in w['text'].upper():
+                                sol_anchor = w
+                                sol_anchor_method = "SOLICITATION"
+                        if sol_anchor:
                             break
 
-                # v6.0.2: OFFER DUE DATE - Keyword Anchor Strategy
+                    # Also check for SF1449 Block 5 marker "5."
+                    if line_text.strip().startswith('5.') or ' 5.' in line_text:
+                        for w in line_words:
+                            if w['text'].strip() == '5.' or w['text'].strip().startswith('5.'):
+                                sol_anchor = w
+                                sol_anchor_method = "BLOCK_5"
+                                break
+                        if sol_anchor:
+                            break
+
+                if sol_anchor:
+                    print(f"[v6.0.3] Found solicitation anchor via {sol_anchor_method}: "
+                          f"'{sol_anchor['text']}' at x={sol_anchor['x1']:.0f}, y={sol_anchor['top']:.0f}")
+
+                    # Extract from area to the RIGHT of anchor
+                    anchor_right = sol_anchor['x1']
+                    anchor_top = sol_anchor['top'] - 5
+                    anchor_bottom = sol_anchor['bottom'] + 25
+
+                    # v6.0.3: RELATIVE BBOX - to the right of anchor
+                    value_bbox = (
+                        anchor_right + 5,  # Start just after anchor
+                        max(0, anchor_top),
+                        min(page_width, anchor_right + 250),  # Extend 250pts right
+                        min(page_height, anchor_bottom)
+                    )
+
+                    value_text = self._extract_text_from_bbox(first_page, value_bbox)
+                    print(f"[v6.0.3] Solicitation value area [{value_bbox[0]:.0f},{value_bbox[1]:.0f},"
+                          f"{value_bbox[2]:.0f},{value_bbox[3]:.0f}]: {repr(value_text)}")
+
+                    if value_text:
+                        # v6.0.3: Check for REJECT patterns first
+                        is_rejected = any(re.search(rp, value_text.upper()) for rp in reject_patterns)
+                        if is_rejected:
+                            print(f"[v6.0.3] REJECTED internal ID in value area, searching elsewhere")
+                        else:
+                            for pattern in official_sol_patterns:
+                                sol_match = re.search(pattern, value_text.upper())
+                                if sol_match:
+                                    result['solicitation_number'] = sol_match.group(1)
+                                    print(f"[v6.0.3] LOCKED solicitation from anchor: {result['solicitation_number']}")
+                                    break
+
+                # v6.0.3: Strategy 2 - CONTROLLED full-page search (with rejection)
+                if not result['solicitation_number']:
+                    print("[v6.0.3] Anchor strategy failed, scanning full page with rejection filter")
+
+                    # First, reject any internal IDs
+                    for pattern in official_sol_patterns:
+                        for match in re.finditer(pattern, first_page_text.upper()):
+                            candidate = match.group(1)
+
+                            # v6.0.3: REJECT if it's near an internal ID pattern
+                            context_start = max(0, match.start() - 50)
+                            context_end = min(len(first_page_text), match.end() + 50)
+                            context = first_page_text[context_start:context_end].upper()
+
+                            is_rejected = any(re.search(rp, context) for rp in reject_patterns)
+                            if is_rejected:
+                                print(f"[v6.0.3] REJECTED candidate '{candidate}' (near internal ID)")
+                                continue
+
+                            result['solicitation_number'] = candidate
+                            print(f"[v6.0.3] LOCKED solicitation from full-page: {result['solicitation_number']}")
+                            break
+
+                        if result['solicitation_number']:
+                            break
+
+                # v6.0.3: OFFER DUE DATE EXTRACTION
+                # Strategy 1: Find "OFFER" + "DUE" anchor with Block 8 awareness
                 due_date_anchor = None
-                for word in words:
-                    word_text = word['text'].upper()
-                    if 'OFFER' in word_text or 'DUE' in word_text:
-                        # Check if this is part of "OFFER DUE DATE" or "OFFERS DUE"
-                        due_date_anchor = word
-                        break
+
+                for y_key, line_words in sorted(lines.items()):
+                    line_text = ' '.join(w['text'] for w in line_words).upper()
+
+                    # Check for "OFFER DUE DATE" or "OFFERS DUE" or Block "8."
+                    if ('OFFER' in line_text and 'DUE' in line_text) or \
+                       line_text.strip().startswith('8.') or ' 8.' in line_text:
+                        # Use last word as anchor (date should be after it)
+                        due_date_anchor = line_words[-1] if line_words else None
+                        if due_date_anchor:
+                            print(f"[v6.0.3] Due date anchor: '{due_date_anchor['text']}' at y={due_date_anchor['top']:.0f}")
+                            break
 
                 if due_date_anchor:
-                    # Extract from area BELOW and to the RIGHT of anchor
-                    anchor_x = due_date_anchor['x0']
+                    # Extract from area BELOW the anchor (Block 8 value is below label)
+                    anchor_x0 = due_date_anchor['x0'] - 100
                     anchor_bottom = due_date_anchor['bottom']
 
                     value_bbox = (
-                        max(0, anchor_x - 50),
+                        max(0, anchor_x0),
                         anchor_bottom,
-                        min(page_width, anchor_x + 300),
-                        min(page_height, anchor_bottom + 60)
+                        min(page_width, anchor_x0 + 400),
+                        min(page_height, anchor_bottom + 50)
                     )
                     value_text = self._extract_text_from_bbox(first_page, value_bbox)
-                    print(f"[v6.0.2] Due date anchor area: {repr(value_text)}")
+                    print(f"[v6.0.3] Due date value area: {repr(value_text)}")
 
                     if value_text:
                         result['due_date'], result['due_time'] = self._extract_validated_date_time(
-                            value_text, current_year
+                            value_text, MIN_PROPOSAL_YEAR
                         )
 
-                # Strategy 2: Full-page date search with year validation
+                # v6.0.3: Strategy 2 - Full-page date search with STRICT year validation
                 if not result['due_date']:
-                    print("[v6.0.2] Due date anchor failed, using full-page search with year >= 2025")
+                    print(f"[v6.0.3] Due date anchor failed, full-page search with year >= {MIN_PROPOSAL_YEAR}")
                     result['due_date'], result['due_time'] = self._extract_validated_date_time(
-                        first_page_text, current_year
+                        first_page_text, MIN_PROPOSAL_YEAR
                     )
 
+                # v6.0.3: Final validation log
+                if result['solicitation_number']:
+                    print(f"[v6.0.3] ✓ FINAL Solicitation: {result['solicitation_number']}")
+                else:
+                    print(f"[v6.0.3] ✗ FAILED to extract official solicitation number")
+
+                if result['due_date']:
+                    print(f"[v6.0.3] ✓ FINAL Due Date: {result['due_date']}")
+                else:
+                    print(f"[v6.0.3] ✗ FAILED to extract valid due date (year >= {MIN_PROPOSAL_YEAR})")
+
         except Exception as e:
-            print(f"[v6.0.2] Error in SF1449 extraction: {e}")
+            print(f"[v6.0.3] Error in SF1449 extraction: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1060,20 +1140,20 @@ class SectionLParser:
         warnings: List[str]
     ) -> Dict[str, Tuple[str, int]]:
         """
-        v6.0.2: DIGIT-TARGETING TABLE EXTRACTION for page limits.
+        v6.0.3: ROW-INDEX IMMUTABLE LINKING for page limits.
 
-        CRITICAL FIX: Abandons keyword-first strategy which missed page limits
-        in tables where volume keywords weren't in the same row. Instead uses
-        Digit-to-Label Association:
+        CRITICAL FIX: v6.0.2's digit-targeting was still proximity-based. This version:
+        1. IDENTIFY column indices for "Title/Volume" and "Page Limit/Pages"
+        2. LOCATE row where Title column contains volume keyword
+        3. LOCK the value at intersection of Row + Limit Column
 
-        1. DIGIT-FIRST: Find any cell containing a small integer (1-100)
-        2. CONTEXT-CHECK: Check if row OR adjacent cells contain volume keywords
-        3. LOCK: Associate the digit with the matching volume type
+        The "Intersection Rule": Page limit MUST come from the same row as the
+        volume name, using column indices identified from the header row.
 
-        This fixes "Table 3" in Placement Procedures where:
-        - Row contains: "Technical" | "15" | "Pages"
-        - Old method: Missed because keyword matching was too narrow
-        - New method: Find "15", check left cell for "Technical", lock Vol 1 = 15 pages
+        Priority Order:
+        1. Header-based column identification (most reliable)
+        2. Structured intersection lookup
+        3. Fallback to digit-targeting (v6.0.2 method)
 
         Args:
             pdf_path: Path to the PDF file
@@ -1087,7 +1167,7 @@ class SectionLParser:
         if not pdf_path or not PDFPLUMBER_AVAILABLE:
             return page_limits
 
-        # v6.0.2: Volume keyword to volume number mapping for digit-targeting
+        # v6.0.3: Volume keyword to volume number mapping
         volume_keyword_map = {
             'technical': ('Technical Volume', 1),
             'tech': ('Technical Volume', 1),
@@ -1108,8 +1188,9 @@ class SectionLParser:
             'references': ('Past Performance Volume', 4),
         }
 
-        # Common page limits to target (digit-first search)
-        target_page_limits = [8, 10, 15, 20, 25, 30, 50, 100]
+        # v6.0.3: Column header patterns
+        title_column_headers = ['title', 'volume', 'name', 'section', 'proposal element']
+        limit_column_headers = ['page', 'limit', 'pages', 'maximum', 'max']
 
         try:
             with pdfplumber.open(pdf_path) as pdf:
@@ -1120,140 +1201,176 @@ class SectionLParser:
                         if not table or len(table) < 2:
                             continue
 
-                        print(f"[v6.0.2] DIGIT-TARGETING: Scanning table {table_idx + 1} "
-                              f"on page {page_num + 1} ({len(table)} rows x {len(table[0]) if table else 0} cols)")
+                        num_cols = len(table[0]) if table[0] else 0
+                        print(f"[v6.0.3] ROW-INDEX LINKING: Table {table_idx + 1} on page {page_num + 1} "
+                              f"({len(table)} rows x {num_cols} cols)")
 
-                        # v6.0.2: DIGIT-FIRST STRATEGY
-                        # Scan ALL cells for target page limits
-                        for row_idx, row in enumerate(table):
-                            for col_idx, cell in enumerate(row):
-                                cell_text = str(cell or '').strip()
+                        # v6.0.3: STEP 1 - Identify column indices from header row
+                        title_col_idx = None
+                        limit_col_idx = None
 
-                                # Check if this cell contains a target page limit
-                                digit_match = re.match(r'^(\d{1,3})(?:\s*pages?)?$', cell_text, re.IGNORECASE)
-                                if not digit_match:
+                        # Check first 2 rows for headers
+                        for header_row_idx in range(min(2, len(table))):
+                            header_row = table[header_row_idx]
+
+                            for col_idx, cell in enumerate(header_row):
+                                cell_text = str(cell or '').lower().strip()
+
+                                # Check for title column
+                                if title_col_idx is None:
+                                    if any(h in cell_text for h in title_column_headers):
+                                        title_col_idx = col_idx
+                                        print(f"[v6.0.3] HEADER: Title column at index {col_idx} ('{cell_text}')")
+
+                                # Check for limit column
+                                if limit_col_idx is None:
+                                    if any(h in cell_text for h in limit_column_headers):
+                                        limit_col_idx = col_idx
+                                        print(f"[v6.0.3] HEADER: Limit column at index {col_idx} ('{cell_text}')")
+
+                            if title_col_idx is not None and limit_col_idx is not None:
+                                break
+
+                        # v6.0.3: STEP 2 - If no headers found, try to infer from data
+                        if title_col_idx is None or limit_col_idx is None:
+                            print(f"[v6.0.3] No clear headers, inferring column structure...")
+
+                            # Heuristic: Title column has text, Limit column has numbers
+                            for row in table[1:]:  # Skip first row
+                                for col_idx, cell in enumerate(row):
+                                    cell_text = str(cell or '').strip()
+
+                                    # Check if this looks like a volume name
+                                    if title_col_idx is None:
+                                        cell_lower = cell_text.lower()
+                                        if any(kw in cell_lower for kw in volume_keyword_map.keys()):
+                                            title_col_idx = col_idx
+                                            print(f"[v6.0.3] INFERRED: Title column at index {col_idx}")
+
+                                    # Check if this looks like a page limit
+                                    if limit_col_idx is None:
+                                        if re.match(r'^\d{1,3}(?:\s*pages?)?$', cell_text, re.IGNORECASE):
+                                            limit_col_idx = col_idx
+                                            print(f"[v6.0.3] INFERRED: Limit column at index {col_idx}")
+
+                                if title_col_idx is not None and limit_col_idx is not None:
+                                    break
+
+                        # v6.0.3: STEP 3 - ROW-INDEX IMMUTABLE LINKING
+                        if title_col_idx is not None and limit_col_idx is not None:
+                            print(f"[v6.0.3] Using column indices: Title={title_col_idx}, Limit={limit_col_idx}")
+
+                            for row_idx, row in enumerate(table):
+                                if row_idx == 0:  # Skip header
+                                    continue
+                                if len(row) <= max(title_col_idx, limit_col_idx):
                                     continue
 
-                                digit_value = int(digit_match.group(1))
+                                title_cell = str(row[title_col_idx] or '').strip()
+                                limit_cell = str(row[limit_col_idx] or '').strip()
 
-                                # Skip if not in reasonable range (1-100 typical for page limits)
-                                if digit_value < 1 or digit_value > 100:
-                                    continue
+                                title_lower = title_cell.lower()
 
-                                # Prioritize common page limits
-                                is_target_limit = digit_value in target_page_limits
-
-                                print(f"[v6.0.2] Found digit {digit_value} at row {row_idx}, col {col_idx}")
-
-                                # v6.0.2: CONTEXT-CHECK - Look for volume keywords
-                                # Check 1: Same row (all cells)
-                                row_text = ' '.join(str(c or '').lower() for c in row)
-
-                                # Check 2: Cell immediately to the left
-                                left_cell_text = ''
-                                if col_idx > 0:
-                                    left_cell_text = str(row[col_idx - 1] or '').lower()
-
-                                # Check 3: Cell to the right (might be "Pages" label)
-                                right_cell_text = ''
-                                if col_idx < len(row) - 1:
-                                    right_cell_text = str(row[col_idx + 1] or '').lower()
-
-                                # v6.0.2: Try to match volume keywords
+                                # Check if this row contains a volume keyword
                                 matched_volume = None
                                 matched_vol_num = None
 
-                                for keyword, (title, vol_num) in volume_keyword_map.items():
-                                    # Priority 1: Exact match in left cell (highest confidence)
-                                    if keyword in left_cell_text:
-                                        matched_volume = title
+                                for keyword, (vol_title, vol_num) in volume_keyword_map.items():
+                                    if keyword in title_lower:
+                                        matched_volume = vol_title
                                         matched_vol_num = vol_num
-                                        print(f"[v6.0.2] LEFT-CELL MATCH: '{keyword}' -> {title}")
                                         break
 
-                                    # Priority 2: Match anywhere in row
-                                    if keyword in row_text:
-                                        matched_volume = title
-                                        matched_vol_num = vol_num
-                                        print(f"[v6.0.2] ROW MATCH: '{keyword}' -> {title}")
-                                        break
+                                if matched_volume and limit_cell:
+                                    # Extract numeric value from limit cell
+                                    limit_match = re.search(r'(\d+)', limit_cell)
+                                    if limit_match:
+                                        limit_value = int(limit_match.group(1))
+                                        if 1 <= limit_value <= 500:
+                                            key = matched_volume.lower()
+                                            if key not in page_limits:
+                                                page_limits[key] = (matched_volume, limit_value)
+                                                print(f"[v6.0.3] ✓ ROW-INDEX LOCKED: Row {row_idx} "
+                                                      f"'{title_cell}' -> {limit_value} pages")
 
-                                if matched_volume and matched_vol_num:
-                                    key = matched_volume.lower()
-                                    if key not in page_limits:
-                                        page_limits[key] = (matched_volume, digit_value)
-                                        print(f"[v6.0.2] DIGIT-TARGET LOCKED: '{matched_volume}' -> "
-                                              f"{digit_value} pages (page {page_num + 1}, row {row_idx})")
+                                                # Add alternate keys
+                                                if matched_vol_num == 1:
+                                                    page_limits['technical'] = (matched_volume, limit_value)
+                                                    page_limits['technical volume'] = (matched_volume, limit_value)
+                                                    page_limits['vol 1'] = (matched_volume, limit_value)
+                                                    page_limits['volume 1'] = (matched_volume, limit_value)
+                                                elif matched_vol_num == 2:
+                                                    page_limits['cost'] = (matched_volume, limit_value)
+                                                    page_limits['cost & price'] = (matched_volume, limit_value)
+                                                    page_limits['vol 2'] = (matched_volume, limit_value)
+                                                elif matched_vol_num == 3:
+                                                    page_limits['contract'] = (matched_volume, limit_value)
+                                                    page_limits['contract documentation'] = (matched_volume, limit_value)
+                                                    page_limits['vol 3'] = (matched_volume, limit_value)
 
-                                        # Also add alternate keys for matching
-                                        if matched_vol_num == 1:
-                                            page_limits['technical'] = (matched_volume, digit_value)
-                                            page_limits['technical volume'] = (matched_volume, digit_value)
-                                        elif matched_vol_num == 2:
-                                            page_limits['cost'] = (matched_volume, digit_value)
-                                            page_limits['cost & price'] = (matched_volume, digit_value)
-                                        elif matched_vol_num == 3:
-                                            page_limits['contract'] = (matched_volume, digit_value)
-                                            page_limits['contract documentation'] = (matched_volume, digit_value)
-
-                        # v6.0.2: FALLBACK - Original keyword-first approach for other tables
-                        # Keep this as backup for tables without clear digit patterns
+                        # v6.0.3: FALLBACK - Digit-targeting for tables without clear structure
                         if not page_limits:
+                            print(f"[v6.0.3] Row-index linking failed, using digit-targeting fallback...")
                             page_limits.update(
-                                self._extract_page_limits_keyword_first(table, page_num, table_idx)
+                                self._extract_page_limits_digit_targeting(table, page_num, table_idx, volume_keyword_map)
                             )
 
         except Exception as e:
-            print(f"[v6.0.2] Error in digit-targeting extraction: {e}")
+            print(f"[v6.0.3] Error in page limit extraction: {e}")
             import traceback
             traceback.print_exc()
 
         if page_limits:
-            print(f"[v6.0.2] Extracted {len(page_limits)} page limits from PDF tables")
+            print(f"[v6.0.3] Extracted {len(page_limits)} page limit entries from PDF tables")
+        else:
+            print(f"[v6.0.3] ✗ No page limits extracted from tables")
 
         return page_limits
 
-    def _extract_page_limits_keyword_first(
+    def _extract_page_limits_digit_targeting(
         self,
         table: List[List[Any]],
         page_num: int,
-        table_idx: int
+        table_idx: int,
+        volume_keyword_map: Dict[str, Tuple[str, int]]
     ) -> Dict[str, Tuple[str, int]]:
         """
-        v6.0.2: Fallback keyword-first extraction for page limits.
+        v6.0.3: Fallback digit-targeting extraction (from v6.0.2).
 
-        Used when digit-targeting doesn't find matches.
+        Used when header-based column identification fails.
         """
         page_limits: Dict[str, Tuple[str, int]] = {}
 
-        volume_keywords = {
-            'technical': ['technical', 'tech', 'executive', 'management', 'approach'],
-            'cost': ['cost', 'price', 'pricing', 'business'],
-            'contract': ['contract', 'documentation', 'administrative', 'admin'],
-            'past performance': ['past performance', 'experience', 'references'],
-        }
-
         for row_idx, row in enumerate(table):
-            row_text = ' '.join(str(cell or '').lower() for cell in row)
-
-            matched_volume_type = None
-            for vol_type, keywords in volume_keywords.items():
-                if any(kw in row_text for kw in keywords):
-                    matched_volume_type = vol_type
-                    break
-
-            if not matched_volume_type:
-                continue
-
             for col_idx, cell in enumerate(row):
                 cell_text = str(cell or '').strip()
-                limit_match = re.search(r'^(\d{1,3})\s*(?:pages?)?$', cell_text, re.IGNORECASE)
-                if limit_match:
-                    limit = int(limit_match.group(1))
-                    if 1 <= limit <= 500:
-                        title = self._extract_volume_title_from_row(row, col_idx)
-                        if title and title.lower() not in page_limits:
-                            page_limits[title.lower()] = (title, limit)
+
+                digit_match = re.match(r'^(\d{1,3})(?:\s*pages?)?$', cell_text, re.IGNORECASE)
+                if not digit_match:
+                    continue
+
+                digit_value = int(digit_match.group(1))
+                if digit_value < 1 or digit_value > 100:
+                    continue
+
+                # Check row context
+                row_text = ' '.join(str(c or '').lower() for c in row)
+                left_cell = str(row[col_idx - 1] or '').lower() if col_idx > 0 else ''
+
+                for keyword, (title, vol_num) in volume_keyword_map.items():
+                    if keyword in left_cell or keyword in row_text:
+                        key = title.lower()
+                        if key not in page_limits:
+                            page_limits[key] = (title, digit_value)
+                            print(f"[v6.0.3] DIGIT-TARGET: '{title}' -> {digit_value} pages")
+
+                            if vol_num == 1:
+                                page_limits['technical'] = (title, digit_value)
+                            elif vol_num == 2:
+                                page_limits['cost'] = (title, digit_value)
+                            elif vol_num == 3:
+                                page_limits['contract'] = (title, digit_value)
+                        break
 
         return page_limits
 
