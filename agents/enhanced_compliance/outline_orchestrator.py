@@ -104,68 +104,134 @@ class SupervisorValidator:
         'past performance': ['experience', 'references', 'past performance'],
     }
 
+    # v6.0.3: Official agency solicitation patterns for validation
+    OFFICIAL_SOL_PATTERNS = [
+        r'^FA\d{4}',  # Air Force
+        r'^W\d{3}[A-Z]{2}',  # Army
+        r'^N\d{5}',  # Navy
+        r'^SP\d{4}',  # DLA
+        r'^\d{2}[A-Z]\d{5}',  # NIH
+    ]
+
     def validate_schema(
         self,
         schema: SectionL_Schema,
-        stated_volume_count: Optional[int] = None
+        stated_volume_count: Optional[int] = None,
+        rfp_number: Optional[str] = None,
+        has_tables_detected: bool = False
     ) -> SupervisorValidationResult:
         """
-        Validate the parsed schema before skeleton building.
+        v6.0.3: BINARY IRON TRIANGLE GATE - Validate schema with mandatory field checks.
+
+        This is a BINARY gate: if ANY mandatory field is missing or invalid,
+        the outline generation MUST fail with a hard error.
+
+        Mandatory Fields (CRITICAL if missing):
+        1. Volume count must match stated count
+        2. Solicitation number must match official agency pattern (not internal ID)
+        3. Technical volume MUST have page limit if tables were detected
 
         Args:
             schema: Parsed Section L schema
             stated_volume_count: Expected volume count from RFP (if known)
+            rfp_number: Solicitation number to validate
+            has_tables_detected: Whether PDF tables were found (for page limit validation)
 
         Returns:
             SupervisorValidationResult with issues and confidence
         """
+        import re
         issues: List[ValidationIssue] = []
         confidence = 1.0
 
         volumes = schema.get('volumes', [])
         sections = schema.get('sections', [])
 
-        # Check 1: Volume count
+        # v6.0.3: BINARY CHECK 1 - Volume count
         if len(volumes) == 0:
             issues.append(ValidationIssue(
                 code="NO_VOLUMES",
-                message="No volumes found in Section L",
+                message="BINARY GATE FAIL: No volumes found in Section L",
                 severity=ValidationSeverity.CRITICAL,
-                recoverable=True,
-                suggested_action="Run semantic search for common volume patterns"
+                recoverable=False,  # v6.0.3: Hard block
+                suggested_action="Cannot proceed without volume structure"
             ))
-            confidence -= 0.5
+            confidence = 0.0
 
-        # Check 2: Stated vs found volume count - v6.0.1: HARD VALIDATION GATE
-        # If RFP explicitly states N volumes and we found fewer, this is CRITICAL
-        # The system MUST NOT generate an outline with missing volumes
+        # v6.0.3: BINARY CHECK 2 - Stated vs found volume count
         stated = stated_volume_count or schema.get('stated_volume_count')
         if stated is not None and len(volumes) != stated:
             missing_count = stated - len(volumes)
             if missing_count > 0:
-                # CRITICAL: Missing volumes - MUST block outline generation
                 issues.append(ValidationIssue(
                     code="VOLUME_COUNT_MISMATCH",
-                    message=f"CRITICAL: RFP states {stated} volumes but only found {len(volumes)}. "
-                            f"Missing {missing_count} volume(s). Cannot generate compliant outline.",
+                    message=f"BINARY GATE FAIL: RFP states {stated} volumes but only found {len(volumes)}. "
+                            f"Missing {missing_count} volume(s).",
                     severity=ValidationSeverity.CRITICAL,
-                    recoverable=False,  # v6.0.1: No longer recoverable - hard block
-                    suggested_action=f"Manual review required: Search for {missing_count} missing volume(s) "
-                                    "using pdfplumber structural search or review source PDF"
+                    recoverable=False,
+                    suggested_action=f"Search for {missing_count} missing volume(s) in source PDF"
                 ))
-                confidence = 0.0  # v6.0.1: Zero confidence = hard failure
+                confidence = 0.0
             else:
-                # Found more volumes than stated - warning only
                 issues.append(ValidationIssue(
                     code="VOLUME_COUNT_EXCESS",
                     message=f"RFP states {stated} volumes but found {len(volumes)} ({len(volumes) - stated} extra)",
                     severity=ValidationSeverity.WARNING,
                     recoverable=True,
-                    suggested_action="Review if extra volumes should be consolidated or removed"
+                    suggested_action="Review if extra volumes should be consolidated"
                 ))
                 confidence -= 0.1
 
-        # Check 3: Sections distribution
+        # v6.0.3: BINARY CHECK 3 - Solicitation number validation
+        if rfp_number:
+            is_official = any(
+                re.match(pattern, rfp_number.upper())
+                for pattern in self.OFFICIAL_SOL_PATTERNS
+            )
+
+            # Check for internal ID patterns (REJECT)
+            is_internal = bool(re.match(r'^RFP[-_]?[A-F0-9]+', rfp_number.upper()))
+
+            if is_internal:
+                issues.append(ValidationIssue(
+                    code="INTERNAL_ID_USED",
+                    message=f"BINARY GATE FAIL: Using internal ID '{rfp_number}' instead of official solicitation number",
+                    severity=ValidationSeverity.CRITICAL,
+                    recoverable=False,
+                    suggested_action="Extract official solicitation number from SF1449 Block 5"
+                ))
+                confidence = 0.0
+            elif not is_official:
+                issues.append(ValidationIssue(
+                    code="UNRECOGNIZED_SOL_FORMAT",
+                    message=f"Solicitation '{rfp_number}' does not match known agency patterns",
+                    severity=ValidationSeverity.WARNING,
+                    recoverable=True,
+                    suggested_action="Verify solicitation number format is correct"
+                ))
+                confidence -= 0.1
+
+        # v6.0.3: BINARY CHECK 4 - Technical volume page limit (if tables detected)
+        if has_tables_detected and len(volumes) > 0:
+            technical_volumes = [
+                v for v in volumes
+                if any(kw in v.get('volume_title', '').lower()
+                       for kw in ['technical', 'approach', 'management'])
+            ]
+
+            for tech_vol in technical_volumes:
+                if tech_vol.get('page_limit') is None:
+                    issues.append(ValidationIssue(
+                        code="MISSING_PAGE_LIMIT",
+                        message=f"BINARY GATE FAIL: Technical volume '{tech_vol.get('volume_title')}' "
+                                f"has no page limit but tables were detected in PDF",
+                        severity=ValidationSeverity.CRITICAL,
+                        recoverable=False,
+                        suggested_action="Extract page limit from PDF table using row-index intersection"
+                    ))
+                    confidence = 0.0
+
+        # Check 5: Sections distribution (WARNING only)
         orphan_sections = [s for s in sections if not s.get('parent_volume_id')]
         if orphan_sections:
             issues.append(ValidationIssue(
@@ -177,7 +243,7 @@ class SupervisorValidator:
             ))
             confidence -= 0.1
 
-        # Check 4: Empty volumes (no sections, no page limit)
+        # Check 6: Empty volumes (WARNING only)
         for vol in volumes:
             vol_sections = [s for s in sections if s.get('parent_volume_id') == vol.get('volume_id')]
             if not vol_sections and vol.get('page_limit') is None:
@@ -186,11 +252,11 @@ class SupervisorValidator:
                     message=f"Volume '{vol.get('volume_title')}' has no sections or page limit",
                     severity=ValidationSeverity.WARNING,
                     recoverable=False,
-                    suggested_action="Manual review required - volume may need structure from attachments"
+                    suggested_action="Manual review - volume may need structure from attachments"
                 ))
                 confidence -= 0.05
 
-        # Check 5: Parsing warnings
+        # Check 7: Parsing warnings (INFO only)
         for warning in schema.get('parsing_warnings', []):
             issues.append(ValidationIssue(
                 code="PARSER_WARNING",
@@ -199,11 +265,8 @@ class SupervisorValidator:
                 recoverable=False
             ))
 
-        # Calculate final validity
-        is_valid = (
-            confidence >= self.MIN_CONFIDENCE_FOR_VALID and
-            not any(i.severity == ValidationSeverity.CRITICAL for i in issues)
-        )
+        # v6.0.3: BINARY VALIDITY - Any CRITICAL issue = invalid
+        is_valid = not any(i.severity == ValidationSeverity.CRITICAL for i in issues)
 
         return SupervisorValidationResult(
             is_valid=is_valid,
@@ -214,6 +277,7 @@ class SupervisorValidator:
                 'section_count': len(sections),
                 'stated_volume_count': stated,
                 'orphan_sections': len(orphan_sections),
+                'has_critical_issues': not is_valid,
             }
         )
 
@@ -418,30 +482,39 @@ class OutlineOrchestrator:
             for warn in schema['parsing_warnings']:
                 logger.warning(f"  Parser warning: {warn}")
 
-        # v6.0: Supervisor validation gate for schema
+        # v6.0.3: Detect if PDF tables were found (for page limit validation)
+        has_tables_detected = bool(schema.get('_tables_detected', False))
+
+        # v6.0.3: BINARY IRON TRIANGLE GATE - Supervisor validation
         schema_validation = None
         if self.supervisor:
-            logger.info("Phase 1.5: Supervisor validation of schema...")
-            schema_validation = self.supervisor.validate_schema(schema)
-            print(f"[v6.0 Supervisor] Schema validation: valid={schema_validation.is_valid}, "
+            logger.info("Phase 1.5: v6.0.3 Binary Iron Triangle Gate validation...")
+            schema_validation = self.supervisor.validate_schema(
+                schema,
+                rfp_number=rfp_number,
+                has_tables_detected=has_tables_detected
+            )
+            print(f"[v6.0.3 BINARY GATE] Schema validation: valid={schema_validation.is_valid}, "
                   f"confidence={schema_validation.confidence_score:.2f}")
 
             for issue in schema_validation.issues:
-                if issue.severity in (ValidationSeverity.ERROR, ValidationSeverity.CRITICAL):
-                    print(f"[v6.0 Supervisor] {issue.severity.value.upper()}: {issue.message}")
+                if issue.severity == ValidationSeverity.CRITICAL:
+                    print(f"[v6.0.3 BINARY GATE] ✗ CRITICAL: {issue.message}")
                     if issue.suggested_action:
-                        print(f"[v6.0 Supervisor]   Suggested: {issue.suggested_action}")
+                        print(f"[v6.0.3 BINARY GATE]   Action: {issue.suggested_action}")
+                elif issue.severity == ValidationSeverity.ERROR:
+                    print(f"[v6.0.3 BINARY GATE] ERROR: {issue.message}")
 
-            # v6.0.1: HARD VALIDATION GATE - Block outline generation on CRITICAL issues
+            # v6.0.3: BINARY GATE - Any CRITICAL issue = hard block
             if schema_validation.has_critical_issues and self.strict_mode:
                 critical_issues = [
                     i for i in schema_validation.issues
                     if i.severity == ValidationSeverity.CRITICAL
                 ]
                 error_messages = "; ".join(i.message for i in critical_issues)
+                print(f"[v6.0.3 BINARY GATE] ✗ HARD BLOCK: {len(critical_issues)} critical issue(s)")
                 raise StructureValidationError(
-                    f"[v6.0.1 HARD BLOCK] Cannot generate outline due to critical validation failures: "
-                    f"{error_messages}"
+                    f"[v6.0.3 BINARY GATE FAIL] Cannot generate outline: {error_messages}"
                 )
 
         # Phase 2: Build skeleton from schema

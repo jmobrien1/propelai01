@@ -632,6 +632,26 @@ class ContentInjector:
                               f"cannot go into admin section '{sec['title']}'")
                         continue  # Skip this section entirely
 
+                # v6.0.3: SEMANTIC BLOCK FILTER - Strict category enforcement
+                # If requirement category is TECHNICAL or PERFORMANCE, it CANNOT
+                # go into Security Questionnaire or Representation sections
+                req_category = requirement.get('category', '').lower()
+                is_technical_or_performance = any(
+                    cat in req_category for cat in ['technical', 'performance', 'operational']
+                ) or iron_req_type == 'section_c'
+
+                semantic_block_sections = [
+                    'security questionnaire', 'questionnaire', 'security clearance',
+                    'representation', 'representations', 'certification',
+                    'disclosure', 'conflict of interest', 'ocp', 'oci'
+                ]
+
+                if is_technical_or_performance:
+                    if any(block_kw in sec_title_lower for block_kw in semantic_block_sections):
+                        print(f"[v6.0.3] SEMANTIC BLOCK: Technical/Performance requirement "
+                              f"(category: '{req_category}') cannot go into '{sec['title']}'")
+                        continue  # HARD BLOCK - skip this section
+
                 # v6.0.2: NEGATIVE MATCH FILTER - Content Leakage Prevention
                 # Penalize technical operational content going into Management/Personnel sections
                 # This prevents requirements about NOC, Fault Isolation, Hardware, etc.
