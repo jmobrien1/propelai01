@@ -1118,20 +1118,18 @@ class SectionLParser:
         warnings: List[str]
     ) -> Dict[str, Tuple[str, int]]:
         """
-        v6.0.3: ROW-INDEX IMMUTABLE LINKING for page limits.
+        v6.0.5: CONSTRAINT ANCHOR SYSTEM for page limits.
 
-        CRITICAL FIX: v6.0.2's digit-targeting was still proximity-based. This version:
-        1. IDENTIFY column indices for "Title/Volume" and "Page Limit/Pages"
-        2. LOCATE row where Title column contains volume keyword
-        3. LOCK the value at intersection of Row + Limit Column
+        CRITICAL FIX: v6.0.4's header detection failed on nested/multi-line table headers
+        common in Space Force documents. This version:
 
-        The "Intersection Rule": Page limit MUST come from the same row as the
-        volume name, using column indices identified from the header row.
+        1. SCAN ALL ROWS for header patterns (not just first 2)
+        2. BUILD COLUMN INDEX MAP by concatenating multi-line headers
+        3. FIND INTERSECTION of "Technical" row + "Limit/Pages" column
+        4. FORCE-BIND the integer value at that intersection
 
-        Priority Order:
-        1. Header-based column identification (most reliable)
-        2. Structured intersection lookup
-        3. Fallback to digit-targeting (v6.0.2 method)
+        The "Constraint Anchor Rule": Page limit is LOCKED to the cell at the
+        intersection of (row containing volume keyword) × (column containing limit header).
 
         Args:
             pdf_path: Path to the PDF file
@@ -1145,30 +1143,42 @@ class SectionLParser:
         if not pdf_path or not PDFPLUMBER_AVAILABLE:
             return page_limits
 
-        # v6.0.3: Volume keyword to volume number mapping
+        # v6.0.5: Volume keyword to volume number mapping (expanded)
         volume_keyword_map = {
             'technical': ('Technical Volume', 1),
             'tech': ('Technical Volume', 1),
             'executive': ('Executive Summary and Technical Volume', 1),
             'management': ('Technical Volume', 1),
             'approach': ('Technical Volume', 1),
+            'summary': ('Executive Summary and Technical Volume', 1),
+            'volume 1': ('Technical Volume', 1),
+            'vol 1': ('Technical Volume', 1),
+            'vol i': ('Technical Volume', 1),
             'cost': ('Cost & Price Volume', 2),
             'price': ('Cost & Price Volume', 2),
             'pricing': ('Cost & Price Volume', 2),
             'business': ('Cost & Price Volume', 2),
+            'volume 2': ('Cost & Price Volume', 2),
+            'vol 2': ('Cost & Price Volume', 2),
+            'vol ii': ('Cost & Price Volume', 2),
             'contract': ('Contract Documentation Volume', 3),
             'documentation': ('Contract Documentation Volume', 3),
             'administrative': ('Contract Documentation Volume', 3),
             'admin': ('Contract Documentation Volume', 3),
             'certifications': ('Contract Documentation Volume', 3),
+            'volume 3': ('Contract Documentation Volume', 3),
+            'vol 3': ('Contract Documentation Volume', 3),
+            'vol iii': ('Contract Documentation Volume', 3),
             'past performance': ('Past Performance Volume', 4),
             'experience': ('Past Performance Volume', 4),
             'references': ('Past Performance Volume', 4),
         }
 
-        # v6.0.3: Column header patterns
-        title_column_headers = ['title', 'volume', 'name', 'section', 'proposal element']
-        limit_column_headers = ['page', 'limit', 'pages', 'maximum', 'max']
+        # v6.0.5: Expanded column header patterns for limit detection
+        limit_column_patterns = [
+            'page limit', 'page', 'pages', 'limit', 'maximum', 'max',
+            'length', 'size', 'constraint', 'not to exceed', 'nte'
+        ]
 
         try:
             with pdfplumber.open(pdf_path) as pdf:
@@ -1180,130 +1190,134 @@ class SectionLParser:
                             continue
 
                         num_cols = len(table[0]) if table[0] else 0
-                        print(f"[v6.0.3] ROW-INDEX LINKING: Table {table_idx + 1} on page {page_num + 1} "
+                        print(f"[v6.0.5] CONSTRAINT ANCHOR: Table {table_idx + 1} on page {page_num + 1} "
                               f"({len(table)} rows x {num_cols} cols)")
 
-                        # v6.0.3: STEP 1 - Identify column indices from header row
-                        title_col_idx = None
+                        # v6.0.5: STEP 1 - Build column text map (concatenate all rows for each column)
+                        # This handles multi-line/nested headers like:
+                        #   Row 0: "Proposal" | ""        | "Page"
+                        #   Row 1: "Element"  | "Content" | "Limit"
+                        # Concatenated: "Proposal Element" | "Content" | "Page Limit"
+                        column_texts: Dict[int, str] = {}
+                        for col_idx in range(num_cols):
+                            col_text_parts = []
+                            # Scan first 3 rows for header content
+                            for row_idx in range(min(3, len(table))):
+                                if len(table[row_idx]) > col_idx:
+                                    cell = str(table[row_idx][col_idx] or '').strip()
+                                    if cell and not re.match(r'^\d{1,3}$', cell):  # Skip pure numbers
+                                        col_text_parts.append(cell)
+                            column_texts[col_idx] = ' '.join(col_text_parts).lower()
+
+                        print(f"[v6.0.5] Column texts: {column_texts}")
+
+                        # v6.0.5: STEP 2 - Find the LIMIT column using pattern matching
                         limit_col_idx = None
+                        limit_col_confidence = 0
 
-                        # Check first 2 rows for headers
-                        for header_row_idx in range(min(2, len(table))):
-                            header_row = table[header_row_idx]
+                        for col_idx, col_text in column_texts.items():
+                            for pattern in limit_column_patterns:
+                                if pattern in col_text:
+                                    # Score by specificity
+                                    score = len(pattern)
+                                    if 'page limit' in col_text:
+                                        score = 100  # Exact match is highest
+                                    elif 'limit' in col_text and 'page' in col_text:
+                                        score = 90
+                                    elif 'pages' in col_text:
+                                        score = 80
 
-                            for col_idx, cell in enumerate(header_row):
-                                cell_text = str(cell or '').lower().strip()
-
-                                # Check for title column
-                                if title_col_idx is None:
-                                    if any(h in cell_text for h in title_column_headers):
-                                        title_col_idx = col_idx
-                                        print(f"[v6.0.3] HEADER: Title column at index {col_idx} ('{cell_text}')")
-
-                                # Check for limit column
-                                if limit_col_idx is None:
-                                    if any(h in cell_text for h in limit_column_headers):
+                                    if score > limit_col_confidence:
                                         limit_col_idx = col_idx
-                                        print(f"[v6.0.3] HEADER: Limit column at index {col_idx} ('{cell_text}')")
+                                        limit_col_confidence = score
+                                        print(f"[v6.0.5] LIMIT COLUMN candidate: idx={col_idx}, "
+                                              f"text='{col_text}', score={score}")
 
-                            if title_col_idx is not None and limit_col_idx is not None:
-                                break
-
-                        # v6.0.3: STEP 2 - If no headers found, try to infer from data
-                        if title_col_idx is None or limit_col_idx is None:
-                            print(f"[v6.0.3] No clear headers, inferring column structure...")
-
-                            # Heuristic: Title column has text, Limit column has numbers
-                            for row in table[1:]:  # Skip first row
+                        # v6.0.5: STEP 3 - If no limit column found in headers, find column with digits
+                        if limit_col_idx is None:
+                            print(f"[v6.0.5] No limit header found, scanning for digit columns...")
+                            for row in table[1:]:  # Skip potential headers
                                 for col_idx, cell in enumerate(row):
                                     cell_text = str(cell or '').strip()
-
-                                    # Check if this looks like a volume name
-                                    if title_col_idx is None:
-                                        cell_lower = cell_text.lower()
-                                        if any(kw in cell_lower for kw in volume_keyword_map.keys()):
-                                            title_col_idx = col_idx
-                                            print(f"[v6.0.3] INFERRED: Title column at index {col_idx}")
-
-                                    # Check if this looks like a page limit
-                                    if limit_col_idx is None:
-                                        if re.match(r'^\d{1,3}(?:\s*pages?)?$', cell_text, re.IGNORECASE):
-                                            limit_col_idx = col_idx
-                                            print(f"[v6.0.3] INFERRED: Limit column at index {col_idx}")
-
-                                if title_col_idx is not None and limit_col_idx is not None:
+                                    if re.match(r'^\d{1,3}(?:\s*pages?)?$', cell_text, re.IGNORECASE):
+                                        limit_col_idx = col_idx
+                                        print(f"[v6.0.5] INFERRED limit column at idx={col_idx} from data")
+                                        break
+                                if limit_col_idx is not None:
                                     break
 
-                        # v6.0.3: STEP 3 - ROW-INDEX IMMUTABLE LINKING
-                        if title_col_idx is not None and limit_col_idx is not None:
-                            print(f"[v6.0.3] Using column indices: Title={title_col_idx}, Limit={limit_col_idx}")
+                        if limit_col_idx is None:
+                            print(f"[v6.0.5] ✗ Could not identify limit column in table")
+                            continue
 
-                            for row_idx, row in enumerate(table):
-                                if row_idx == 0:  # Skip header
-                                    continue
-                                if len(row) <= max(title_col_idx, limit_col_idx):
-                                    continue
+                        # v6.0.5: STEP 4 - CONSTRAINT ANCHOR: Find rows with volume keywords
+                        print(f"[v6.0.5] Using limit column index: {limit_col_idx}")
 
-                                title_cell = str(row[title_col_idx] or '').strip()
+                        for row_idx, row in enumerate(table):
+                            if len(row) <= limit_col_idx:
+                                continue
+
+                            # Concatenate all cells in row for keyword matching
+                            row_text = ' '.join(str(c or '') for c in row).lower()
+
+                            # Check for volume keywords
+                            matched_volume = None
+                            matched_vol_num = None
+
+                            for keyword, (vol_title, vol_num) in volume_keyword_map.items():
+                                if keyword in row_text:
+                                    matched_volume = vol_title
+                                    matched_vol_num = vol_num
+                                    print(f"[v6.0.5] Row {row_idx} matched keyword '{keyword}' -> {vol_title}")
+                                    break
+
+                            if matched_volume:
+                                # v6.0.5: CONSTRAINT ANCHOR - Extract value from limit column intersection
                                 limit_cell = str(row[limit_col_idx] or '').strip()
 
-                                title_lower = title_cell.lower()
+                                # Extract ANY digits from the intersection cell
+                                limit_match = re.search(r'(\d+)', limit_cell)
+                                if limit_match:
+                                    limit_value = int(limit_match.group(1))
+                                    if 1 <= limit_value <= 500:
+                                        key = matched_volume.lower()
+                                        # v6.0.5: FORCE-BIND - This value OVERRIDES any previous
+                                        page_limits[key] = (matched_volume, limit_value)
+                                        print(f"[v6.0.5] ✓ CONSTRAINT LOCK: Row {row_idx} "
+                                              f"'{row_text[:50]}...' × Col {limit_col_idx} "
+                                              f"'{limit_cell}' -> {limit_value} pages")
 
-                                # Check if this row contains a volume keyword
-                                matched_volume = None
-                                matched_vol_num = None
+                                        # Add alternate keys for flexible matching
+                                        if matched_vol_num == 1:
+                                            page_limits['technical'] = (matched_volume, limit_value)
+                                            page_limits['technical volume'] = (matched_volume, limit_value)
+                                            page_limits['vol 1'] = (matched_volume, limit_value)
+                                            page_limits['volume 1'] = (matched_volume, limit_value)
+                                        elif matched_vol_num == 2:
+                                            page_limits['cost'] = (matched_volume, limit_value)
+                                            page_limits['cost & price'] = (matched_volume, limit_value)
+                                            page_limits['vol 2'] = (matched_volume, limit_value)
+                                        elif matched_vol_num == 3:
+                                            page_limits['contract'] = (matched_volume, limit_value)
+                                            page_limits['contract documentation'] = (matched_volume, limit_value)
+                                            page_limits['vol 3'] = (matched_volume, limit_value)
 
-                                for keyword, (vol_title, vol_num) in volume_keyword_map.items():
-                                    if keyword in title_lower:
-                                        matched_volume = vol_title
-                                        matched_vol_num = vol_num
-                                        break
-
-                                if matched_volume and limit_cell:
-                                    # v6.0.4: PERSISTENT TABLE CONSTRAINT LINKING
-                                    # Extract ANY digits from the intersection cell
-                                    # Handles: "8", "8 Pages", "Not to exceed 8", "8 pages max"
-                                    limit_match = re.search(r'(\d+)', limit_cell)
-                                    if limit_match:
-                                        limit_value = int(limit_match.group(1))
-                                        if 1 <= limit_value <= 500:
-                                            key = matched_volume.lower()
-                                            # v6.0.4: PERSISTENT - This value OVERRIDES any previous
-                                            page_limits[key] = (matched_volume, limit_value)
-                                            print(f"[v6.0.4] ✓ PERSISTENT LOCK: Row {row_idx} "
-                                                  f"'{title_cell}' intersect '{limit_cell}' -> {limit_value} pages")
-
-                                            # Add alternate keys for flexible matching
-                                            if matched_vol_num == 1:
-                                                page_limits['technical'] = (matched_volume, limit_value)
-                                                page_limits['technical volume'] = (matched_volume, limit_value)
-                                                page_limits['vol 1'] = (matched_volume, limit_value)
-                                                page_limits['volume 1'] = (matched_volume, limit_value)
-                                            elif matched_vol_num == 2:
-                                                page_limits['cost'] = (matched_volume, limit_value)
-                                                page_limits['cost & price'] = (matched_volume, limit_value)
-                                                page_limits['vol 2'] = (matched_volume, limit_value)
-                                            elif matched_vol_num == 3:
-                                                page_limits['contract'] = (matched_volume, limit_value)
-                                                page_limits['contract documentation'] = (matched_volume, limit_value)
-                                                page_limits['vol 3'] = (matched_volume, limit_value)
-
-                        # v6.0.3: FALLBACK - Digit-targeting for tables without clear structure
+                        # v6.0.5: FALLBACK - Digit-targeting for tables without clear structure
                         if not page_limits:
-                            print(f"[v6.0.3] Row-index linking failed, using digit-targeting fallback...")
+                            print(f"[v6.0.5] Constraint anchor failed, using digit-targeting fallback...")
                             page_limits.update(
                                 self._extract_page_limits_digit_targeting(table, page_num, table_idx, volume_keyword_map)
                             )
 
         except Exception as e:
-            print(f"[v6.0.3] Error in page limit extraction: {e}")
+            print(f"[v6.0.5] Error in page limit extraction: {e}")
             import traceback
             traceback.print_exc()
 
         if page_limits:
-            print(f"[v6.0.3] Extracted {len(page_limits)} page limit entries from PDF tables")
+            print(f"[v6.0.5] Extracted {len(page_limits)} page limit entries from PDF tables")
         else:
-            print(f"[v6.0.3] ✗ No page limits extracted from tables")
+            print(f"[v6.0.5] ✗ No page limits extracted from tables")
 
         return page_limits
 

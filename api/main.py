@@ -4687,15 +4687,46 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True):
         # ==================== Success: Transform and Return ====================
         outline_data = _transform_v3_outline_for_ui(v3_outline, section_m)
 
-        # Store outline with metadata
-        store.update(rfp_id, {
+        # v6.0.5: METADATA REGEX OVERRIDE
+        # If the outline generator extracted an official solicitation number from SF1449,
+        # use it to globally update the RFP's solicitation_number field.
+        # This suppresses any internal ID hallucination (like RFP-866BCC3A).
+        extracted_metadata = result.get("extracted_metadata", {})
+        extracted_sol_num = extracted_metadata.get("solicitation_number")
+
+        update_data = {
             "outline": outline_data,
             "proposal_skeleton": skeleton,
             "outline_version": "3.0",
             "outline_metadata": injection_metadata,
             "outline_validation": all_violations,
             "section_l_source": section_l_source
-        })
+        }
+
+        if extracted_sol_num:
+            # v6.0.5: Validate it's an official pattern (not internal ID)
+            import re
+            official_patterns = [
+                r'^FA\d{4}',  # Air Force
+                r'^W\d{3}[A-Z]{2}',  # Army
+                r'^N\d{5}',  # Navy
+                r'^SP\d{4}',  # DLA
+                r'^\d{2}[A-Z]\d{5}',  # NIH
+                r'^47QF',  # GSA
+            ]
+            internal_pattern = r'^RFP[-_]?[A-F0-9]{6,}'
+
+            is_official = any(re.match(p, extracted_sol_num.upper()) for p in official_patterns)
+            is_internal = bool(re.match(internal_pattern, extracted_sol_num.upper()))
+
+            if is_official and not is_internal:
+                print(f"[v6.0.5] METADATA OVERRIDE: Updating solicitation_number to '{extracted_sol_num}' (from SF1449)")
+                update_data["solicitation_number"] = extracted_sol_num
+            elif is_internal:
+                print(f"[v6.0.5] REJECTED internal ID: '{extracted_sol_num}' - NOT updating solicitation_number")
+
+        # Store outline with metadata
+        store.update(rfp_id, update_data)
 
         print(f"[v3.0 Outline] SUCCESS - Generated {volumes_count} volumes")
 
