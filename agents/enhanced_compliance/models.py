@@ -10,6 +10,268 @@ from typing import List, Dict, Any, Optional
 from enum import Enum
 from datetime import datetime
 import hashlib
+import re
+
+
+# ============================================================================
+# v6.0.7: Multi-Vehicle Procurement Support
+# ============================================================================
+
+class ProcurementType(Enum):
+    """
+    v6.0.7: Classification of procurement vehicle types.
+
+    Different procurement vehicles have different structures:
+    - UCF (Uniform Contract Format): Traditional FAR 15 with Sections L/M/C
+    - GSA RFQ: FAR 8.4 Schedule buys with simplified quote structure
+    - IDIQ Task Order: FAR 16.505 with task-specific instructions
+    - BPA Call: Blanket Purchase Agreement calls
+    - Simplified: Under SAT threshold, minimal structure
+    """
+    UCF_STANDARD = "ucf_standard"        # FAR 15, DFARS - Air Force, Army, Navy
+    GSA_RFQ_8_4 = "gsa_rfq_8_4"          # FAR 8.4 GSA Schedule buys
+    GSA_BPA_CALL = "gsa_bpa_call"        # Blanket Purchase Agreement calls
+    IDIQ_TASK_ORDER = "idiq_task_order"  # FAR 16.505 (OASIS, Alliant, SEWP)
+    SIMPLIFIED_SAP = "simplified_sap"    # Under $250K threshold
+    SOURCES_SOUGHT = "sources_sought"    # Market research (no proposal structure)
+    UNKNOWN = "unknown"                  # Could not determine
+
+
+class DetectionConfidence(Enum):
+    """v6.0.7: Confidence levels for procurement type detection."""
+    HIGH = "high"           # >85% - proceed silently
+    MEDIUM = "medium"       # 65-85% - proceed with warning
+    LOW = "low"             # 45-65% - prompt user to confirm
+    VERY_LOW = "very_low"   # <45% - block and guide
+
+
+@dataclass
+class ProcurementDetectionResult:
+    """
+    v6.0.7: Result of auto-detecting procurement type.
+
+    Contains the detected type, confidence level, and evidence
+    supporting the detection decision.
+    """
+    procurement_type: ProcurementType
+    confidence: DetectionConfidence
+    confidence_score: float  # 0.0-1.0
+    detected_signals: List[str] = field(default_factory=list)
+    conflicting_signals: List[str] = field(default_factory=list)
+    suggestion: Optional[str] = None
+
+    @property
+    def should_proceed(self) -> bool:
+        """Whether to proceed without user confirmation."""
+        return self.confidence in [DetectionConfidence.HIGH, DetectionConfidence.MEDIUM]
+
+    @property
+    def requires_confirmation(self) -> bool:
+        """Whether to prompt user for confirmation."""
+        return self.confidence == DetectionConfidence.LOW
+
+    @property
+    def should_block(self) -> bool:
+        """Whether to block and provide guidance."""
+        return self.confidence == DetectionConfidence.VERY_LOW
+
+
+class ProcurementTypeDetector:
+    """
+    v6.0.7: Auto-detects procurement type from document text.
+
+    Uses pattern matching to identify:
+    - FAR references (8.4, 15, 16.505)
+    - Solicitation number patterns (FA for Air Force, 693JJ4 for DOT, etc.)
+    - Document structure markers (Section L/M, Phase I/II, etc.)
+    """
+
+    # Confidence thresholds
+    THRESHOLD_HIGH = 0.85
+    THRESHOLD_MEDIUM = 0.65
+    THRESHOLD_LOW = 0.45
+
+    # Pattern scores (higher = more indicative)
+    PATTERNS = {
+        ProcurementType.UCF_STANDARD: {
+            'far_15': (r'FAR\s*15', 30),
+            'dfars': (r'DFARS|DFAR\s+\d', 25),
+            'section_l': (r'Section\s+L', 25),
+            'section_m': (r'Section\s+M', 25),
+            'volume_i': (r'Volume\s+[IVX]+\s*[:\-]', 20),
+            'fa_contract': (r'\bFA\d{4}[-]?\d{2}[-]?[RQ]', 15),
+            'w_contract': (r'\bW\d{3}[A-Z]{2}', 15),
+            'n_contract': (r'\bN\d{5}', 15),
+            'offeror_shall': (r'[Oo]fferor\s+shall', 10),
+        },
+        ProcurementType.GSA_RFQ_8_4: {
+            'far_8_4': (r'FAR\s*8\.4', 40),
+            'gsa_schedule': (r'GSA\s+Schedule|Federal\s+Supply\s+Schedule', 35),
+            'rfq': (r'Request\s+for\s+Quote|RFQ', 25),
+            'quote': (r'\bquote\b|\bquotation\b', 15),
+            'gsa_contract': (r'\b47Q[A-Z]{2}|GS-\d{2}F', 20),
+            'dot_contract': (r'\b693JJ4', 20),
+            'phase_i_ii': (r'Phase\s+[I1]\s*[-/]|Phase\s+[II2]', 15),
+            'bpa': (r'Blanket\s+Purchase\s+Agreement', 10),
+        },
+        ProcurementType.IDIQ_TASK_ORDER: {
+            'far_16_505': (r'FAR\s*16\.505', 40),
+            'task_order': (r'Task\s+Order|TO\s+Request', 35),
+            'idiq': (r'\bIDIQ\b', 30),
+            'oasis': (r'\bOASIS\b', 25),
+            'alliant': (r'\bAlliant\b', 25),
+            'sewp': (r'\bSEWP\b', 25),
+            'cio_sp3': (r'CIO[-\s]?SP3', 25),
+        },
+        ProcurementType.SIMPLIFIED_SAP: {
+            'simplified': (r'Simplified\s+Acquisition', 40),
+            'far_13': (r'FAR\s*13', 35),
+            'under_sat': (r'under\s+(?:the\s+)?(?:SAT|simplified)', 25),
+            'micro_purchase': (r'micro[-\s]?purchase', 20),
+        },
+        ProcurementType.SOURCES_SOUGHT: {
+            'sources_sought': (r'Sources\s+Sought', 50),
+            'rfi': (r'Request\s+for\s+Information|RFI', 40),
+            'market_research': (r'Market\s+Research', 30),
+            'capability_statement': (r'Capability\s+Statement', 25),
+        },
+    }
+
+    # Negative signals (reduce confidence for certain types)
+    NEGATIVE_SIGNALS = {
+        ProcurementType.UCF_STANDARD: [
+            (r'FAR\s*8\.4', -40),  # FAR 8.4 strongly indicates NOT UCF
+            (r'Request\s+for\s+Quote|RFQ', -30),
+        ],
+        ProcurementType.GSA_RFQ_8_4: [
+            (r'Section\s+L.*Instructions', -30),  # Full Section L is NOT GSA RFQ
+            (r'FAR\s*15', -40),
+        ],
+    }
+
+    def detect(self, text: str, solicitation_number: Optional[str] = None) -> ProcurementDetectionResult:
+        """
+        Detect procurement type from document text.
+
+        Args:
+            text: Full document text to analyze
+            solicitation_number: Optional known solicitation number
+
+        Returns:
+            ProcurementDetectionResult with type, confidence, and evidence
+        """
+        if not text:
+            return ProcurementDetectionResult(
+                procurement_type=ProcurementType.UNKNOWN,
+                confidence=DetectionConfidence.VERY_LOW,
+                confidence_score=0.0,
+                detected_signals=["No document text provided"],
+                suggestion="Please upload a valid solicitation document."
+            )
+
+        text_upper = text.upper()
+        scores: Dict[ProcurementType, float] = {}
+        signals: Dict[ProcurementType, List[str]] = {}
+
+        # Score each procurement type
+        for ptype, patterns in self.PATTERNS.items():
+            score = 0
+            type_signals = []
+
+            for name, (pattern, weight) in patterns.items():
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                if matches:
+                    score += weight
+                    type_signals.append(f"Found '{name}': {len(matches)} match(es)")
+
+            # Apply negative signals
+            if ptype in self.NEGATIVE_SIGNALS:
+                for pattern, penalty in self.NEGATIVE_SIGNALS[ptype]:
+                    if re.search(pattern, text, re.IGNORECASE):
+                        score += penalty  # penalty is negative
+                        type_signals.append(f"Negative signal: {pattern}")
+
+            scores[ptype] = max(0, score)  # No negative total scores
+            signals[ptype] = type_signals
+
+        # Find best match
+        if not scores or max(scores.values()) == 0:
+            return ProcurementDetectionResult(
+                procurement_type=ProcurementType.UNKNOWN,
+                confidence=DetectionConfidence.VERY_LOW,
+                confidence_score=0.0,
+                detected_signals=["No procurement type indicators found"],
+                suggestion="This document doesn't contain recognizable procurement format markers. "
+                          "Please verify this is a government solicitation document."
+            )
+
+        # Normalize scores to 0-1 range
+        max_possible = 150  # Rough max if all patterns match
+        best_type = max(scores, key=scores.get)
+        best_score = scores[best_type]
+        normalized_score = min(1.0, best_score / max_possible)
+
+        # Check for conflicting signals (second-best score close to best)
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        conflicting = []
+        if len(sorted_scores) > 1:
+            second_type, second_score = sorted_scores[1]
+            if second_score > best_score * 0.7:  # Within 70% of best
+                conflicting.append(f"Also matches {second_type.value} ({second_score:.0f} points)")
+                normalized_score *= 0.85  # Reduce confidence due to ambiguity
+
+        # Determine confidence level
+        if normalized_score >= self.THRESHOLD_HIGH:
+            confidence = DetectionConfidence.HIGH
+        elif normalized_score >= self.THRESHOLD_MEDIUM:
+            confidence = DetectionConfidence.MEDIUM
+        elif normalized_score >= self.THRESHOLD_LOW:
+            confidence = DetectionConfidence.LOW
+        else:
+            confidence = DetectionConfidence.VERY_LOW
+
+        # Build suggestion based on result
+        suggestion = self._build_suggestion(best_type, confidence, conflicting)
+
+        return ProcurementDetectionResult(
+            procurement_type=best_type,
+            confidence=confidence,
+            confidence_score=normalized_score,
+            detected_signals=signals.get(best_type, []),
+            conflicting_signals=conflicting,
+            suggestion=suggestion
+        )
+
+    def _build_suggestion(
+        self,
+        ptype: ProcurementType,
+        confidence: DetectionConfidence,
+        conflicts: List[str]
+    ) -> str:
+        """Build user-friendly suggestion based on detection result."""
+
+        if confidence == DetectionConfidence.HIGH:
+            return f"Detected as {ptype.value}. Proceeding with appropriate parser."
+
+        if confidence == DetectionConfidence.MEDIUM:
+            if conflicts:
+                return (f"Detected as {ptype.value} but with some ambiguity. "
+                       f"Review the generated outline carefully.")
+            return f"Detected as {ptype.value}. Some manual verification recommended."
+
+        if confidence == DetectionConfidence.LOW:
+            return (f"Possibly {ptype.value}, but confidence is low. "
+                   f"Please confirm this is the correct procurement type, "
+                   f"or select the correct type manually.")
+
+        # VERY_LOW
+        return ("Could not confidently determine procurement type. "
+               "Please select the procurement type manually or contact support.")
+
+
+# ============================================================================
+# Original Document Types (unchanged)
+# ============================================================================
 
 
 class DocumentType(Enum):

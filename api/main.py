@@ -4465,9 +4465,9 @@ async def get_stats(rfp_id: str):
 # ============== Proposal Outline ==============
 
 @app.post("/api/rfp/{rfp_id}/outline")
-async def generate_outline(rfp_id: str, strict_mode: bool = True):
+async def generate_outline(rfp_id: str, strict_mode: bool = True, lenient_mode: bool = False):
     """
-    Generate proposal outline from RFP using v3.0 architecture.
+    Generate proposal outline from RFP using v3.0/v6.0.7 architecture.
 
     v3.0 Architecture (Phases 1-3 Remediation):
     - Uses OutlineOrchestrator with StrictStructureBuilder
@@ -4475,14 +4475,21 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True):
     - Validates structure before returning
     - NO fallback to legacy SmartOutlineGenerator
 
+    v6.0.7 Multi-Vehicle Procurement Support:
+    - Auto-detects procurement type (UCF, GSA RFQ, IDIQ, etc.)
+    - Falls back to SOO-first strategy for non-UCF solicitations
+    - Returns structured error messages with guidance
+
     Args:
         rfp_id: RFP project ID
         strict_mode: If True (default), fail on validation errors.
                     If False, return with requires_manual_review flag.
+        lenient_mode: If True, try alternative parsing strategies on failure.
     """
     from agents.enhanced_compliance.outline_orchestrator import OutlineOrchestrator
     from agents.enhanced_compliance.strict_structure_builder import StructureValidationError
     from agents.enhanced_compliance.validation_engine import ValidationEngine
+    from agents.enhanced_compliance.rfq_skeleton_builder import OutlineGenerationError
 
     rfp = store.get(rfp_id)
     if not rfp:
@@ -4572,25 +4579,82 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True):
                 except Exception as e:
                     print(f"[v3.0 Outline] WARN: Could not read {doc_name}: {e}")
 
-    # ==================== PHASE 2: NO FALLBACK TO REQUIREMENTS ====================
-    # REMOVED: The dangerous fallback that concatenated requirements and lost volume structure
-    # If we can't get full PDF text, we MUST fail and ask user to re-upload
-    if not section_l_text:
+    # ==================== PHASE 2: Extract SOO/SOW Text (v6.0.7) ====================
+    # For GSA RFQs and non-UCF procurements, we need SOO/SOW as structural basis
+    soo_text = ""
+    soo_source = None
+    attachment_texts = {}
+
+    for doc_name, doc_info in document_metadata.items():
+        doc_type = doc_info.get("doc_type", "")
+        file_path = doc_info.get("file_path", "")
+
+        # Collect SOW/SOO documents
+        if doc_type == "sow" and file_path:
+            try:
+                print(f"[v6.0.7] Reading SOO/SOW text from: {file_path}")
+                from agents.enhanced_compliance import MultiFormatParser
+                from agents.enhanced_compliance.models import DocumentType as ParserDocType
+                parser = MultiFormatParser()
+                parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
+
+                sow_content = ""
+                if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
+                    sow_content = parsed.full_text
+                elif parsed and isinstance(parsed, dict) and parsed.get('full_text'):
+                    sow_content = parsed['full_text']
+
+                if sow_content:
+                    if not soo_text:
+                        soo_text = sow_content
+                        soo_source = doc_name
+                    attachment_texts[doc_name] = sow_content
+                    print(f"[v6.0.7] SOO/SOW: {len(sow_content)} chars from {doc_name}")
+            except Exception as e:
+                print(f"[v6.0.7] WARN: Could not read SOO/SOW {doc_name}: {e}")
+
+        # Also collect other attachments for context
+        elif doc_type == "attachment" and file_path:
+            try:
+                from agents.enhanced_compliance import MultiFormatParser
+                from agents.enhanced_compliance.models import DocumentType as ParserDocType
+                parser = MultiFormatParser()
+                parsed = parser.parse_file(file_path, ParserDocType.ATTACHMENT)
+
+                att_content = ""
+                if parsed and hasattr(parsed, 'full_text') and parsed.full_text:
+                    att_content = parsed.full_text
+                elif parsed and isinstance(parsed, dict) and parsed.get('full_text'):
+                    att_content = parsed['full_text']
+
+                if att_content:
+                    attachment_texts[doc_name] = att_content
+            except Exception as e:
+                print(f"[v6.0.7] WARN: Could not read attachment {doc_name}: {e}")
+
+    # ==================== PHASE 2b: Validate We Have Structural Input ====================
+    # For v6.0.7, we can proceed if we have EITHER Section L text OR SOO text
+    if not section_l_text and not soo_text:
         raise HTTPException(
             status_code=422,
             detail={
                 "error": "Cannot determine proposal structure",
-                "reason": "Full Section L/Attachment document text is not available. "
-                         "The extracted requirements do not contain volume structure information.",
-                "action": "Please re-upload the Instructions/Evaluation document (Section L) "
-                         "or the attachment containing proposal format requirements.",
-                "technical_detail": "Volume headers like 'Volume I: Technical Approach' are "
-                                   "needed for accurate structure extraction."
+                "reason": "Neither Section L text nor SOO/SOW text is available. "
+                         "At least one structural document is required.",
+                "action": "Please upload either: (1) Instructions/Evaluation document (Section L), "
+                         "or (2) Statement of Objectives/Work (SOO/SOW) document.",
+                "technical_detail": "UCF-style RFPs need Section L with volume declarations. "
+                                   "GSA RFQs/IDIQs can use SOO sections as structural basis.",
+                "lenient_mode_hint": "Try adding ?lenient_mode=true to attempt alternative parsing."
             }
         )
 
-    # ==================== Generate Outline with v3.0 ====================
-    print(f"[v3.0 Outline] Starting pipeline with {len(section_l_text)} chars from {section_l_source}")
+    # ==================== Generate Outline with v3.0/v6.0.7 ====================
+    print(f"[v6.0.7 Outline] Starting pipeline:")
+    print(f"  - Section L: {len(section_l_text)} chars from {section_l_source}")
+    print(f"  - SOO/SOW: {len(soo_text)} chars from {soo_source}")
+    print(f"  - Attachments: {len(attachment_texts)} documents")
+    print(f"  - Lenient mode: {lenient_mode}")
 
     try:
         # PHASE 1: Enable strict_mode by default
@@ -4600,7 +4664,10 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True):
             requirements=technical,
             evaluation_criteria=section_m,
             rfp_number=rfp.get("solicitation_number", ""),
-            rfp_title=rfp.get("name", "")
+            rfp_title=rfp.get("name", ""),
+            attachment_texts=attachment_texts if attachment_texts else None,
+            soo_text=soo_text if soo_text else None,
+            lenient_mode=lenient_mode
         )
 
         skeleton = result["proposal_skeleton"]
@@ -4728,11 +4795,11 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True):
         # Store outline with metadata
         store.update(rfp_id, update_data)
 
-        print(f"[v3.0 Outline] SUCCESS - Generated {volumes_count} volumes")
+        print(f"[v6.0.7 Outline] SUCCESS - Generated {volumes_count} volumes")
 
         response = {
             "status": "generated",
-            "version": "3.0",
+            "version": "6.0.7",
             "outline": outline_data,
             "skeleton_valid": skeleton_valid,
             "volumes_count": volumes_count,
@@ -4747,35 +4814,108 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True):
             }
         }
 
+        # v6.0.7: Include procurement detection info
+        if orchestrator._detected_procurement:
+            detection = orchestrator._detected_procurement
+            response["procurement_detection"] = {
+                "type": detection.procurement_type.value,
+                "confidence": detection.confidence.value,
+                "confidence_score": detection.confidence_score,
+                "signals": detection.detected_signals[:3]  # Top 3 signals
+            }
+
         # Add review flag if there are issues but we're in lenient mode
         if not skeleton_valid or validation_errors or critical_violations:
             response["requires_manual_review"] = True
 
         return response
 
-    except StructureValidationError as e:
-        # v3.0 raised a structure error - don't fall back to legacy!
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "Structure validation failed",
-                "message": str(e),
-                "suggestion": "Review Section L document for explicit volume declarations"
+    except OutlineGenerationError as e:
+        # v6.0.7: Comprehensive error with all parsing strategies exhausted
+        print(f"[v6.0.7 Outline] OutlineGenerationError: {e}")
+
+        # Extract detailed info from the error
+        error_detail = {
+            "error": "Outline generation failed",
+            "message": str(e),
+            "version": "6.0.7",
+            "procurement_detection": None,
+            "parsing_attempts": [],
+            "suggestions": []
+        }
+
+        # Get procurement detection info if available
+        if orchestrator._detected_procurement:
+            detection = orchestrator._detected_procurement
+            error_detail["procurement_detection"] = {
+                "type": detection.procurement_type.value,
+                "confidence": detection.confidence.value,
+                "confidence_score": detection.confidence_score,
+                "signals": detection.detected_signals[:5]  # Top 5 signals
             }
-        )
+
+            # Add procurement-specific suggestions
+            if detection.procurement_type.value == "gsa_rfq_8_4":
+                error_detail["suggestions"].append(
+                    "This appears to be a GSA FAR 8.4 RFQ. Try uploading the Statement of Objectives (SOO) "
+                    "or Performance Work Statement (PWS) as the primary structural document."
+                )
+            elif detection.procurement_type.value == "idiq_task_order":
+                error_detail["suggestions"].append(
+                    "This appears to be an IDIQ Task Order. Check if there's a base contract "
+                    "with proposal format requirements."
+                )
+
+        # General suggestions
+        error_detail["suggestions"].extend([
+            "Verify the uploaded document contains proposal format instructions.",
+            "Try adding ?lenient_mode=true to attempt alternative parsing strategies.",
+            "Contact support if you believe this is a supported procurement type."
+        ])
+
+        raise HTTPException(status_code=422, detail=error_detail)
+
+    except StructureValidationError as e:
+        # v3.0/v6.0.7: Structure error with guidance
+        print(f"[v6.0.7 Outline] StructureValidationError: {e}")
+
+        error_detail = {
+            "error": "Structure validation failed",
+            "message": str(e),
+            "version": "6.0.7",
+            "suggestions": [
+                "Review the uploaded document for explicit volume declarations "
+                "(e.g., 'Volume I: Technical Approach', 'Volume II: Cost').",
+                "For GSA RFQs without traditional volumes, ensure SOO/SOW document is uploaded.",
+                "Check if this is a commercial simplified acquisition - these may not have "
+                "standard volume structures."
+            ]
+        }
+
+        # Add lenient mode hint
+        if not lenient_mode:
+            error_detail["lenient_mode_hint"] = (
+                "Try adding ?lenient_mode=true to attempt alternative parsing strategies "
+                "including SOO-first fallback for GSA RFQs."
+            )
+
+        raise HTTPException(status_code=422, detail=error_detail)
+
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
         import traceback
-        print(f"[v3.0 Outline] FAILED - Exception: {e}")
+        print(f"[v6.0.7 Outline] FAILED - Exception: {e}")
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail={
                 "error": "Outline generation failed",
                 "message": str(e),
-                "type": type(e).__name__
+                "type": type(e).__name__,
+                "version": "6.0.7",
+                "suggestion": "This is an unexpected error. Please report to support with the solicitation details."
             }
         )
 
