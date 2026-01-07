@@ -4966,10 +4966,77 @@ async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
     
     requirements = rfp.get("requirements", [])
 
-    # v3.2: Use proper proposal title, not source document filename
-    # The RFP name might be "Attachment 1. Stament Of Work" which is wrong
-    # v4.0 FIX: Use 'or' to handle None values (not just missing keys)
-    solicitation_number = rfp.get("solicitation_number") or rfp_id
+    # v6.0.6: GLOBAL METADATA OVERRIDE - Extract official solicitation number
+    # Priority: 1) Already extracted and stored 2) Extract from document text 3) Use rfp_id as fallback
+    stored_sol_num = rfp.get("solicitation_number")
+
+    # v6.0.6: Check if stored solicitation number is an official pattern (not internal ID)
+    import re as re_module
+    official_patterns = [
+        r'^FA\d{4}',      # Air Force
+        r'^W\d{3}[A-Z]{2}', # Army
+        r'^N\d{5}',       # Navy
+        r'^SP\d{4}',      # DLA
+        r'^\d{2}[A-Z]\d{5}', # NIH
+        r'^47QF',         # GSA
+        r'^75[DFH]',      # HHS
+        r'^GS-',          # GSA Schedule
+    ]
+    internal_pattern = r'^RFP[-_]?[A-F0-9]{6,}'
+
+    def is_official_sol_num(sol_num: str) -> bool:
+        if not sol_num:
+            return False
+        sol_upper = sol_num.upper()
+        is_official = any(re_module.match(p, sol_upper) for p in official_patterns)
+        is_internal = bool(re_module.match(internal_pattern, sol_upper))
+        return is_official and not is_internal
+
+    solicitation_number = None
+
+    # Try stored value first
+    if stored_sol_num and is_official_sol_num(stored_sol_num):
+        solicitation_number = stored_sol_num
+        print(f"[v6.0.6] Using stored official solicitation: {solicitation_number}")
+    else:
+        # v6.0.6: Try to extract from document text
+        # Look for official solicitation patterns in Section L text or requirements
+        section_l_text = ""
+        if "section_l" in rfp:
+            section_l_text = rfp.get("section_l", {}).get("text", "")
+        if not section_l_text and "documents" in rfp:
+            for doc in rfp.get("documents", []):
+                if doc.get("document_type") in ["section_l", "rfp", "solicitation"]:
+                    section_l_text = doc.get("text", "")
+                    break
+
+        if section_l_text:
+            # Search for official solicitation number patterns
+            sol_patterns = [
+                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(FA\d{4}[-]?\d{2}[-]?[RQ][-]?[A-Z0-9]+)',
+                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4})',
+                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4})',
+                r'(FA\d{11})',  # Full Air Force contract number
+                r'(FA\d{4}[-]?\d{2}[-]?[RQ][-]?\d{4})',  # Air Force RFP format
+            ]
+
+            for pattern in sol_patterns:
+                match = re_module.search(pattern, section_l_text, re_module.IGNORECASE)
+                if match:
+                    extracted = match.group(1).upper()
+                    if is_official_sol_num(extracted):
+                        solicitation_number = extracted
+                        print(f"[v6.0.6] EXTRACTED official solicitation from document: {solicitation_number}")
+                        # Update the store so future exports use this
+                        store.update(rfp_id, {"solicitation_number": solicitation_number})
+                        break
+
+    # Final fallback - use stored value or rfp_id
+    if not solicitation_number:
+        solicitation_number = stored_sol_num or rfp_id
+        if re_module.match(internal_pattern, (solicitation_number or "").upper()):
+            print(f"[v6.0.6] WARNING: Using internal ID '{solicitation_number}' - no official pattern found")
+
     rfp_name = rfp.get("name") or ""
 
     # Don't use source document names as title
