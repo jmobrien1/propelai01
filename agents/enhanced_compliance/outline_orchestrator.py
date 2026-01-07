@@ -485,6 +485,64 @@ class OutlineOrchestrator:
         # v6.0.3: Detect if PDF tables were found (for page limit validation)
         has_tables_detected = bool(schema.get('_tables_detected', False))
 
+        # ========================================================================
+        # v6.0.4: BINARY INTEGRITY GATE - Hard validation before proceeding
+        # ========================================================================
+        # The Problem: The system returns partial, non-compliant outlines with
+        # hallucinated internal IDs like "RFP-866BCC3A" instead of official
+        # solicitation numbers, or missing critical page limits.
+        #
+        # The Fix: If rfp_number starts with "RFP-" (internal hallucination) OR
+        # if Volume 1 (Technical) page limit is null, raise StructureValidationError.
+        # This is a HARD BLOCK - no partial outlines allowed.
+        # ========================================================================
+
+        # v6.0.4: Get the extracted rfp_number from schema (it may have been updated by parser)
+        extracted_rfp_number = schema.get('rfp_number') or rfp_number
+
+        # v6.0.4 CHECK 1: Reject internal ID hallucinations
+        if extracted_rfp_number:
+            import re
+            internal_id_pattern = r'^RFP[-_]?[A-F0-9]{6,}'
+            if re.match(internal_id_pattern, extracted_rfp_number.upper()):
+                error_msg = (
+                    f"[v6.0.4 BINARY INTEGRITY GATE FAIL] "
+                    f"Detected internal ID hallucination: '{extracted_rfp_number}'. "
+                    f"System generated internal ID instead of extracting official solicitation number. "
+                    f"Cannot generate compliant outline without valid solicitation number from SF1449 Block 5."
+                )
+                print(f"[v6.0.4 BINARY GATE] ✗ HARD BLOCK: {error_msg}")
+                raise StructureValidationError(error_msg)
+
+        # v6.0.4 CHECK 2: Reject missing Technical volume page limit
+        volumes = schema.get('volumes', [])
+        if volumes:
+            # Find Volume 1 / Technical volume
+            technical_volume = None
+            for vol in volumes:
+                vol_title = vol.get('volume_title', '').lower()
+                vol_number = vol.get('volume_number', 0)
+                # Volume 1 is typically Technical, or look for "technical" keyword
+                if vol_number == 1 or 'technical' in vol_title or 'approach' in vol_title:
+                    technical_volume = vol
+                    break
+
+            if technical_volume:
+                page_limit = technical_volume.get('page_limit')
+                if page_limit is None and has_tables_detected:
+                    vol_title = technical_volume.get('volume_title', 'Volume 1')
+                    error_msg = (
+                        f"[v6.0.4 BINARY INTEGRITY GATE FAIL] "
+                        f"'{vol_title}' has no page limit specified but PDF tables were detected. "
+                        f"The page limit MUST be extracted from the RFP table using row-column intersection. "
+                        f"Cannot generate compliant outline without deterministic page constraints."
+                    )
+                    print(f"[v6.0.4 BINARY GATE] ✗ HARD BLOCK: {error_msg}")
+                    raise StructureValidationError(error_msg)
+
+        print(f"[v6.0.4 BINARY GATE] ✓ Passed: rfp_number='{extracted_rfp_number}', "
+              f"volumes_with_limits={sum(1 for v in volumes if v.get('page_limit') is not None)}/{len(volumes)}")
+
         # v6.0.3: BINARY IRON TRIANGLE GATE - Supervisor validation
         schema_validation = None
         if self.supervisor:
