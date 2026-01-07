@@ -4545,6 +4545,9 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True, lenient_mode: 
     section_l_text = ""
     section_l_source = None
 
+    # Get document_metadata early - needed for both Section L and SOO extraction (v6.0.7)
+    document_metadata = rfp.get("document_metadata", {})
+
     # Try to get full text from stored section_l_full_text (set during processing)
     if rfp.get("section_l_full_text"):
         section_l_text = rfp["section_l_full_text"]
@@ -4553,7 +4556,6 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True, lenient_mode: 
 
     # Fallback: Try to read from instructions_evaluation document
     if not section_l_text:
-        document_metadata = rfp.get("document_metadata", {})
         print(f"[v3.0 Outline] document_metadata has {len(document_metadata)} documents: {list(document_metadata.keys())}")
 
         for doc_name, doc_info in document_metadata.items():
