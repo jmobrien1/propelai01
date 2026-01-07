@@ -1482,6 +1482,18 @@ class SectionLParser:
                     else:
                         title = title[:80].rsplit(' ', 1)[0]
 
+                # v6.0.6: N/A NEGATION GATE FOR VOLUMES
+                # Check for "N/A", "Not Applicable", "Reserved" in the 100 chars after the match
+                na_check_start = match.end()
+                na_check_end = min(len(text), match.end() + 100)
+                na_check_text = text[na_check_start:na_check_end].upper()
+                na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED', 'INTENTIONALLY LEFT BLANK']
+                is_na_volume = any(na_pat in na_check_text for na_pat in na_patterns)
+
+                if is_na_volume:
+                    print(f"[v6.0.6] N/A GATE: Volume '{title}' marked as N/A - EXCLUDED")
+                    continue  # Skip this volume entirely
+
                 # Skip if we've seen this title
                 if title.lower() in seen_titles:
                     continue
@@ -1493,7 +1505,7 @@ class SectionLParser:
                 )
 
                 if page_limit and page_limit_source:
-                    print(f"[v5.0.6] Volume '{title}' page limit: {page_limit} (source: {page_limit_source})")
+                    print(f"[v6.0.6] Volume '{title}' page limit: {page_limit} (source: {page_limit_source})")
 
                 volumes.append(VolumeInstruction(
                     volume_id=f"VOL-{vol_num}",
@@ -1554,6 +1566,17 @@ class SectionLParser:
                 # Clean title - remove trailing punctuation but preserve "Volume"
                 title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
 
+                # v6.0.6: N/A NEGATION GATE FOR VOLUMES
+                # Check for "N/A", "Not Applicable", "Reserved" in the same line or following 100 chars
+                line_idx = text.find(line)
+                na_check_text = text[line_idx:min(len(text), line_idx + len(line) + 100)].upper()
+                na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED', 'INTENTIONALLY LEFT BLANK']
+                is_na_volume = any(na_pat in na_check_text for na_pat in na_patterns)
+
+                if is_na_volume:
+                    print(f"[v6.0.6] N/A GATE: Volume '{title}' marked as N/A - EXCLUDED")
+                    continue  # Skip this volume entirely
+
                 # Skip duplicates
                 if title.lower() in seen_titles:
                     continue
@@ -1564,7 +1587,7 @@ class SectionLParser:
                     title, table_page_limits, text, text.find(line)
                 )
 
-                print(f"[v5.0.9] Numbered volume found: '{title}' (Vol {vol_num}), "
+                print(f"[v6.0.6] Numbered volume found: '{title}' (Vol {vol_num}), "
                       f"page_limit={page_limit}, source={page_limit_source}")
 
                 volumes.append(VolumeInstruction(
@@ -1586,41 +1609,94 @@ class SectionLParser:
         position: int
     ) -> Tuple[Optional[int], Optional[str]]:
         """
-        v5.0.9: Unified page limit lookup for volumes.
+        v6.0.6: STRICT RELATIONAL PAGE LIMIT BINDING
 
-        Checks in order:
-        1. Exact match in table data
-        2. Partial match in table data (e.g., "Technical" in "Technical Volume")
-        3. Nearby text extraction
+        CRITICAL FIX: v6.0.5's partial matching was too loose.
+        This version implements DETERMINISTIC VOLUME BINDING:
+
+        Priority (highest to lowest):
+        1. Volume number key (e.g., 'vol 1', 'volume 1') - MOST RELIABLE
+        2. Primary keyword match (technical, cost, contract, past performance)
+        3. Exact title match
+        4. Partial title containment
+        5. Word intersection (fallback)
+        6. Nearby text extraction (last resort)
+
+        The "Binding Rule": Once a volume number key matches, that value is LOCKED.
         """
         page_limit = None
         page_limit_source = None
+        title_lower = title.lower()
 
-        # Try exact match in table data
-        if title.lower() in table_page_limits:
-            _, page_limit = table_page_limits[title.lower()]
-            page_limit_source = "table"
-        else:
-            # Try partial match (e.g., "Technical" matches "Technical Proposal")
-            for table_key, (_, limit) in table_page_limits.items():
-                # Check both directions for partial match
-                if title.lower() in table_key or table_key in title.lower():
-                    page_limit = limit
-                    page_limit_source = "table_partial"
-                    break
-                # Also check key words (Technical, Cost, Contract, etc.)
-                title_words = set(title.lower().split())
-                key_words = set(table_key.split())
-                if title_words & key_words:  # Intersection
-                    page_limit = limit
-                    page_limit_source = "table_keyword"
-                    break
+        # v6.0.6: STEP 1 - Infer volume number from title keywords
+        # This is the MOST RELIABLE binding method
+        inferred_vol_num = None
+        if any(kw in title_lower for kw in ['technical', 'tech', 'executive', 'management', 'approach', 'summary']):
+            inferred_vol_num = 1
+        elif any(kw in title_lower for kw in ['cost', 'price', 'pricing', 'business']):
+            inferred_vol_num = 2
+        elif any(kw in title_lower for kw in ['contract', 'documentation', 'administrative', 'admin', 'certifications']):
+            inferred_vol_num = 3
+        elif any(kw in title_lower for kw in ['past performance', 'experience', 'references']):
+            inferred_vol_num = 4
 
-        # Fall back to nearby text extraction if table didn't have it
+        # v6.0.6: STEP 2 - Try volume number key FIRST (strict binding)
+        if inferred_vol_num:
+            vol_keys = [
+                f'vol {inferred_vol_num}',
+                f'volume {inferred_vol_num}',
+                f'vol {["i", "ii", "iii", "iv"][inferred_vol_num - 1] if inferred_vol_num <= 4 else inferred_vol_num}'
+            ]
+            for vol_key in vol_keys:
+                if vol_key in table_page_limits:
+                    _, page_limit = table_page_limits[vol_key]
+                    page_limit_source = "vol_num_key"
+                    print(f"[v6.0.6] STRICT BIND: '{title}' -> Volume {inferred_vol_num} -> {page_limit} pages (key: '{vol_key}')")
+                    return page_limit, page_limit_source
+
+        # v6.0.6: STEP 3 - Try primary keyword keys
+        primary_keywords = ['technical', 'cost', 'contract', 'past performance', 'executive']
+        for kw in primary_keywords:
+            if kw in title_lower and kw in table_page_limits:
+                _, page_limit = table_page_limits[kw]
+                page_limit_source = "primary_keyword"
+                print(f"[v6.0.6] PRIMARY KEYWORD: '{title}' matched '{kw}' -> {page_limit} pages")
+                return page_limit, page_limit_source
+
+        # v6.0.6: STEP 4 - Exact title match
+        if title_lower in table_page_limits:
+            _, page_limit = table_page_limits[title_lower]
+            page_limit_source = "exact_match"
+            print(f"[v6.0.6] EXACT MATCH: '{title}' -> {page_limit} pages")
+            return page_limit, page_limit_source
+
+        # v6.0.6: STEP 5 - Partial containment (bidirectional)
+        for table_key, (_, limit) in table_page_limits.items():
+            if title_lower in table_key or table_key in title_lower:
+                page_limit = limit
+                page_limit_source = "partial_containment"
+                print(f"[v6.0.6] PARTIAL: '{title}' <-> '{table_key}' -> {page_limit} pages")
+                return page_limit, page_limit_source
+
+        # v6.0.6: STEP 6 - Word intersection
+        title_words = set(title_lower.split())
+        for table_key, (_, limit) in table_page_limits.items():
+            key_words = set(table_key.split())
+            intersection = title_words & key_words
+            # Require meaningful intersection (not just articles)
+            meaningful_words = intersection - {'and', 'the', 'of', 'for', 'to', 'a', 'an', '&'}
+            if meaningful_words:
+                page_limit = limit
+                page_limit_source = "word_intersection"
+                print(f"[v6.0.6] WORD MATCH: '{title}' ∩ '{table_key}' = {meaningful_words} -> {page_limit} pages")
+                return page_limit, page_limit_source
+
+        # v6.0.6: STEP 7 - Fall back to nearby text extraction (last resort)
         if page_limit is None:
             page_limit = self._find_page_limit_near(text, position, title)
             if page_limit:
                 page_limit_source = "nearby_text"
+                print(f"[v6.0.6] FALLBACK (nearby text): '{title}' -> {page_limit} pages")
 
         return page_limit, page_limit_source
 
