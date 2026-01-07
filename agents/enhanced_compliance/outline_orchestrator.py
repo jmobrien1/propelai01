@@ -12,7 +12,14 @@ v6.0: Added Supervisor validation gate that validates parsing results and trigge
       re-search strategies on failures. This is the "Agentic Structural Verification"
       pattern replacing deterministic regex-only parsing.
 
+v6.0.7: Added Multi-Vehicle Procurement Support with Polymorphic Factory Pattern.
+        - Auto-detects procurement type (UCF, GSA RFQ, IDIQ, etc.)
+        - Uses SOO-First fallback for GSA RFQs when Section L structure absent
+        - Provides structured error messages with actionable guidance
+        - "Fail Loud, Not Wrong" principle - never hallucinate structure
+
 Key Principle: Structure comes from Section L ONLY. Content comes from Section C.
+For GSA RFQs: Structure comes from SOO when Section L is absent.
 """
 
 from typing import Dict, List, Any, Optional
@@ -28,6 +35,21 @@ from .strict_structure_builder import (
     StructureValidationError
 )
 from .content_injector import ContentInjector, InjectionResult
+
+# v6.0.7: Multi-Vehicle Procurement Support
+from .models import (
+    ProcurementType,
+    DetectionConfidence,
+    ProcurementDetectionResult,
+    ProcurementTypeDetector
+)
+from .rfq_skeleton_builder import (
+    RFQSkeletonBuilder,
+    RFQStructureAnalysis,
+    OutlineGenerationError,
+    create_unsupported_format_error,
+    create_missing_structure_error
+)
 
 
 logger = logging.getLogger(__name__)
@@ -410,10 +432,19 @@ class OutlineOrchestrator:
         """
         self.strict_mode = strict_mode
         self.enable_supervisor = enable_supervisor
+
+        # v6.0.7: Multi-vehicle procurement support
+        self.procurement_detector = ProcurementTypeDetector()
+        self.rfq_builder = RFQSkeletonBuilder()
+
+        # UCF-style parser/builder (existing)
         self.parser = SectionLParser()
         self.structure_builder = StrictStructureBuilder(strict_mode=strict_mode)
         self.content_injector = ContentInjector()
         self.supervisor = SupervisorValidator() if enable_supervisor else None
+
+        # v6.0.7: Track detected procurement type for error messages
+        self._detected_procurement: Optional[ProcurementDetectionResult] = None
 
     def generate_outline(
         self,
@@ -423,12 +454,17 @@ class OutlineOrchestrator:
         rfp_number: str = "",
         rfp_title: str = "",
         attachment_texts: Optional[Dict[str, str]] = None,
-        pdf_path: Optional[str] = None
+        pdf_path: Optional[str] = None,
+        soo_text: Optional[str] = None,
+        lenient_mode: bool = False
     ) -> Dict[str, Any]:
         """
         Generate annotated outline using two-phase pipeline.
 
         This is the main entry point for outline generation.
+
+        v6.0.7: Added multi-vehicle procurement support with auto-detection
+        and SOO-first fallback for GSA RFQs.
 
         Args:
             section_l_text: Full text of Section L instructions
@@ -438,6 +474,8 @@ class OutlineOrchestrator:
             rfp_title: RFP title
             attachment_texts: Optional dict of structural attachment texts
             pdf_path: v6.0.2 - Path to source PDF for spatial extraction (SF1449, tables)
+            soo_text: v6.0.7 - Statement of Objectives text (for GSA RFQ fallback)
+            lenient_mode: v6.0.7 - If True, allow fallback strategies with warnings
 
         Returns:
             Dict containing:
@@ -445,6 +483,7 @@ class OutlineOrchestrator:
             - annotated_outline: Populated outline from Component B
             - injection_metadata: Statistics about the injection
             - unmapped_requirements: Requirements that couldn't be mapped
+            - procurement_detection: v6.0.7 - Detection result with confidence
 
         Raises:
             StructureValidationError: If strict_mode and structure is invalid
@@ -456,20 +495,104 @@ class OutlineOrchestrator:
         if pdf_path:
             logger.info(f"[v6.0.2] PDF path provided for spatial extraction: {pdf_path}")
 
+        # ========================================================================
+        # v6.0.7: PROCUREMENT TYPE DETECTION
+        # ========================================================================
+        # Auto-detect procurement type to determine parsing strategy.
+        # This runs BEFORE any parsing to guide the factory pattern.
+        # ========================================================================
+
+        self._detected_procurement = self.procurement_detector.detect(
+            section_l_text,
+            solicitation_number=rfp_number
+        )
+
+        print(f"[v6.0.7] Procurement Detection: type={self._detected_procurement.procurement_type.value}, "
+              f"confidence={self._detected_procurement.confidence.value} "
+              f"({self._detected_procurement.confidence_score:.2%})")
+
+        if self._detected_procurement.detected_signals:
+            print(f"[v6.0.7] Detection signals: {self._detected_procurement.detected_signals[:3]}")
+
+        # v6.0.7: If detected as GSA RFQ with high confidence, try RFQ-first approach
+        if (self._detected_procurement.procurement_type == ProcurementType.GSA_RFQ_8_4 and
+            self._detected_procurement.confidence in [DetectionConfidence.HIGH, DetectionConfidence.MEDIUM]):
+
+            print(f"[v6.0.7] Detected GSA RFQ (FAR 8.4) - attempting RFQ-first strategy")
+            try:
+                return self._generate_rfq_outline(
+                    section_l_text=section_l_text,
+                    soo_text=soo_text,
+                    requirements=requirements,
+                    evaluation_criteria=evaluation_criteria,
+                    rfp_number=rfp_number,
+                    rfp_title=rfp_title,
+                    attachment_texts=attachment_texts
+                )
+            except StructureValidationError as e:
+                print(f"[v6.0.7] RFQ strategy failed, will try UCF fallback: {str(e)[:100]}")
+                # Fall through to UCF parsing
+
         # Debug: Print for Render logs
         print(f"[v3.0 Parser] Section L text preview (first 500 chars): {section_l_text[:500]}")
+
+        # ========================================================================
+        # v6.0.7: UCF PARSING WITH RFQ FALLBACK
+        # ========================================================================
+        # Try UCF parsing first. If it fails and we detect a non-UCF format,
+        # attempt RFQ fallback strategy before giving up.
+        # ========================================================================
 
         # Phase 1: Parse Section L into schema
         # v6.0.2: Pass pdf_path for spatial extraction (SF1449, digit-targeting tables)
         logger.info("Phase 1: Parsing Section L into schema...")
-        schema = self.parser.parse(
-            section_l_text=section_l_text,
-            rfp_number=rfp_number,
-            rfp_title=rfp_title,
-            attachment_texts=attachment_texts,
-            strict_mode=self.strict_mode,
-            pdf_path=pdf_path
-        )
+
+        try:
+            schema = self.parser.parse(
+                section_l_text=section_l_text,
+                rfp_number=rfp_number,
+                rfp_title=rfp_title,
+                attachment_texts=attachment_texts,
+                strict_mode=self.strict_mode,
+                pdf_path=pdf_path
+            )
+        except (StructureValidationError, ParserValidationError) as ucf_error:
+            # v6.0.7: UCF parsing failed - try RFQ fallback if appropriate
+            print(f"[v6.0.7] UCF parsing failed: {str(ucf_error)[:100]}")
+
+            # Check if this looks like a non-UCF format that RFQ builder might handle
+            if self._detected_procurement and self._detected_procurement.procurement_type in [
+                ProcurementType.GSA_RFQ_8_4,
+                ProcurementType.GSA_BPA_CALL,
+                ProcurementType.SIMPLIFIED_SAP
+            ]:
+                print(f"[v6.0.7] Detected {self._detected_procurement.procurement_type.value} - "
+                      f"attempting RFQ fallback strategy")
+                try:
+                    return self._generate_rfq_outline(
+                        section_l_text=section_l_text,
+                        soo_text=soo_text,
+                        requirements=requirements,
+                        evaluation_criteria=evaluation_criteria,
+                        rfp_number=rfp_number,
+                        rfp_title=rfp_title,
+                        attachment_texts=attachment_texts
+                    )
+                except StructureValidationError as rfq_error:
+                    # Both UCF and RFQ strategies failed - provide comprehensive error
+                    print(f"[v6.0.7] RFQ fallback also failed: {str(rfq_error)[:100]}")
+                    raise StructureValidationError(
+                        self._build_comprehensive_error_message(
+                            ucf_error=str(ucf_error),
+                            rfq_error=str(rfq_error),
+                            detection=self._detected_procurement
+                        )
+                    )
+
+            # Not a format we can handle with RFQ fallback - re-raise with enhanced message
+            raise StructureValidationError(
+                self._build_ucf_failure_message(str(ucf_error), self._detected_procurement)
+            )
 
         # Debug: Print parser results for Render logs
         print(f"[v3.0 Parser] Found {len(schema.get('volumes', []))} volumes")
@@ -680,8 +803,300 @@ class OutlineOrchestrator:
                     ],
                     'metrics': injection_validation.metrics if injection_validation else {}
                 } if injection_validation else None
-            }
+            },
+            # v6.0.7: Procurement detection results
+            'procurement_detection': {
+                'type': self._detected_procurement.procurement_type.value if self._detected_procurement else 'unknown',
+                'confidence': self._detected_procurement.confidence.value if self._detected_procurement else 'very_low',
+                'confidence_score': self._detected_procurement.confidence_score if self._detected_procurement else 0.0,
+                'detected_signals': self._detected_procurement.detected_signals[:5] if self._detected_procurement else [],
+            } if self._detected_procurement else None
         }
+
+    def _generate_rfq_outline(
+        self,
+        section_l_text: str,
+        soo_text: Optional[str],
+        requirements: List[Dict],
+        evaluation_criteria: List[Dict],
+        rfp_number: str,
+        rfp_title: str,
+        attachment_texts: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        v6.0.7: Generate outline using RFQ/SOO-first strategy.
+
+        This is used for GSA RFQs (FAR 8.4) and similar procurements
+        that don't follow UCF structure.
+
+        Args:
+            section_l_text: Main RFQ document text
+            soo_text: Statement of Objectives text (may be in attachments)
+            requirements: Extracted requirements
+            evaluation_criteria: Extracted evaluation factors
+            rfp_number: Solicitation number
+            rfp_title: RFP title
+            attachment_texts: Dict of attachment name -> text
+
+        Returns:
+            Dict with skeleton, outline, and metadata
+
+        Raises:
+            StructureValidationError: If structure cannot be determined
+        """
+        print(f"[v6.0.7] RFQ Outline Generation: Starting SOO-first strategy")
+
+        # Try to find SOO text in attachments if not provided directly
+        if not soo_text and attachment_texts:
+            for name, text in attachment_texts.items():
+                name_lower = name.lower()
+                if 'soo' in name_lower or 'statement of objectives' in name_lower:
+                    soo_text = text
+                    print(f"[v6.0.7] Found SOO in attachment: {name}")
+                    break
+                elif 'sow' in name_lower or 'statement of work' in name_lower:
+                    soo_text = text
+                    print(f"[v6.0.7] Found SOW in attachment: {name}")
+                    break
+
+        # Analyze RFQ structure
+        analysis = self.rfq_builder.analyze_structure(
+            rfq_text=section_l_text,
+            soo_text=soo_text,
+            attachments=attachment_texts
+        )
+
+        print(f"[v6.0.7] RFQ Analysis: can_build={analysis.can_build_skeleton}, "
+              f"confidence={analysis.confidence_score:.2%}, "
+              f"sections={len(analysis.soo_sections)}")
+
+        if not analysis.can_build_skeleton:
+            # Cannot build - raise with detailed message
+            error_msg = self.rfq_builder.get_failure_message(analysis)
+            print(f"[v6.0.7] RFQ Strategy FAILED - insufficient structure")
+            raise StructureValidationError(error_msg)
+
+        # Build skeleton from SOO structure
+        skeleton = self.rfq_builder.build_skeleton(
+            analysis=analysis,
+            rfp_number=rfp_number,
+            rfp_title=rfp_title
+        )
+
+        print(f"[v6.0.7] Built RFQ skeleton: {len(skeleton.volumes)} volumes")
+
+        # Convert to dict for injection
+        skeleton_dict = self.structure_builder.to_state_dict(skeleton)
+
+        # Inject requirements using standard content injector
+        result = self.content_injector.inject(
+            skeleton=skeleton_dict,
+            requirements=requirements,
+            evaluation_criteria=evaluation_criteria
+        )
+
+        print(f"[v6.0.7] Content injection: {result.mapped_count}/{result.total_requirements} mapped")
+
+        return {
+            'proposal_skeleton': skeleton_dict,
+            'annotated_outline': result.annotated_outline,
+            'injection_metadata': {
+                'total_requirements': result.total_requirements,
+                'mapped_count': result.mapped_count,
+                'unmapped_count': len(result.unmapped_requirements),
+                'low_confidence_count': len(result.low_confidence_mappings),
+                'warnings': result.warnings + skeleton.validation_warnings,
+                'schema_warnings': [],
+                'skeleton_warnings': skeleton.validation_warnings,
+                'rfq_analysis': {
+                    'has_soo': analysis.has_soo,
+                    'has_sow': analysis.has_sow,
+                    'sections_found': len(analysis.soo_sections),
+                    'phases': analysis.detected_phases,
+                }
+            },
+            'extracted_metadata': {
+                'solicitation_number': rfp_number,
+                'rfp_title': rfp_title,
+                'due_date': None,
+                'total_page_limit': skeleton.total_page_limit,
+            },
+            'unmapped_requirements': result.unmapped_requirements,
+            'low_confidence_mappings': [
+                {
+                    'requirement_id': m.requirement_id,
+                    'requirement_text': m.requirement_text,
+                    'target_section': m.target_section_id,
+                    'confidence': m.confidence.value,
+                    'rationale': m.rationale
+                }
+                for m in result.low_confidence_mappings
+            ],
+            'supervisor_validation': None,  # Not run for RFQ strategy
+            'procurement_detection': {
+                'type': self._detected_procurement.procurement_type.value if self._detected_procurement else 'gsa_rfq_8_4',
+                'confidence': self._detected_procurement.confidence.value if self._detected_procurement else 'medium',
+                'confidence_score': self._detected_procurement.confidence_score if self._detected_procurement else 0.7,
+                'detected_signals': self._detected_procurement.detected_signals[:5] if self._detected_procurement else [],
+            },
+            'generation_strategy': 'rfq_soo_first',
+            'requires_manual_review': True,  # Always flag RFQ outlines for review
+        }
+
+    def _build_comprehensive_error_message(
+        self,
+        ucf_error: str,
+        rfq_error: str,
+        detection: Optional[ProcurementDetectionResult]
+    ) -> str:
+        """
+        v6.0.7: Build comprehensive error when both UCF and RFQ strategies fail.
+
+        This is the "Fail Loud, Not Wrong" principle - provide actionable
+        guidance rather than a cryptic error.
+        """
+        lines = [
+            "═" * 60,
+            "OUTLINE GENERATION FAILED",
+            "═" * 60,
+            "",
+            "PropelAI tried multiple strategies but could not determine",
+            "the proposal structure from your uploaded documents.",
+            "",
+        ]
+
+        # Detection info
+        if detection:
+            lines.extend([
+                f"Detected Format: {detection.procurement_type.value}",
+                f"Detection Confidence: {detection.confidence_score:.0%}",
+                "",
+            ])
+
+        # What was tried
+        lines.extend([
+            "STRATEGIES ATTEMPTED:",
+            "─" * 40,
+            "",
+            "1. UCF (Section L/M/C) Strategy:",
+            f"   ✗ {ucf_error[:200]}..." if len(ucf_error) > 200 else f"   ✗ {ucf_error}",
+            "",
+            "2. RFQ (SOO-First) Strategy:",
+            f"   ✗ {rfq_error[:200]}..." if len(rfq_error) > 200 else f"   ✗ {rfq_error}",
+            "",
+        ])
+
+        # Suggestions
+        lines.extend([
+            "WHAT YOU CAN TRY:",
+            "─" * 40,
+            "",
+            "1. Upload Additional Documents:",
+            "   • For traditional RFPs: Upload Section L (Instructions to Offerors)",
+            "   • For GSA RFQs: Upload Statement of Objectives (SOO) separately",
+            "",
+            "2. Check Document Classification:",
+            "   • Ensure the main RFQ is uploaded to 'Main Solicitation'",
+            "   • Ensure SOO/SOW is uploaded to 'Technical Requirements'",
+            "",
+            "3. Manual Outline Creation:",
+            "   • Use the Compliance Matrix to draft your response",
+            "   • Contact your proposal manager for structure guidance",
+            "",
+            "4. Contact Support:",
+            "   • If you believe this format should be supported",
+            "   • Include solicitation number in your request",
+            "",
+            "═" * 60,
+        ])
+
+        return "\n".join(lines)
+
+    def _build_ucf_failure_message(
+        self,
+        original_error: str,
+        detection: Optional[ProcurementDetectionResult]
+    ) -> str:
+        """
+        v6.0.7: Build enhanced UCF failure message with guidance.
+        """
+        lines = [
+            "═" * 60,
+            "PROPOSAL STRUCTURE NOT FOUND",
+            "═" * 60,
+            "",
+        ]
+
+        # Detection info
+        if detection:
+            lines.extend([
+                f"Detected Format: {detection.procurement_type.value}",
+                f"Detection Confidence: {detection.confidence_score:.0%}",
+            ])
+
+            if detection.detected_signals:
+                lines.append(f"Signals: {', '.join(detection.detected_signals[:3])}")
+            lines.append("")
+
+        # Original error
+        lines.extend([
+            "ISSUE:",
+            "─" * 40,
+            original_error,
+            "",
+        ])
+
+        # Format-specific guidance
+        if detection:
+            if detection.procurement_type == ProcurementType.UCF_STANDARD:
+                lines.extend([
+                    "This appears to be a standard UCF (FAR 15) procurement.",
+                    "The system expected to find 'Volume I:', 'Volume II:' declarations",
+                    "in Section L but could not locate them.",
+                    "",
+                    "SUGGESTIONS:",
+                    "• Verify Section L document is fully uploaded",
+                    "• Check that volume declarations are present in the RFP",
+                    "• Try re-uploading the Section L attachment specifically",
+                ])
+            elif detection.procurement_type in [ProcurementType.GSA_RFQ_8_4, ProcurementType.GSA_BPA_CALL]:
+                lines.extend([
+                    "This appears to be a GSA/FAR 8.4 procurement.",
+                    "These don't use traditional Section L structure.",
+                    "",
+                    "SUGGESTIONS:",
+                    "• Upload the Statement of Objectives (SOO) document",
+                    "• Ensure quote instructions are in the main RFQ",
+                    "• GSA RFQ support is being enhanced - contact support",
+                ])
+            elif detection.procurement_type == ProcurementType.IDIQ_TASK_ORDER:
+                lines.extend([
+                    "This appears to be an IDIQ Task Order (FAR 16.505).",
+                    "Task orders have varying structures based on the IDIQ vehicle.",
+                    "",
+                    "SUGGESTIONS:",
+                    "• Check the Task Order Request for structure requirements",
+                    "• Reference the base IDIQ contract for proposal format",
+                    "• IDIQ support is being enhanced - contact support",
+                ])
+            else:
+                lines.extend([
+                    "SUGGESTIONS:",
+                    "• Upload proposal instruction documents",
+                    "• Verify document classification in upload wizard",
+                    "• Contact support for assistance with this format",
+                ])
+        else:
+            lines.extend([
+                "SUGGESTIONS:",
+                "• Upload Section L (Instructions to Offerors) document",
+                "• Verify all solicitation documents are uploaded",
+                "• Check that documents contain proposal structure instructions",
+            ])
+
+        lines.extend(["", "═" * 60])
+
+        return "\n".join(lines)
 
     def generate_from_state(self, state: Dict[str, Any], pdf_path: Optional[str] = None) -> Dict[str, Any]:
         """
