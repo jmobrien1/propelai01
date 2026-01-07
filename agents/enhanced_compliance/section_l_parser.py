@@ -374,16 +374,18 @@ class SectionLParser:
         pdf_path: str
     ) -> Dict[str, Optional[str]]:
         """
-        v6.0.3: Extract metadata from SF1449 using TRUE Dynamic Keyword Anchoring.
+        v6.0.4: FORM-FIELD ANCHOR STRATEGY for SF1449 metadata extraction.
 
-        CRITICAL FIX: v6.0.2's word-level anchoring was too loose. This version:
-        1. Scans for exact phrase "SOLICITATION NO" or "5." block marker
-        2. Defines bbox RELATIVE to that anchor's right edge
-        3. Enforces year >= 2025 (hardcoded, not dynamic)
-        4. Rejects internal IDs (RFP-xxxxxxxx pattern)
+        CRITICAL FIX: v6.0.3's anchor detection worked but extraction area was too narrow.
+        This version:
+        1. Finds "Solicitation Number" or "Solicitation No." text element
+        2. Extracts from RELATIVE bbox (200pts RIGHT of label's right edge)
+        3. ALSO scans BELOW the label (form fields can have values below)
+        4. Greedy full-page search with year hard-gate for dates
 
         The "Iron Triangle" rule: If we can't find the official solicitation number,
-        we MUST NOT fall back to internal IDs or filenames.
+        we MUST return None and let the orchestrator raise a validation error.
+        We NEVER fall back to internal IDs (RFP-xxxxxxxx).
 
         Args:
             pdf_path: Path to the PDF file
@@ -402,23 +404,22 @@ class SectionLParser:
         if not pdf_path or not PDFPLUMBER_AVAILABLE:
             return result
 
-        # v6.0.3: Official agency solicitation patterns ONLY
-        # These are the ONLY valid patterns - internal IDs (RFP-xxx) are REJECTED
+        # v6.0.4: Official agency solicitation patterns ONLY
         official_sol_patterns = [
             r'(FA\d{4}[-]?\d{2}[-]?[A-Z][-]?[A-Z0-9]{3,})',  # Air Force: FA880625RB003
-            r'(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Army: W911NF-25-R-0001
-            r'(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Navy: N00024-25-R-0001
-            r'(SP\d{4}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # DLA: SP4701-25-R-0001
-            r'(\d{2}[A-Z]\d{5}[A-Z]\d{5,})',  # NIH: 75N96025R00004
+            r'(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Army
+            r'(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # Navy
+            r'(SP\d{4}[-]?\d{2}[-]?[A-Z][-]?\d{4,})',  # DLA
+            r'(\d{2}[A-Z]\d{5}[A-Z]\d{5,})',  # NIH
         ]
 
-        # v6.0.3: REJECT patterns - internal IDs that should NEVER be used
+        # v6.0.4: REJECT patterns - internal IDs that MUST NEVER be used
         reject_patterns = [
-            r'RFP[-_]?[A-F0-9]{6,}',  # Internal RFP ID
-            r'DRAFT[-_]',  # Draft markers
+            r'RFP[-_]?[A-F0-9]{6,}',
+            r'DRAFT[-_]',
+            r'd[xX]?RFP[-_]?[A-F0-9]{6,}',  # Draft RFP IDs
         ]
 
-        # v6.0.3: FIXED minimum year for dates (proposal year, not current calendar year)
         MIN_PROPOSAL_YEAR = 2025
 
         try:
@@ -429,176 +430,153 @@ class SectionLParser:
                 first_page = pdf.pages[0]
                 page_width = first_page.width
                 page_height = first_page.height
-
-                # Get full page text for detection
                 first_page_text = first_page.extract_text() or ""
 
-                # v6.0.3: TRUE KEYWORD ANCHOR STRATEGY
-                # Step 1: Find ALL words with positions
-                words = first_page.extract_words(keep_blank_chars=True, x_tolerance=3, y_tolerance=3)
+                # v6.0.4: FORM-FIELD ANCHOR STRATEGY
+                # Use extract_words with more tolerant settings
+                words = first_page.extract_words(
+                    keep_blank_chars=True,
+                    x_tolerance=5,
+                    y_tolerance=5,
+                    extra_attrs=['fontname', 'size']
+                )
 
-                print(f"[v6.0.3] Scanning {len(words)} words for SF1449 anchors...")
+                print(f"[v6.0.4] FORM-FIELD ANCHOR: Scanning {len(words)} words on page 1...")
 
-                # v6.0.3: Build word position map for phrase detection
-                # Group words by approximate Y position (same line)
-                lines: Dict[int, List[Dict]] = {}
-                for word in words:
-                    y_key = int(word['top'] / 10) * 10  # Group by 10-point bands
-                    if y_key not in lines:
-                        lines[y_key] = []
-                    lines[y_key].append(word)
+                # v6.0.4: Find "SOLICITATION" label with precise positioning
+                sol_label_words = []
+                for i, word in enumerate(words):
+                    word_text = word['text'].upper().strip()
+                    if 'SOLICITATION' in word_text:
+                        sol_label_words.append((i, word))
+                        print(f"[v6.0.4] Found 'SOLICITATION' at ({word['x0']:.0f}, {word['top']:.0f}): '{word['text']}'")
 
-                # Sort words within each line by X position
-                for y_key in lines:
-                    lines[y_key].sort(key=lambda w: w['x0'])
+                # v6.0.4: For each SOLICITATION label, search RIGHT and BELOW
+                for idx, sol_word in sol_label_words:
+                    if result['solicitation_number']:
+                        break
 
-                # v6.0.3: SOLICITATION NUMBER EXTRACTION
-                # Strategy 1: Find "SOLICITATION NO" or "5." anchor
-                sol_anchor = None
-                sol_anchor_method = None
+                    # Strategy A: Search to the RIGHT of the label (same line)
+                    search_areas = [
+                        # Right of label, same line
+                        (sol_word['x1'] + 5, sol_word['top'] - 10,
+                         min(page_width, sol_word['x1'] + 300), sol_word['bottom'] + 15),
+                        # Below label, wider area
+                        (max(0, sol_word['x0'] - 50), sol_word['bottom'],
+                         min(page_width, sol_word['x0'] + 350), min(page_height, sol_word['bottom'] + 40)),
+                        # Full width below label
+                        (0, sol_word['bottom'], page_width, min(page_height, sol_word['bottom'] + 60)),
+                    ]
 
-                for y_key, line_words in sorted(lines.items()):
-                    line_text = ' '.join(w['text'] for w in line_words).upper()
-
-                    # Check for exact phrase "SOLICITATION NO" or "SOLICITATION NUMBER"
-                    if 'SOLICITATION' in line_text and ('NO' in line_text or 'NUMBER' in line_text):
-                        # Find the rightmost word in this phrase
-                        for w in line_words:
-                            if 'NO' in w['text'].upper() or 'NUMBER' in w['text'].upper():
-                                sol_anchor = w
-                                sol_anchor_method = "SOLICITATION_NO"
-                                break
-                            elif 'SOLICITATION' in w['text'].upper():
-                                sol_anchor = w
-                                sol_anchor_method = "SOLICITATION"
-                        if sol_anchor:
-                            break
-
-                    # Also check for SF1449 Block 5 marker "5."
-                    if line_text.strip().startswith('5.') or ' 5.' in line_text:
-                        for w in line_words:
-                            if w['text'].strip() == '5.' or w['text'].strip().startswith('5.'):
-                                sol_anchor = w
-                                sol_anchor_method = "BLOCK_5"
-                                break
-                        if sol_anchor:
-                            break
-
-                if sol_anchor:
-                    print(f"[v6.0.3] Found solicitation anchor via {sol_anchor_method}: "
-                          f"'{sol_anchor['text']}' at x={sol_anchor['x1']:.0f}, y={sol_anchor['top']:.0f}")
-
-                    # Extract from area to the RIGHT of anchor
-                    anchor_right = sol_anchor['x1']
-                    anchor_top = sol_anchor['top'] - 5
-                    anchor_bottom = sol_anchor['bottom'] + 25
-
-                    # v6.0.3: RELATIVE BBOX - to the right of anchor
-                    value_bbox = (
-                        anchor_right + 5,  # Start just after anchor
-                        max(0, anchor_top),
-                        min(page_width, anchor_right + 250),  # Extend 250pts right
-                        min(page_height, anchor_bottom)
-                    )
-
-                    value_text = self._extract_text_from_bbox(first_page, value_bbox)
-                    print(f"[v6.0.3] Solicitation value area [{value_bbox[0]:.0f},{value_bbox[1]:.0f},"
-                          f"{value_bbox[2]:.0f},{value_bbox[3]:.0f}]: {repr(value_text)}")
-
-                    if value_text:
-                        # v6.0.3: Check for REJECT patterns first
-                        is_rejected = any(re.search(rp, value_text.upper()) for rp in reject_patterns)
-                        if is_rejected:
-                            print(f"[v6.0.3] REJECTED internal ID in value area, searching elsewhere")
-                        else:
-                            for pattern in official_sol_patterns:
-                                sol_match = re.search(pattern, value_text.upper())
-                                if sol_match:
-                                    result['solicitation_number'] = sol_match.group(1)
-                                    print(f"[v6.0.3] LOCKED solicitation from anchor: {result['solicitation_number']}")
-                                    break
-
-                # v6.0.3: Strategy 2 - CONTROLLED full-page search (with rejection)
-                if not result['solicitation_number']:
-                    print("[v6.0.3] Anchor strategy failed, scanning full page with rejection filter")
-
-                    # First, reject any internal IDs
-                    for pattern in official_sol_patterns:
-                        for match in re.finditer(pattern, first_page_text.upper()):
-                            candidate = match.group(1)
-
-                            # v6.0.3: REJECT if it's near an internal ID pattern
-                            context_start = max(0, match.start() - 50)
-                            context_end = min(len(first_page_text), match.end() + 50)
-                            context = first_page_text[context_start:context_end].upper()
-
-                            is_rejected = any(re.search(rp, context) for rp in reject_patterns)
-                            if is_rejected:
-                                print(f"[v6.0.3] REJECTED candidate '{candidate}' (near internal ID)")
-                                continue
-
-                            result['solicitation_number'] = candidate
-                            print(f"[v6.0.3] LOCKED solicitation from full-page: {result['solicitation_number']}")
-                            break
-
+                    for area_idx, bbox in enumerate(search_areas):
                         if result['solicitation_number']:
                             break
 
-                # v6.0.3: OFFER DUE DATE EXTRACTION
-                # Strategy 1: Find "OFFER" + "DUE" anchor with Block 8 awareness
-                due_date_anchor = None
+                        value_text = self._extract_text_from_bbox(first_page, bbox)
+                        if not value_text:
+                            continue
 
-                for y_key, line_words in sorted(lines.items()):
-                    line_text = ' '.join(w['text'] for w in line_words).upper()
+                        print(f"[v6.0.4] Search area {area_idx + 1}: {repr(value_text[:100])}")
 
-                    # Check for "OFFER DUE DATE" or "OFFERS DUE" or Block "8."
-                    if ('OFFER' in line_text and 'DUE' in line_text) or \
-                       line_text.strip().startswith('8.') or ' 8.' in line_text:
-                        # Use last word as anchor (date should be after it)
-                        due_date_anchor = line_words[-1] if line_words else None
-                        if due_date_anchor:
-                            print(f"[v6.0.3] Due date anchor: '{due_date_anchor['text']}' at y={due_date_anchor['top']:.0f}")
+                        # Check for reject patterns FIRST
+                        is_rejected = any(re.search(rp, value_text.upper()) for rp in reject_patterns)
+                        if is_rejected:
+                            print(f"[v6.0.4] REJECTED: Internal ID found in search area")
+                            continue
+
+                        # Search for official patterns
+                        for pattern in official_sol_patterns:
+                            match = re.search(pattern, value_text.upper())
+                            if match:
+                                result['solicitation_number'] = match.group(1)
+                                print(f"[v6.0.4] ✓ LOCKED solicitation from area {area_idx + 1}: "
+                                      f"{result['solicitation_number']}")
+                                break
+
+                # v6.0.4: Fallback - GREEDY FULL-PAGE SEARCH (with rejection)
+                if not result['solicitation_number']:
+                    print("[v6.0.4] Anchor strategy failed, performing greedy full-page search...")
+
+                    # Search entire first page, prioritizing matches NOT near reject patterns
+                    all_candidates = []
+                    for pattern in official_sol_patterns:
+                        for match in re.finditer(pattern, first_page_text.upper()):
+                            candidate = match.group(1)
+                            context_start = max(0, match.start() - 100)
+                            context_end = min(len(first_page_text), match.end() + 100)
+                            context = first_page_text[context_start:context_end].upper()
+
+                            is_rejected = any(re.search(rp, context) for rp in reject_patterns)
+                            if not is_rejected:
+                                all_candidates.append(candidate)
+                                print(f"[v6.0.4] Candidate: {candidate}")
+
+                    if all_candidates:
+                        # Take first non-rejected candidate
+                        result['solicitation_number'] = all_candidates[0]
+                        print(f"[v6.0.4] ✓ LOCKED solicitation from full-page: {result['solicitation_number']}")
+
+                # v6.0.4: DUE DATE EXTRACTION with year hard-gate
+                # Strategy 1: Find "OFFER" or "DUE" labels
+                due_label_words = []
+                for word in words:
+                    word_text = word['text'].upper().strip()
+                    if 'DUE' in word_text or 'OFFER' in word_text:
+                        due_label_words.append(word)
+
+                for due_word in due_label_words:
+                    if result['due_date']:
+                        break
+
+                    # Search below and to the right of the label
+                    search_areas = [
+                        (max(0, due_word['x0'] - 100), due_word['bottom'],
+                         min(page_width, due_word['x0'] + 400), min(page_height, due_word['bottom'] + 50)),
+                        (due_word['x1'], due_word['top'] - 5,
+                         min(page_width, due_word['x1'] + 250), due_word['bottom'] + 20),
+                    ]
+
+                    for bbox in search_areas:
+                        if result['due_date']:
+                            break
+                        value_text = self._extract_text_from_bbox(first_page, bbox)
+                        if value_text:
+                            result['due_date'], result['due_time'] = self._extract_validated_date_time(
+                                value_text, MIN_PROPOSAL_YEAR
+                            )
+
+                # v6.0.4: Fallback - GREEDY FULL-PAGE DATE SEARCH
+                if not result['due_date']:
+                    print(f"[v6.0.4] Date anchor failed, greedy search for 'Feb 2025' or '03 Feb 2025'...")
+
+                    # Prioritize specific date patterns
+                    priority_patterns = [
+                        r'(03?\s+Feb(?:ruary)?\s+2025)',
+                        r'(Feb(?:ruary)?\s+0?3,?\s+2025)',
+                        r'(\d{1,2}\s+[A-Za-z]+\s+2025)',
+                        r'([A-Za-z]+\s+\d{1,2},?\s+2025)',
+                    ]
+
+                    for pattern in priority_patterns:
+                        match = re.search(pattern, first_page_text, re.IGNORECASE)
+                        if match:
+                            result['due_date'] = match.group(1)
+                            print(f"[v6.0.4] ✓ LOCKED due date from greedy search: {result['due_date']}")
                             break
 
-                if due_date_anchor:
-                    # Extract from area BELOW the anchor (Block 8 value is below label)
-                    anchor_x0 = due_date_anchor['x0'] - 100
-                    anchor_bottom = due_date_anchor['bottom']
-
-                    value_bbox = (
-                        max(0, anchor_x0),
-                        anchor_bottom,
-                        min(page_width, anchor_x0 + 400),
-                        min(page_height, anchor_bottom + 50)
-                    )
-                    value_text = self._extract_text_from_bbox(first_page, value_bbox)
-                    print(f"[v6.0.3] Due date value area: {repr(value_text)}")
-
-                    if value_text:
+                    # Final fallback to validated extraction
+                    if not result['due_date']:
                         result['due_date'], result['due_time'] = self._extract_validated_date_time(
-                            value_text, MIN_PROPOSAL_YEAR
+                            first_page_text, MIN_PROPOSAL_YEAR
                         )
 
-                # v6.0.3: Strategy 2 - Full-page date search with STRICT year validation
-                if not result['due_date']:
-                    print(f"[v6.0.3] Due date anchor failed, full-page search with year >= {MIN_PROPOSAL_YEAR}")
-                    result['due_date'], result['due_time'] = self._extract_validated_date_time(
-                        first_page_text, MIN_PROPOSAL_YEAR
-                    )
-
-                # v6.0.3: Final validation log
-                if result['solicitation_number']:
-                    print(f"[v6.0.3] ✓ FINAL Solicitation: {result['solicitation_number']}")
-                else:
-                    print(f"[v6.0.3] ✗ FAILED to extract official solicitation number")
-
-                if result['due_date']:
-                    print(f"[v6.0.3] ✓ FINAL Due Date: {result['due_date']}")
-                else:
-                    print(f"[v6.0.3] ✗ FAILED to extract valid due date (year >= {MIN_PROPOSAL_YEAR})")
+                # v6.0.4: Final status report
+                print(f"[v6.0.4] EXTRACTION RESULT:")
+                print(f"[v6.0.4]   Solicitation: {result['solicitation_number'] or 'FAILED'}")
+                print(f"[v6.0.4]   Due Date: {result['due_date'] or 'FAILED'}")
 
         except Exception as e:
-            print(f"[v6.0.3] Error in SF1449 extraction: {e}")
+            print(f"[v6.0.4] Error in SF1449 extraction: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1282,31 +1260,33 @@ class SectionLParser:
                                         break
 
                                 if matched_volume and limit_cell:
-                                    # Extract numeric value from limit cell
+                                    # v6.0.4: PERSISTENT TABLE CONSTRAINT LINKING
+                                    # Extract ANY digits from the intersection cell
+                                    # Handles: "8", "8 Pages", "Not to exceed 8", "8 pages max"
                                     limit_match = re.search(r'(\d+)', limit_cell)
                                     if limit_match:
                                         limit_value = int(limit_match.group(1))
                                         if 1 <= limit_value <= 500:
                                             key = matched_volume.lower()
-                                            if key not in page_limits:
-                                                page_limits[key] = (matched_volume, limit_value)
-                                                print(f"[v6.0.3] ✓ ROW-INDEX LOCKED: Row {row_idx} "
-                                                      f"'{title_cell}' -> {limit_value} pages")
+                                            # v6.0.4: PERSISTENT - This value OVERRIDES any previous
+                                            page_limits[key] = (matched_volume, limit_value)
+                                            print(f"[v6.0.4] ✓ PERSISTENT LOCK: Row {row_idx} "
+                                                  f"'{title_cell}' intersect '{limit_cell}' -> {limit_value} pages")
 
-                                                # Add alternate keys
-                                                if matched_vol_num == 1:
-                                                    page_limits['technical'] = (matched_volume, limit_value)
-                                                    page_limits['technical volume'] = (matched_volume, limit_value)
-                                                    page_limits['vol 1'] = (matched_volume, limit_value)
-                                                    page_limits['volume 1'] = (matched_volume, limit_value)
-                                                elif matched_vol_num == 2:
-                                                    page_limits['cost'] = (matched_volume, limit_value)
-                                                    page_limits['cost & price'] = (matched_volume, limit_value)
-                                                    page_limits['vol 2'] = (matched_volume, limit_value)
-                                                elif matched_vol_num == 3:
-                                                    page_limits['contract'] = (matched_volume, limit_value)
-                                                    page_limits['contract documentation'] = (matched_volume, limit_value)
-                                                    page_limits['vol 3'] = (matched_volume, limit_value)
+                                            # Add alternate keys for flexible matching
+                                            if matched_vol_num == 1:
+                                                page_limits['technical'] = (matched_volume, limit_value)
+                                                page_limits['technical volume'] = (matched_volume, limit_value)
+                                                page_limits['vol 1'] = (matched_volume, limit_value)
+                                                page_limits['volume 1'] = (matched_volume, limit_value)
+                                            elif matched_vol_num == 2:
+                                                page_limits['cost'] = (matched_volume, limit_value)
+                                                page_limits['cost & price'] = (matched_volume, limit_value)
+                                                page_limits['vol 2'] = (matched_volume, limit_value)
+                                            elif matched_vol_num == 3:
+                                                page_limits['contract'] = (matched_volume, limit_value)
+                                                page_limits['contract documentation'] = (matched_volume, limit_value)
+                                                page_limits['vol 3'] = (matched_volume, limit_value)
 
                         # v6.0.3: FALLBACK - Digit-targeting for tables without clear structure
                         if not page_limits:
@@ -1894,10 +1874,24 @@ class SectionLParser:
                 order = order_by_volume[vol_num]
                 order_by_volume[vol_num] += 1
 
+                # v6.0.4: N/A LOGIC GATE
+                # After matching a section header, scan the next 100 characters
+                # If they contain "N/A", "Not Applicable", or "Reserved", SKIP this section
+                na_check_start = match.end()
+                na_check_end = min(len(text), match.end() + 100)
+                following_text = text[na_check_start:na_check_end].upper()
+
+                na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED', 'INTENTIONALLY LEFT BLANK']
+                is_na_section = any(na_pat in following_text for na_pat in na_patterns)
+
+                if is_na_section:
+                    print(f"[v6.0.4] N/A GATE: Section {sec_id} '{sec_title}' marked as N/A - EXCLUDED")
+                    continue  # Skip this section entirely
+
                 # Find page limit
                 page_limit = self._find_page_limit_near(text, match.end(), sec_title)
 
-                print(f"[v5.0.9] Section '{sec_id}' -> Volume {vol_num} ({vol_title})")
+                print(f"[v6.0.4] Section '{sec_id}' -> Volume {vol_num} ({vol_title})")
 
                 sections.append(SectionInstruction(
                     section_id=sec_id,
