@@ -630,6 +630,14 @@ class OutlineOrchestrator:
                 'schema_warnings': schema.get('parsing_warnings', []),
                 'skeleton_warnings': skeleton.validation_warnings
             },
+            # v6.0.5: Extracted metadata from SF1449 and document parsing
+            # This should be used to UPDATE the RFP's solicitation_number if valid
+            'extracted_metadata': {
+                'solicitation_number': schema.get('rfp_number'),  # From SF1449 Block 5
+                'rfp_title': schema.get('rfp_title'),
+                'due_date': schema.get('submission_rules', {}).get('deadline') if schema.get('submission_rules') else None,
+                'total_page_limit': schema.get('total_page_limit'),
+            },
             'unmapped_requirements': result.unmapped_requirements,
             'low_confidence_mappings': [
                 {
