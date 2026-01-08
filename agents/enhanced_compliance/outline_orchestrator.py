@@ -51,6 +51,15 @@ from .rfq_skeleton_builder import (
     create_missing_structure_error
 )
 
+# v6.0.12: Strategy Pattern - Isolated GSA parser
+from .gsa_parser import (
+    GSAParser,
+    GSAParseResult,
+    StrategyManager,
+    ParsingStrategy,
+    GSAPhase
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -437,7 +446,11 @@ class OutlineOrchestrator:
         self.procurement_detector = ProcurementTypeDetector()
         self.rfq_builder = RFQSkeletonBuilder()
 
-        # UCF-style parser/builder (existing)
+        # v6.0.12: Strategy Pattern - ISOLATED parsers
+        self.strategy_manager = StrategyManager()
+        self.gsa_parser = GSAParser()  # Dedicated GSA/FAR 8.4 parser
+
+        # UCF-style parser/builder (existing - for Air Force/OASIS)
         self.parser = SectionLParser()
         self.structure_builder = StrictStructureBuilder(strict_mode=strict_mode)
         self.content_injector = ContentInjector()
@@ -445,6 +458,8 @@ class OutlineOrchestrator:
 
         # v6.0.7: Track detected procurement type for error messages
         self._detected_procurement: Optional[ProcurementDetectionResult] = None
+        # v6.0.12: Track selected strategy
+        self._selected_strategy: Optional[ParsingStrategy] = None
 
     def generate_outline(
         self,
@@ -496,10 +511,10 @@ class OutlineOrchestrator:
             logger.info(f"[v6.0.2] PDF path provided for spatial extraction: {pdf_path}")
 
         # ========================================================================
-        # v6.0.7: PROCUREMENT TYPE DETECTION
+        # v6.0.12: STRATEGY SELECTION (Architectural Separation)
         # ========================================================================
-        # Auto-detect procurement type to determine parsing strategy.
-        # This runs BEFORE any parsing to guide the factory pattern.
+        # Select parsing strategy BEFORE any parsing begins.
+        # GSA and UCF parsers are COMPLETELY ISOLATED - no shared logic.
         # ========================================================================
 
         self._detected_procurement = self.procurement_detector.detect(
@@ -507,18 +522,49 @@ class OutlineOrchestrator:
             solicitation_number=rfp_number
         )
 
-        print(f"[v6.0.7] Procurement Detection: type={self._detected_procurement.procurement_type.value}, "
+        # v6.0.12: Use StrategyManager for clean separation
+        self._selected_strategy = self.strategy_manager.select_strategy(
+            section_l_text,
+            self._detected_procurement
+        )
+
+        print(f"[v6.0.12] Strategy Selection: {self._selected_strategy.value}")
+        print(f"[v6.0.12] Procurement Detection: type={self._detected_procurement.procurement_type.value}, "
               f"confidence={self._detected_procurement.confidence.value} "
               f"({self._detected_procurement.confidence_score:.2%})")
 
         if self._detected_procurement.detected_signals:
-            print(f"[v6.0.7] Detection signals: {self._detected_procurement.detected_signals[:3]}")
+            print(f"[v6.0.12] Detection signals: {self._detected_procurement.detected_signals[:3]}")
 
-        # v6.0.7: If detected as GSA RFQ with high confidence, try RFQ-first approach
+        # ========================================================================
+        # v6.0.12: GSA STRATEGY - COMPLETELY ISOLATED PATH
+        # ========================================================================
+        if self._selected_strategy == ParsingStrategy.GSA_RFQ:
+            print(f"[v6.0.12] Using GSA Parser (FAR 8.4) - ISOLATED from UCF")
+            try:
+                return self._generate_gsa_outline(
+                    section_l_text=section_l_text,
+                    soo_text=soo_text,
+                    requirements=requirements,
+                    evaluation_criteria=evaluation_criteria,
+                    rfp_number=rfp_number,
+                    rfp_title=rfp_title,
+                    attachment_texts=attachment_texts
+                )
+            except StructureValidationError as e:
+                print(f"[v6.0.12] GSA strategy failed: {str(e)[:100]}")
+                # Do NOT fall through to UCF - fail loud instead
+                if self.strict_mode:
+                    raise
+                # In lenient mode, try legacy RFQ builder
+                print("[v6.0.12] Lenient mode: Falling back to legacy RFQ builder")
+
+        # v6.0.7 LEGACY: If detected as GSA RFQ but not selected by new strategy, try RFQ-first approach
         if (self._detected_procurement.procurement_type == ProcurementType.GSA_RFQ_8_4 and
-            self._detected_procurement.confidence in [DetectionConfidence.HIGH, DetectionConfidence.MEDIUM]):
+            self._detected_procurement.confidence in [DetectionConfidence.HIGH, DetectionConfidence.MEDIUM] and
+            self._selected_strategy != ParsingStrategy.GSA_RFQ):
 
-            print(f"[v6.0.7] Detected GSA RFQ (FAR 8.4) - attempting RFQ-first strategy")
+            print(f"[v6.0.7] Legacy GSA RFQ detection - attempting RFQ-first strategy")
             try:
                 return self._generate_rfq_outline(
                     section_l_text=section_l_text,
@@ -943,6 +989,156 @@ class OutlineOrchestrator:
             },
             'generation_strategy': 'rfq_soo_first',
             'requires_manual_review': True,  # Always flag RFQ outlines for review
+        }
+
+    def _generate_gsa_outline(
+        self,
+        section_l_text: str,
+        soo_text: Optional[str],
+        requirements: List[Dict],
+        evaluation_criteria: List[Dict],
+        rfp_number: str,
+        rfp_title: str,
+        attachment_texts: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        v6.0.12: Generate outline using ISOLATED GSA Parser.
+
+        This is COMPLETELY SEPARATE from UCF parsing logic.
+        No code paths are shared between GSA and UCF.
+
+        Key Features:
+        - Phase-First: Phase I/II are structural roots
+        - Factor Isolation: Factor 1 → Phase I, Factors 2-5 → Phase II
+        - Strict enforcement: Phase II content CANNOT appear in Phase I
+        """
+        print(f"[v6.0.12 GSA] Starting GSA-specific outline generation")
+
+        # Find SOO in attachments if not provided
+        if not soo_text and attachment_texts:
+            for name, text in attachment_texts.items():
+                name_lower = name.lower()
+                if 'soo' in name_lower or 'statement of objectives' in name_lower:
+                    soo_text = text
+                    print(f"[v6.0.12 GSA] Found SOO in attachment: {name}")
+                    break
+
+        # Parse using GSA-specific parser
+        gsa_result = self.gsa_parser.parse(
+            rfq_text=section_l_text,
+            soo_text=soo_text,
+            solicitation_number=rfp_number
+        )
+
+        # v6.0.12: VALIDATE PHASE STRUCTURE
+        if not gsa_result.phases:
+            raise StructureValidationError(
+                "[v6.0.12 GSA] PHASE STRUCTURE FAILURE: No Phase I/II markers found. "
+                "GSA RFQs require explicit Phase structure. "
+                "Ensure document contains 'Phase I' and 'Phase II' markers."
+            )
+
+        # Check for Factor isolation violations
+        for phase in gsa_result.phases:
+            if phase['phase_type'] == GSAPhase.PHASE_I.value:
+                # Phase I should only have Factor 1 (Experience)
+                violating_factors = [
+                    f for f in phase.get('factors', [])
+                    if f['factor_number'] > 1 and f['target_phase'] != GSAPhase.PHASE_I.value
+                ]
+                if violating_factors:
+                    print(f"[v6.0.12 GSA] WARNING: Phase I contains non-experience factors: {violating_factors}")
+
+        # Convert to standard volume format
+        volumes = self.gsa_parser.to_volumes(gsa_result)
+
+        print(f"[v6.0.12 GSA] Created {len(volumes)} volumes from {len(gsa_result.phases)} phases")
+
+        # Build skeleton from volumes
+        from .section_l_schema import SectionL_Schema
+        schema: SectionL_Schema = {
+            'rfp_number': gsa_result.solicitation_number or rfp_number,
+            'rfp_title': rfp_title,
+            'volumes': [
+                {
+                    'volume_id': v.volume_id,
+                    'volume_title': v.volume_title,
+                    'volume_number': v.volume_number,
+                    'page_limit': v.page_limit,
+                    'sections': v.sections,
+                    'source_reference': v.source_reference,
+                    'is_mandatory': v.is_mandatory,
+                }
+                for v in volumes
+            ],
+            'sections': [],
+            'format_rules': {},
+            'submission_rules': {},
+            'total_page_limit': None,
+            'stated_volume_count': len(volumes),
+            'parsing_warnings': gsa_result.warnings,
+        }
+
+        # Build skeleton
+        skeleton = self.structure_builder.build_from_schema(schema)
+        skeleton_dict = self.structure_builder.to_state_dict(skeleton)
+
+        # Inject requirements (using standard injector with SOO awareness)
+        result = self.content_injector.inject(
+            skeleton_dict=skeleton_dict,
+            requirements=requirements,
+            evaluation_criteria=evaluation_criteria,
+            is_soo_source=bool(soo_text)
+        )
+
+        print(f"[v6.0.12 GSA] Injection complete: {result.mapped_count}/{result.total_requirements} mapped")
+
+        return {
+            'proposal_skeleton': skeleton_dict,
+            'annotated_outline': result.annotated_outline,
+            'injection_metadata': {
+                'total_requirements': result.total_requirements,
+                'mapped_count': result.mapped_count,
+                'unmapped_count': len(result.unmapped_requirements),
+                'low_confidence_count': len(result.low_confidence_mappings),
+                'warnings': result.warnings + gsa_result.warnings,
+                'schema_warnings': gsa_result.warnings,
+                'skeleton_warnings': skeleton.validation_warnings,
+                'gsa_analysis': {
+                    'phases': len(gsa_result.phases),
+                    'factors': len(gsa_result.factors),
+                    'section_11_found': gsa_result.section_11_found,
+                    'section_12_found': gsa_result.section_12_found,
+                    'soo_sections': len(gsa_result.sections),
+                }
+            },
+            'extracted_metadata': {
+                'solicitation_number': gsa_result.solicitation_number or rfp_number,
+                'rfp_title': rfp_title,
+                'due_date': None,
+                'total_page_limit': skeleton.total_page_limit,
+            },
+            'unmapped_requirements': result.unmapped_requirements,
+            'low_confidence_mappings': [
+                {
+                    'requirement_id': m.requirement_id,
+                    'requirement_text': m.requirement_text,
+                    'target_section': m.target_section_id,
+                    'confidence': m.confidence.value,
+                    'rationale': m.rationale
+                }
+                for m in result.low_confidence_mappings
+            ],
+            'supervisor_validation': None,  # Not run for GSA strategy
+            'procurement_detection': {
+                'type': 'gsa_rfq_8_4',
+                'confidence': self._detected_procurement.confidence.value if self._detected_procurement else 'high',
+                'confidence_score': self._detected_procurement.confidence_score if self._detected_procurement else 0.9,
+                'detected_signals': self._detected_procurement.detected_signals[:5] if self._detected_procurement else [],
+            },
+            'generation_strategy': 'gsa_phase_first',  # v6.0.12: New strategy name
+            'requires_manual_review': True,
+            'factor_isolation_enforced': True,  # v6.0.12: Strict isolation flag
         }
 
     def _build_comprehensive_error_message(
