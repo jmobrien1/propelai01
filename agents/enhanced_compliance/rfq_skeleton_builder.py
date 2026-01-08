@@ -96,14 +96,44 @@ class RFQSkeletonBuilder:
     """
 
     # Patterns for SOO/SOW section detection
+    # v6.0.10: Enhanced patterns for C.1.x headers
     SOO_SECTION_PATTERNS = [
+        # "C.1 Title" or "C.1.4 Title" format (CLIN-based) - most specific first
+        r'^(C\.[\d.]+)\s+(.+)',
         # "3.0 Title" or "3.1 Title" format
-        r'^(\d+\.\d*)\s+([A-Z][A-Za-z\s&,/-]+)',
-        # "C.1.4 Title" format (CLIN-based)
-        r'^(C\.\d+\.?\d*)\s+([A-Z][A-Za-z\s&,/-]+)',
+        r'^(\d+\.[\d.]*)\s+([A-Z][A-Za-z\s&,/-]+)',
         # "Section 3: Title" format
         r'^Section\s+(\d+)[:\s]+([A-Z][A-Za-z\s&,/-]+)',
+        # "(a) Title" or "(1) Title" subsection format
+        r'^\(([a-z\d]+)\)\s+([A-Z][A-Za-z\s&,/-]+)',
     ]
+
+    # v6.0.10: Standard SOO section-to-proposal mapping
+    # Maps common SOO C.x sections to proposal structure
+    SOO_SECTION_MAPPING = {
+        'program management': 'Management Approach',
+        'project management': 'Management Approach',
+        'management': 'Management Approach',
+        'quality': 'Quality Assurance',
+        'quality management': 'Quality Assurance',
+        'quality assurance': 'Quality Assurance',
+        'quality control': 'Quality Assurance',
+        'technical approach': 'Technical Approach',
+        'technical': 'Technical Approach',
+        'staffing': 'Staffing / Key Personnel',
+        'personnel': 'Staffing / Key Personnel',
+        'key personnel': 'Staffing / Key Personnel',
+        'transition': 'Transition Plan',
+        'phase-in': 'Transition Plan',
+        'security': 'Security',
+        'cybersecurity': 'Security',
+        'risk': 'Risk Management',
+        'risk management': 'Risk Management',
+        'schedule': 'Schedule',
+        'deliverables': 'Deliverables',
+        'reporting': 'Reporting Requirements',
+        'communications': 'Communications',
+    }
 
     # Patterns for quote instruction detection
     QUOTE_INSTRUCTION_PATTERNS = [
@@ -196,7 +226,11 @@ class RFQSkeletonBuilder:
         return analysis
 
     def _extract_soo_sections(self, text: str) -> List[SOOSection]:
-        """Extract section structure from SOO/SOW text."""
+        """
+        Extract section structure from SOO/SOW text.
+
+        v6.0.10: Enhanced to handle C.1.x PWS-style headers more robustly.
+        """
         sections: List[SOOSection] = []
         seen_ids: set = set()
 
@@ -208,21 +242,33 @@ class RFQSkeletonBuilder:
                 continue
 
             for pattern in self.SOO_SECTION_PATTERNS:
-                match = re.match(pattern, line)
+                match = re.match(pattern, line, re.IGNORECASE)
                 if match:
-                    sec_id = match.group(1)
+                    sec_id = match.group(1).upper()  # Normalize to uppercase
                     sec_title = match.group(2).strip()
 
-                    # Clean up title
+                    # Clean up title - remove trailing punctuation and parenthetical content
                     sec_title = re.sub(r'[\.\,\;\:]+$', '', sec_title).strip()
+                    sec_title = re.sub(r'\s*\([^)]*\)\s*$', '', sec_title).strip()
 
                     # Skip if already seen or title too short
                     if sec_id in seen_ids or len(sec_title) < 3:
                         continue
+
+                    # v6.0.10: Skip generic headers that aren't real sections
+                    skip_titles = ['introduction', 'scope', 'background', 'overview',
+                                   'general', 'purpose', 'applicable documents']
+                    if sec_title.lower() in skip_titles and sec_id.count('.') == 0:
+                        continue
+
                     seen_ids.add(sec_id)
 
                     # Determine level from ID
-                    level = sec_id.count('.') + 1
+                    # C.1 = level 2, C.1.1 = level 3, etc.
+                    if sec_id.startswith('C.'):
+                        level = sec_id.count('.')
+                    else:
+                        level = sec_id.count('.') + 1
 
                     # Get text preview (next ~200 chars)
                     preview_start = i + 1
@@ -243,7 +289,69 @@ class RFQSkeletonBuilder:
         # Sort by section ID
         sections.sort(key=lambda s: self._section_sort_key(s.id))
 
+        logger.info(f"[v6.0.10] Extracted {len(sections)} SOO sections: "
+                   f"{[s.id + ':' + s.title[:20] for s in sections[:5]]}")
+
         return sections
+
+    def _map_soo_to_proposal_section(self, soo_title: str) -> Tuple[str, str]:
+        """
+        v6.0.10: Map SOO section title to proposal section title and writing guidance.
+
+        Returns:
+            (proposal_section_title, writing_guidance)
+        """
+        title_lower = soo_title.lower()
+
+        # Check for direct mapping
+        for keyword, proposal_section in self.SOO_SECTION_MAPPING.items():
+            if keyword in title_lower:
+                guidance = self._get_pws_guidance(proposal_section)
+                return proposal_section, guidance
+
+        # No mapping found - use original title with generic PWS guidance
+        return soo_title, (
+            "Transform this SOO objective into a Performance Work Statement (PWS) "
+            "with specific, measurable tasks and deliverables."
+        )
+
+    def _get_pws_guidance(self, section_type: str) -> str:
+        """
+        v6.0.10: Get PWS writing guidance for a proposal section type.
+        """
+        guidance_map = {
+            'Management Approach': (
+                "**PWS Guidance:** Define program governance structure, organizational chart, "
+                "reporting relationships, escalation procedures, and continuous improvement processes. "
+                "Include specific management deliverables with frequencies."
+            ),
+            'Quality Assurance': (
+                "**PWS Guidance:** Define QA/QC processes, inspection criteria, acceptance standards, "
+                "corrective action procedures, and metrics reporting. Reference applicable standards "
+                "(ISO, CMMI, etc.) where appropriate."
+            ),
+            'Technical Approach': (
+                "**PWS Guidance:** Define specific technical tasks, methodologies, tools, and processes. "
+                "Include performance standards, service level agreements (SLAs), and technical deliverables."
+            ),
+            'Staffing / Key Personnel': (
+                "**PWS Guidance:** Define labor categories, minimum qualifications, clearance requirements, "
+                "and key personnel positions. Include replacement procedures and certification requirements."
+            ),
+            'Transition Plan': (
+                "**PWS Guidance:** Define phase-in timeline, knowledge transfer activities, "
+                "incumbent coordination requirements, go-live criteria, and risk mitigation during transition."
+            ),
+            'Security': (
+                "**PWS Guidance:** Define security controls, clearance requirements, facility security, "
+                "cybersecurity requirements, incident response procedures, and compliance verification."
+            ),
+            'Risk Management': (
+                "**PWS Guidance:** Define risk identification process, risk register format, "
+                "mitigation strategies, contingency plans, and risk reporting frequency."
+            ),
+        }
+        return guidance_map.get(section_type, "")
 
     def _section_sort_key(self, sec_id: str) -> Tuple:
         """Generate sort key for section IDs like '3.1', 'C.1.4'."""
@@ -372,21 +480,43 @@ class RFQSkeletonBuilder:
         return skeleton
 
     def _build_technical_sections(self, analysis: RFQStructureAnalysis) -> List[SkeletonSection]:
-        """Build technical volume sections from SOO structure."""
+        """
+        Build technical volume sections from SOO structure.
+
+        v6.0.10: Enhanced to map SOO C.1.x headers to proposal sections
+        with PWS writing guidance.
+        """
         sections: List[SkeletonSection] = []
+        seen_proposal_sections: set = set()  # Deduplicate mapped sections
 
         if analysis.soo_sections:
-            # Use SOO sections as proposal sections
+            # v6.0.10: Use SOO sections as proposal sections with mapping
             for i, soo_sec in enumerate(analysis.soo_sections):
-                # Only use top-level sections (level 1-2) as main proposal sections
+                # Only use level 1-2 sections as main proposal sections
+                # For C.x format: C.1 = level 1, C.1.1 = level 2
                 if soo_sec.level <= 2:
+                    # Map SOO section to proposal section with guidance
+                    proposal_title, pws_guidance = self._map_soo_to_proposal_section(soo_sec.title)
+
+                    # Deduplicate - don't create multiple "Management Approach" sections
+                    dedup_key = proposal_title.lower().strip()
+                    if dedup_key in seen_proposal_sections:
+                        logger.debug(f"[v6.0.10] Skipping duplicate section: {proposal_title}")
+                        continue
+                    seen_proposal_sections.add(dedup_key)
+
                     sections.append(SkeletonSection(
-                        id=f"VOL-1-SEC-{i+1}",
-                        title=soo_sec.title,
+                        id=f"VOL-1-SEC-{len(sections)+1}",
+                        title=proposal_title,
                         page_limit=None,
-                        order=i,
-                        source_reference=f"SOO Section {soo_sec.id}"
+                        order=len(sections),
+                        source_reference=f"SOO Section {soo_sec.id}: {soo_sec.title}",
+                        # v6.0.10: Include PWS guidance in writing_instructions field
+                        writing_instructions=[pws_guidance] if pws_guidance else []
                     ))
+
+            logger.info(f"[v6.0.10] Built {len(sections)} proposal sections from "
+                       f"{len(analysis.soo_sections)} SOO sections")
 
         # If no sections found, create minimal structure
         if not sections:
@@ -396,21 +526,24 @@ class RFQSkeletonBuilder:
                     title="Technical Approach",
                     page_limit=None,
                     order=0,
-                    source_reference="Default RFQ structure (no SOO sections found)"
+                    source_reference="Default RFQ structure (no SOO sections found)",
+                    writing_instructions=[self._get_pws_guidance("Technical Approach")]
                 ),
                 SkeletonSection(
                     id="VOL-1-SEC-2",
                     title="Management Approach",
                     page_limit=None,
                     order=1,
-                    source_reference="Default RFQ structure"
+                    source_reference="Default RFQ structure",
+                    writing_instructions=[self._get_pws_guidance("Management Approach")]
                 ),
                 SkeletonSection(
                     id="VOL-1-SEC-3",
                     title="Staffing / Key Personnel",
                     page_limit=None,
                     order=2,
-                    source_reference="Default RFQ structure"
+                    source_reference="Default RFQ structure",
+                    writing_instructions=[self._get_pws_guidance("Staffing / Key Personnel")]
                 ),
             ]
 
