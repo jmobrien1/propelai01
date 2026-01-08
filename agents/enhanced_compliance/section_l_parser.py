@@ -1567,30 +1567,26 @@ class SectionLParser:
                     is_mandatory=True
                 ))
 
+        # v6.0.11: PHASE-FIRST DETERMINISM (War Room Decision)
+        # GSA RFQ Phase I/II are evaluation gates - they take ABSOLUTE PRIORITY
+        # Check for phases BEFORE any other volume extraction
+        is_gsa_rfq = bool(re.search(r'(?:FAR\s*8\.4|GSA\s+Schedule|Request\s+for\s+Quote|RFQ|Section\s+11)', text, re.IGNORECASE))
+        has_phases = bool(re.search(r'(?i)PHASE\s+([IVX\d]+)', text))
+
+        if has_phases:
+            phase_volumes = self._extract_phases_as_volumes(text, table_page_limits, warnings)
+            if phase_volumes:
+                print(f"[v6.0.11] PHASE-FIRST: Found {len(phase_volumes)} phase-based volumes (GSA RFQ: {is_gsa_rfq})")
+                # For GSA RFQs with phases, ALWAYS use phases as the root structure
+                if is_gsa_rfq or len(phase_volumes) >= 2:
+                    return sorted(phase_volumes, key=lambda v: v['volume_number'])
+
         # v5.0.9: Try numbered volume patterns if standard patterns found nothing
         # These handle RFPs like "1. Executive Summary and Technical Volume"
         if not volumes:
             volumes = self._extract_numbered_volumes(text, table_page_limits, warnings)
             if volumes:
                 print(f"[v5.0.9] Found {len(volumes)} volumes using numbered pattern")
-
-        # v6.0.8/v6.0.10: Try phase-based patterns for GSA RFQs
-        # v6.0.10: PRIORITY CHANGE - Check for phases even if volumes were found
-        # If we detect GSA RFQ indicators AND phases, prefer phases over generic volumes
-        is_gsa_rfq = bool(re.search(r'(?:FAR\s*8\.4|GSA\s+Schedule|Request\s+for\s+Quote|RFQ|Section\s+11)', text, re.IGNORECASE))
-        has_phases = bool(re.search(r'Phase\s+[I1][:\s]', text, re.IGNORECASE))
-
-        if has_phases:
-            phase_volumes = self._extract_phases_as_volumes(text, table_page_limits, warnings)
-            if phase_volumes:
-                if not volumes or is_gsa_rfq:
-                    # v6.0.10: For GSA RFQs or when no volumes found, use phases
-                    print(f"[v6.0.10] Using {len(phase_volumes)} phase-based volumes (GSA RFQ: {is_gsa_rfq})")
-                    volumes = phase_volumes
-                elif len(phase_volumes) > len(volumes):
-                    # If phases provide more structure, prefer them
-                    print(f"[v6.0.10] Phases ({len(phase_volumes)}) provide more structure than volumes ({len(volumes)})")
-                    volumes = phase_volumes
 
         # Sort by volume number
         return sorted(volumes, key=lambda v: v['volume_number'])
@@ -1705,6 +1701,13 @@ class SectionLParser:
 
                 # Clean title
                 title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+
+                # v6.0.11: HEADER SANITIZATION - 12-word max gate
+                word_count = len(title.split())
+                if word_count > 12:
+                    # Truncate to first 12 words
+                    title = ' '.join(title.split()[:12])
+                    print(f"[v6.0.11] HEADER GATE: Phase title truncated to 12 words")
 
                 # Skip if already seen this phase
                 if phase_num in seen_phases:
