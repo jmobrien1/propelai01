@@ -1574,12 +1574,23 @@ class SectionLParser:
             if volumes:
                 print(f"[v5.0.9] Found {len(volumes)} volumes using numbered pattern")
 
-        # v6.0.8: Try phase-based patterns if still no volumes (GSA RFQ Two-Phase)
-        # These handle RFQs like "Phase I: Technical Experience", "Phase II: Technical Approach"
-        if not volumes:
-            volumes = self._extract_phases_as_volumes(text, table_page_limits, warnings)
-            if volumes:
-                print(f"[v6.0.8] Found {len(volumes)} volumes using phase-based pattern (GSA RFQ)")
+        # v6.0.8/v6.0.10: Try phase-based patterns for GSA RFQs
+        # v6.0.10: PRIORITY CHANGE - Check for phases even if volumes were found
+        # If we detect GSA RFQ indicators AND phases, prefer phases over generic volumes
+        is_gsa_rfq = bool(re.search(r'(?:FAR\s*8\.4|GSA\s+Schedule|Request\s+for\s+Quote|RFQ|Section\s+11)', text, re.IGNORECASE))
+        has_phases = bool(re.search(r'Phase\s+[I1][:\s]', text, re.IGNORECASE))
+
+        if has_phases:
+            phase_volumes = self._extract_phases_as_volumes(text, table_page_limits, warnings)
+            if phase_volumes:
+                if not volumes or is_gsa_rfq:
+                    # v6.0.10: For GSA RFQs or when no volumes found, use phases
+                    print(f"[v6.0.10] Using {len(phase_volumes)} phase-based volumes (GSA RFQ: {is_gsa_rfq})")
+                    volumes = phase_volumes
+                elif len(phase_volumes) > len(volumes):
+                    # If phases provide more structure, prefer them
+                    print(f"[v6.0.10] Phases ({len(phase_volumes)}) provide more structure than volumes ({len(volumes)})")
+                    volumes = phase_volumes
 
         # Sort by volume number
         return sorted(volumes, key=lambda v: v['volume_number'])

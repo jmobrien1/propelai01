@@ -152,6 +152,39 @@ class ContentInjector:
             'key personnel', 'resume', 'qualification', 'experience'
         ]
 
+        # v6.0.10: Document Hierarchy Priority Map
+        # Higher priority documents override lower priority for personnel definitions
+        self.document_priority = {
+            'main_solicitation': 100,   # RFP Section 7, Section L - DEFINITIVE
+            'rfp': 100,
+            'instructions_evaluation': 90,  # Section L/M
+            'evaluation': 85,
+            'attachment': 50,           # Attachments - SUPPORTING
+            'sow': 40,                  # Statement of Work
+            'soo': 30,                  # Statement of Objectives - ANTICIPATED
+            'statement_of_objectives': 30,
+            'unknown': 10,
+        }
+
+        # v6.0.10: Keywords indicating "anticipated" vs "required" personnel
+        self.anticipated_keywords = [
+            'anticipated', 'expected', 'may include', 'suggested',
+            'potential', 'example', 'such as', 'e.g.', 'for example'
+        ]
+
+        self.required_keywords = [
+            'shall', 'must', 'required', 'mandatory', 'minimum',
+            'at a minimum', 'no less than', 'at least'
+        ]
+
+        # v6.0.10: Personnel-related keywords for deduplication
+        self.personnel_keywords = [
+            'key personnel', 'personnel', 'position', 'staff', 'staffing',
+            'resume', 'program manager', 'project manager', 'task lead',
+            'technical lead', 'subject matter expert', 'sme', 'labor category',
+            'labor cat', 'fte', 'full-time'
+        ]
+
         # v5.0.7: Iron Triangle validation rules
         # Section C (PWS/SOW) requirements MUST go to Technical volumes
         # Section M (Evaluation) criteria map to appropriate volumes
@@ -235,8 +268,13 @@ class ContentInjector:
         # Build section lookup for efficient matching
         section_lookup = self._build_section_lookup(skeleton_dict)
 
+        # v6.0.10: Filter personnel requirements by document hierarchy
+        # RFP definitions override SOO "anticipated" definitions
+        filtered_requirements, priority_warnings = self._filter_personnel_by_priority(requirements)
+        warnings.extend(priority_warnings)
+
         # Map each requirement to a section
-        for req in requirements:
+        for req in filtered_requirements:
             mapping = self._map_requirement(req, skeleton_dict, section_lookup)
             if mapping.confidence == MappingConfidence.UNMAPPED:
                 unmapped.append(req)
@@ -271,7 +309,7 @@ class ContentInjector:
         return InjectionResult(
             success=True,
             annotated_outline=annotated_outline,
-            total_requirements=len(requirements),
+            total_requirements=len(filtered_requirements),  # v6.0.10: Use filtered count
             mapped_count=len(mappings),
             unmapped_requirements=unmapped,
             low_confidence_mappings=low_confidence,
@@ -877,3 +915,188 @@ class ContentInjector:
                 text = text[:77] + "..."
             checkpoints.append(f"[ ] Address: {text}")
         return checkpoints
+
+    # =========================================================================
+    # v6.0.10: Document Hierarchy Priority Methods
+    # =========================================================================
+
+    def _get_document_priority(self, requirement: Dict) -> int:
+        """
+        v6.0.10: Get the priority score for a requirement's source document.
+
+        Higher priority documents override lower priority for conflicting definitions.
+        RFP Section L/M (100) > Attachments (50) > SOO (30)
+        """
+        source = requirement.get('source_document', '').lower()
+        section = requirement.get('section', '').lower()
+
+        # Check explicit source document
+        if source:
+            for key, priority in self.document_priority.items():
+                if key in source:
+                    return priority
+
+        # Check section for priority hints
+        if section in ['l', 'm', '7', 'section l', 'section m', 'section 7']:
+            return self.document_priority['main_solicitation']
+        if 'soo' in section or 'statement of objectives' in section:
+            return self.document_priority['soo']
+        if 'sow' in section or 'pws' in section:
+            return self.document_priority['sow']
+
+        return self.document_priority.get('unknown', 10)
+
+    def _is_personnel_requirement(self, requirement: Dict) -> bool:
+        """
+        v6.0.10: Check if a requirement is related to key personnel/staffing.
+
+        Personnel requirements need deduplication based on document hierarchy.
+        """
+        req_text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
+        req_category = requirement.get('category', '').lower()
+
+        # Check category
+        if any(cat in req_category for cat in ['personnel', 'staffing', 'labor']):
+            return True
+
+        # Check text for personnel keywords
+        return any(kw in req_text for kw in self.personnel_keywords)
+
+    def _is_anticipated_requirement(self, requirement: Dict) -> bool:
+        """
+        v6.0.10: Check if a requirement uses "anticipated" language.
+
+        Anticipated requirements are lower priority than definitive requirements.
+        """
+        req_text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
+
+        has_anticipated = any(kw in req_text for kw in self.anticipated_keywords)
+        has_required = any(kw in req_text for kw in self.required_keywords)
+
+        # If it has both anticipated AND required language, defer to required
+        if has_anticipated and has_required:
+            return False
+
+        return has_anticipated
+
+    def _extract_personnel_count(self, requirement: Dict) -> Optional[int]:
+        """
+        v6.0.10: Extract the number of positions from a personnel requirement.
+
+        Looks for patterns like "3 positions", "five personnel", etc.
+        """
+        req_text = (requirement.get('text', '') or requirement.get('full_text', '')).lower()
+
+        # Numeric patterns
+        patterns = [
+            r'(\d+)\s*(?:key\s+)?(?:positions?|personnel|staff|fte)',
+            r'(?:at least|minimum|maximum)\s*(\d+)',
+            r'(\d+)\s*(?:labor|labour)\s*categor',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, req_text)
+            if match:
+                return int(match.group(1))
+
+        # Word-to-number mapping for small numbers
+        word_numbers = {
+            'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+            'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+        }
+        for word, num in word_numbers.items():
+            if word in req_text and any(kw in req_text for kw in ['position', 'personnel']):
+                return num
+
+        return None
+
+    def _filter_personnel_by_priority(
+        self,
+        requirements: List[Dict]
+    ) -> Tuple[List[Dict], List[str]]:
+        """
+        v6.0.10: Filter personnel requirements using document hierarchy priority.
+
+        When RFP says "3 positions required" and SOO says "anticipated 5 positions",
+        the RFP definition takes precedence.
+
+        Returns:
+            (filtered_requirements, warnings)
+        """
+        warnings = []
+
+        # Separate personnel and non-personnel requirements
+        personnel_reqs = []
+        other_reqs = []
+
+        for req in requirements:
+            if self._is_personnel_requirement(req):
+                personnel_reqs.append(req)
+            else:
+                other_reqs.append(req)
+
+        if not personnel_reqs:
+            return requirements, []
+
+        # Sort personnel requirements by document priority (highest first)
+        personnel_reqs.sort(key=lambda r: self._get_document_priority(r), reverse=True)
+
+        # Find conflicting personnel counts
+        filtered_personnel = []
+        seen_topics = {}  # Track personnel topics to deduplicate
+
+        for req in personnel_reqs:
+            priority = self._get_document_priority(req)
+            is_anticipated = self._is_anticipated_requirement(req)
+            count = self._extract_personnel_count(req)
+            req_text = (req.get('text', '') or req.get('full_text', '')).lower()
+
+            # Create a topic key based on content (simplified)
+            topic_key = 'general_personnel'
+            if 'key personnel' in req_text:
+                topic_key = 'key_personnel'
+            elif 'program manager' in req_text:
+                topic_key = 'program_manager'
+            elif 'project manager' in req_text:
+                topic_key = 'project_manager'
+
+            # Check if we've seen a higher-priority definition for this topic
+            if topic_key in seen_topics:
+                existing_priority, existing_anticipated, existing_count = seen_topics[topic_key]
+
+                # Skip if lower priority and existing is not anticipated
+                if priority < existing_priority and not existing_anticipated:
+                    source = req.get('source_document', 'unknown')
+                    warnings.append(
+                        f"[v6.0.10] PERSONNEL OVERRIDE: Skipped '{topic_key}' from {source} "
+                        f"(priority {priority}, {'anticipated' if is_anticipated else 'required'}) - "
+                        f"higher priority definition exists"
+                    )
+                    if count and existing_count and count != existing_count:
+                        warnings.append(
+                            f"[v6.0.10] COUNT CONFLICT: {source} specified {count} positions, "
+                            f"but authoritative source specified {existing_count}"
+                        )
+                    continue
+
+                # Skip anticipated if definitive exists at same/higher priority
+                if is_anticipated and not existing_anticipated:
+                    source = req.get('source_document', 'unknown')
+                    warnings.append(
+                        f"[v6.0.10] ANTICIPATED OVERRIDE: Skipped anticipated '{topic_key}' "
+                        f"from {source} - definitive requirement exists"
+                    )
+                    continue
+
+            # Record this as the authoritative source for this topic
+            seen_topics[topic_key] = (priority, is_anticipated, count)
+            filtered_personnel.append(req)
+
+        if len(filtered_personnel) < len(personnel_reqs):
+            removed = len(personnel_reqs) - len(filtered_personnel)
+            warnings.insert(0,
+                f"[v6.0.10] Document hierarchy filter removed {removed} duplicate/anticipated "
+                f"personnel requirements"
+            )
+
+        return other_reqs + filtered_personnel, warnings

@@ -35,6 +35,8 @@ class SkeletonSection:
     # Slots for content injection (filled by Component B)
     requirement_slots: List[str] = field(default_factory=list)
     eval_factor_slots: List[str] = field(default_factory=list)
+    # v6.0.10: Writing instructions for proposal authors (PWS guidance for SOO responses)
+    writing_instructions: List[str] = field(default_factory=list)
 
 
 @dataclass
