@@ -121,11 +121,25 @@ class SectionLParser:
 
     def __init__(self):
         """Initialize parser with pattern definitions."""
+        # v6.0.8: Added fuzzy matching for common typos (VOLUMNE, VOLUMN, etc.)
         self.volume_patterns = [
-            # "Volume I: Technical Proposal"
+            # "Volume I: Technical Proposal" (with fuzzy VOLUM[NE]*)
+            r"(?i)VOLUM[NE]*\s+([IVX\d]+)\s*[:\-–]\s*([^\n]+)",
+            # "Volume I - Technical Proposal" (with fuzzy matching)
+            r"(?i)VOLUM[NE]*\s+([IVX\d]+)\s*[-–]\s*([^\n]+)",
+            # Standard patterns (kept for backwards compatibility)
             r"Volume\s+([IVX\d]+)\s*[:\-–]\s*([^\n]+)",
-            # "Volume I - Technical Proposal"
             r"Volume\s+([IVX\d]+)\s*[-–]\s*([^\n]+)",
+        ]
+
+        # v6.0.8: Phase-based patterns for GSA RFQs (Two-Phase Down-Select)
+        self.phase_patterns = [
+            # "Phase I: Technical Experience" or "Phase I - Technical"
+            r"(?i)Phase\s+([IVX\d]+)\s*[:\-–]\s*([^\n]+)",
+            # "PHASE 1: EXPERIENCE" (numeric)
+            r"(?i)Phase\s+(\d+)\s*[:\-–]\s*([^\n]+)",
+            # "Phase I Technical Evaluation" (no separator)
+            r"(?i)Phase\s+([IVX\d]+)\s+([A-Z][^\n]{3,50})",
         ]
 
         # v5.0.9: Numbered volume patterns (e.g., "1. Executive Summary and Technical Volume")
@@ -135,6 +149,14 @@ class SectionLParser:
             r"^(\d+)\.\s+([^\n]+?Volume)\s*$",
             # "2. Cost & Price Volume" or "2. Cost/Price Volume"
             r"^(\d+)\.\s+([^\n]*(?:Cost|Price|Technical|Contract|Documentation)[^\n]*Volume)\s*$",
+        ]
+
+        # v6.0.8: GSA RFQ Section patterns (Section 11, Section 12 for instructions/evaluation)
+        self.gsa_section_patterns = [
+            # "Section 11: Instructions to Offerors" or "Section 11.5 Page Limits"
+            r"Section\s+(11|12)(?:\.(\d+))?\s*[:\-–]?\s*([^\n]+)",
+            # "11.5 Proposal Page Limits"
+            r"(11|12)\.(\d+)\s+([^\n]+)",
         ]
 
         self.volume_count_patterns = [
@@ -1523,6 +1545,13 @@ class SectionLParser:
             if volumes:
                 print(f"[v5.0.9] Found {len(volumes)} volumes using numbered pattern")
 
+        # v6.0.8: Try phase-based patterns if still no volumes (GSA RFQ Two-Phase)
+        # These handle RFQs like "Phase I: Technical Experience", "Phase II: Technical Approach"
+        if not volumes:
+            volumes = self._extract_phases_as_volumes(text, table_page_limits, warnings)
+            if volumes:
+                print(f"[v6.0.8] Found {len(volumes)} volumes using phase-based pattern (GSA RFQ)")
+
         # Sort by volume number
         return sorted(volumes, key=lambda v: v['volume_number'])
 
@@ -1600,6 +1629,87 @@ class SectionLParser:
                 ))
 
         return volumes
+
+    def _extract_phases_as_volumes(
+        self,
+        text: str,
+        table_page_limits: Dict[str, Tuple[str, int]],
+        warnings: List[str]
+    ) -> List[VolumeInstruction]:
+        """
+        v6.0.8: Extract Phase markers as volume equivalents for GSA RFQs.
+
+        Handles Two-Phase Down-Select RFQs where structure is:
+        - Phase I: Experience/Past Performance (often 10 pages)
+        - Phase II: Technical Approach (often 10 pages + price)
+
+        This promotes "Phase" markers to top-level volume constructs.
+        """
+        volumes: List[VolumeInstruction] = []
+        seen_phases: set = set()
+
+        for pattern in self.phase_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                phase_num_str = match.group(1)
+
+                # Convert to integer
+                if phase_num_str.upper() in ['I', 'II', 'III', 'IV', 'V']:
+                    phase_num = self._roman_to_int(phase_num_str)
+                else:
+                    try:
+                        phase_num = int(phase_num_str)
+                    except ValueError:
+                        continue
+
+                title = match.group(2).strip() if len(match.groups()) > 1 else f"Phase {phase_num_str}"
+
+                # Clean title
+                title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
+
+                # Skip if already seen this phase
+                if phase_num in seen_phases:
+                    continue
+                seen_phases.add(phase_num)
+
+                # Try to find page limit from context
+                page_limit = None
+                page_limit_source = "not_found"
+
+                # Search for page limit near this match
+                context_start = max(0, match.start() - 200)
+                context_end = min(len(text), match.end() + 500)
+                context = text[context_start:context_end]
+
+                # Look for "X pages" or "X page limit"
+                page_match = re.search(
+                    r'(\d+)\s*(?:page|pg)s?\s*(?:limit|maximum)?',
+                    context,
+                    re.IGNORECASE
+                )
+                if page_match:
+                    page_limit = int(page_match.group(1))
+                    page_limit_source = "context_extraction"
+
+                # Also check table limits
+                for limit_key, (source, limit_val) in table_page_limits.items():
+                    if f"phase {phase_num}" in limit_key.lower() or title.lower() in limit_key.lower():
+                        page_limit = limit_val
+                        page_limit_source = source
+                        break
+
+                print(f"[v6.0.8] Phase-as-Volume found: Phase {phase_num} '{title}', "
+                      f"page_limit={page_limit}, source={page_limit_source}")
+
+                volumes.append(VolumeInstruction(
+                    volume_id=f"PHASE-{phase_num}",
+                    volume_title=f"Phase {phase_num_str}: {title}",
+                    volume_number=phase_num,
+                    page_limit=page_limit,
+                    source_reference=f"Section L (Phase {phase_num_str})",
+                    is_mandatory=True
+                ))
+
+        return sorted(volumes, key=lambda v: v['volume_number'])
 
     def _find_volume_page_limit(
         self,

@@ -889,13 +889,15 @@ class OutlineOrchestrator:
         skeleton_dict = self.structure_builder.to_state_dict(skeleton)
 
         # Inject requirements using standard content injector
+        # v6.0.8: Pass is_soo_source=True to add PWS writing guidance
         result = self.content_injector.inject(
             skeleton_dict=skeleton_dict,
             requirements=requirements,
-            evaluation_criteria=evaluation_criteria
+            evaluation_criteria=evaluation_criteria,
+            is_soo_source=analysis.has_soo  # Add PWS guidance if source is SOO
         )
 
-        print(f"[v6.0.7] Content injection: {result.mapped_count}/{result.total_requirements} mapped")
+        print(f"[v6.0.8] Content injection: {result.mapped_count}/{result.total_requirements} mapped (SOO source: {analysis.has_soo})")
 
         return {
             'proposal_skeleton': skeleton_dict,

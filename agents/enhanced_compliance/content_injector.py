@@ -188,7 +188,8 @@ class ContentInjector:
         self,
         skeleton_dict: Dict[str, Any],
         requirements: List[Dict],
-        evaluation_criteria: List[Dict]
+        evaluation_criteria: List[Dict],
+        is_soo_source: bool = False
     ) -> InjectionResult:
         """
         Inject requirements into skeleton sections.
@@ -209,6 +210,7 @@ class ContentInjector:
             skeleton_dict: Skeleton from state['proposal_skeleton']
             requirements: Requirements from state['requirements'] (Section C)
             evaluation_criteria: Criteria from state['evaluation_criteria'] (Section M)
+            is_soo_source: v6.0.8 - True if requirements come from SOO (adds PWS guidance)
 
         Returns:
             InjectionResult with annotated_outline for state storage
@@ -245,7 +247,8 @@ class ContentInjector:
         annotated_outline = self._build_annotated_outline(
             skeleton_dict,
             mappings,
-            evaluation_criteria
+            evaluation_criteria,
+            is_soo_source=is_soo_source
         )
 
         # Identify low confidence mappings for review
@@ -741,13 +744,16 @@ class ContentInjector:
         self,
         skeleton: Dict,
         mappings: List[RequirementMapping],
-        evaluation_criteria: List[Dict]
+        evaluation_criteria: List[Dict],
+        is_soo_source: bool = False
     ) -> Dict[str, Any]:
         """
         Build the final annotated outline for state storage.
 
         This combines the skeleton structure with injected requirements
         to produce the complete annotated outline.
+
+        v6.0.8: If is_soo_source=True, adds PWS writing guidance to technical sections.
         """
         # Group mappings by section
         section_reqs: Dict[str, List[RequirementMapping]] = {}
@@ -765,12 +771,49 @@ class ContentInjector:
             for sec in vol.get('sections', []):
                 sec_mappings = section_reqs.get(sec['id'], [])
 
+                # v6.0.8: Generate writing instructions based on source type
+                writing_instructions = []
+                if is_soo_source and sec_mappings:
+                    # Check if this is a technical section (not cost/price)
+                    sec_title_lower = sec.get('title', '').lower()
+                    is_technical = any(kw in sec_title_lower for kw in [
+                        'technical', 'approach', 'solution', 'management',
+                        'staffing', 'security', 'quality', 'transition'
+                    ])
+                    is_cost = any(kw in sec_title_lower for kw in ['cost', 'price', 'pricing'])
+
+                    if is_technical and not is_cost:
+                        writing_instructions.append(
+                            "**DRAFTING REQUIREMENT (SOO Response):** Author a Performance Work Statement (PWS) "
+                            "that fulfills the objectives listed below. Transform each SOO objective into "
+                            "specific, measurable tasks with defined deliverables."
+                        )
+
+                        # Add section-specific PWS guidance
+                        if 'security' in sec_title_lower:
+                            writing_instructions.append(
+                                "**Security PWS Guidance:** Define specific security controls, clearance requirements, "
+                                "incident response procedures, and compliance verification methods."
+                            )
+                        elif 'management' in sec_title_lower:
+                            writing_instructions.append(
+                                "**Management PWS Guidance:** Define program governance structure, reporting cadence, "
+                                "quality assurance processes, and risk mitigation procedures."
+                            )
+                        elif 'transition' in sec_title_lower:
+                            writing_instructions.append(
+                                "**Transition PWS Guidance:** Define phase-in timeline, knowledge transfer activities, "
+                                "incumbent coordination requirements, and go-live criteria."
+                            )
+
                 section_data = {
                     'id': sec['id'],
                     'title': sec['title'],
                     'page_limit': sec.get('page_limit'),
                     'order': sec.get('order', 0),
                     'source_reference': sec.get('source_reference', ''),
+                    # v6.0.8: Writing instructions for proposal authors
+                    'writing_instructions': writing_instructions,
                     # Injected content
                     'requirements': [
                         {

@@ -4773,7 +4773,7 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True, lenient_mode: 
         }
 
         if extracted_sol_num:
-            # v6.0.5: Validate it's an official pattern (not internal ID)
+            # v6.0.5/v6.0.8: Validate it's an official pattern (not internal ID)
             import re
             official_patterns = [
                 r'^FA\d{4}',  # Air Force
@@ -4781,7 +4781,9 @@ async def generate_outline(rfp_id: str, strict_mode: bool = True, lenient_mode: 
                 r'^N\d{5}',  # Navy
                 r'^SP\d{4}',  # DLA
                 r'^\d{2}[A-Z]\d{5}',  # NIH
-                r'^47QF',  # GSA
+                r'^47QF',  # GSA OASIS/Alliant
+                r'^693JJ4',  # v6.0.8: DOT/FMCSA (e.g., 693JJ426Q000006)
+                r'^\d{3}[A-Z]{2}\d{2}',  # Generic agency pattern
             ]
             internal_pattern = r'^RFP[-_]?[A-F0-9]{6,}'
 
