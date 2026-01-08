@@ -986,6 +986,19 @@ class SectionLParser:
                         # Clean title
                         title = re.sub(r'[\.\,\;\:]+$', '', title).strip()
                         table_data[title.lower()] = (title, page_limit)
+
+                        # v6.0.9: Also store by volume number key for strict binding
+                        vol_num = None
+                        vol_num_str_clean = vol_num_str.strip().upper()
+                        if vol_num_str_clean.isdigit():
+                            vol_num = int(vol_num_str_clean)
+                        elif vol_num_str_clean in ['I', 'II', 'III', 'IV', 'V']:
+                            vol_num = {'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5}[vol_num_str_clean]
+
+                        if vol_num:
+                            table_data[f'vol {vol_num}'] = (title, page_limit)
+                            table_data[f'volume {vol_num}'] = (title, page_limit)
+                            print(f"[v6.0.9] Row-index binding: Vol {vol_num} '{title}' -> {page_limit} pages")
                 except ValueError:
                     pass
 
@@ -998,12 +1011,20 @@ class SectionLParser:
             r"(Contract\s+Documentation)\s*[|\t:]+\s*(\d+)\s*pages?",
             # Volume N: Title ... ## pages (in same line/nearby)
             r"Volume\s*[1-3IVX]+[:\s]+([A-Za-z][^|\n]{3,40})[^0-9]*?(\d+)\s*pages?",
+            # v6.0.9: More flexible - Volume 1 ... 8 pages (anywhere in same paragraph)
+            r"Volume\s*(\d+)[^\d\n]*?(\d+)\s*(?:page|pg)s?\s*(?:limit|maximum)?",
         ]
 
         for pattern in flexible_patterns:
             for match in re.finditer(pattern, text, re.IGNORECASE):
-                title = match.group(1).strip()
-                page_limit_str = match.group(2).strip()
+                # Handle the last pattern differently (captures vol num in group 1)
+                if 'Volume\\s*(\\d+)' in pattern:
+                    vol_num_str = match.group(1)
+                    page_limit_str = match.group(2)
+                    title = f"Volume {vol_num_str}"
+                else:
+                    title = match.group(1).strip()
+                    page_limit_str = match.group(2).strip()
 
                 try:
                     page_limit = int(page_limit_str)
@@ -1012,6 +1033,14 @@ class SectionLParser:
                         # Don't overwrite if we already have this
                         if title.lower() not in table_data:
                             table_data[title.lower()] = (title, page_limit)
+
+                        # v6.0.9: Extract volume number and add vol N keys
+                        vol_match = re.search(r'Volume\s*(\d+)', title, re.IGNORECASE)
+                        if vol_match:
+                            vol_num = int(vol_match.group(1))
+                            if f'vol {vol_num}' not in table_data:
+                                table_data[f'vol {vol_num}'] = (title, page_limit)
+                                table_data[f'volume {vol_num}'] = (title, page_limit)
                 except ValueError:
                     pass
 
@@ -2074,18 +2103,31 @@ class SectionLParser:
                 order = order_by_volume[vol_num]
                 order_by_volume[vol_num] += 1
 
-                # v6.0.4: N/A LOGIC GATE
-                # After matching a section header, scan the next 100 characters
-                # If they contain "N/A", "Not Applicable", or "Reserved", SKIP this section
-                na_check_start = match.end()
-                na_check_end = min(len(text), match.end() + 100)
-                following_text = text[na_check_start:na_check_end].upper()
+                # v6.0.4/v6.0.9: N/A LOGIC GATE
+                # After matching a section header, scan the surrounding text for N/A markers
+                # v6.0.9: Extended to check both BEFORE (for tables with N/A in prior column)
+                # and AFTER the match (for inline N/A markers)
+                na_check_before_start = max(0, match.start() - 50)
+                na_check_after_end = min(len(text), match.end() + 150)
 
-                na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED', 'INTENTIONALLY LEFT BLANK']
+                # Check text after the match (original logic)
+                following_text = text[match.end():na_check_after_end].upper()
+                # Also check the same line before/after (for table row N/A markers)
+                line_start = text.rfind('\n', 0, match.start()) + 1
+                line_end = text.find('\n', match.end())
+                if line_end == -1:
+                    line_end = len(text)
+                line_text = text[line_start:line_end].upper()
+
+                na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED', 'INTENTIONALLY LEFT BLANK', 'NONE REQUIRED']
                 is_na_section = any(na_pat in following_text for na_pat in na_patterns)
 
+                # v6.0.9: Also check if N/A appears on the same line (table cell adjacent)
+                if not is_na_section:
+                    is_na_section = any(na_pat in line_text for na_pat in na_patterns)
+
                 if is_na_section:
-                    print(f"[v6.0.4] N/A GATE: Section {sec_id} '{sec_title}' marked as N/A - EXCLUDED")
+                    print(f"[v6.0.9] N/A GATE: Section {sec_id} '{sec_title}' marked as N/A - EXCLUDED")
                     continue  # Skip this section entirely
 
                 # Find page limit
