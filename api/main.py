@@ -2483,13 +2483,43 @@ def process_rfp_background(rfp_id: str):
             "outline": None  # Clear cached outline - will be regenerated from new requirements
         }
 
-        # v4.2: Update solicitation_number if extracted (only if not already set or was null)
+        # v4.2/v6.0.9: Update solicitation_number if extracted
         extracted_solicitation = result.stats.get("solicitation_number")
+        current_rfp = store.get(rfp_id)
+
+        # v6.0.9: AGGRESSIVE AGENCY ID SCAN
+        # If we didn't find a solicitation number, scan the full text for official patterns
+        if not extracted_solicitation:
+            import re
+            full_text = result.stats.get("full_text", "")
+            if not full_text and requirements:
+                full_text = " ".join(r.get("text", "") for r in requirements)
+
+            # Priority scan for agency-specific patterns
+            agency_patterns = [
+                (r'\b(FA\d{4}[A-Z0-9\-]+)', 'Air Force'),  # FA880625RB003
+                (r'\b(W\d{3}[A-Z]{2}[A-Z0-9\-]+)', 'Army'),
+                (r'\b(N\d{5}[A-Z0-9\-]+)', 'Navy'),
+                (r'\b(SP\d{4}[A-Z0-9\-]+)', 'DLA'),
+                (r'\b(693JJ4[A-Z0-9]+)', 'DOT/FMCSA'),  # DOT RFQs
+                (r'\b(47QF[A-Z0-9\-]+)', 'GSA'),
+            ]
+
+            for pattern, agency in agency_patterns:
+                match = re.search(pattern, full_text, re.IGNORECASE)
+                if match:
+                    extracted_solicitation = match.group(1).upper()
+                    print(f"[v6.0.9] AGENCY SCAN: Found {agency} pattern: {extracted_solicitation}")
+                    break
+
+        # Set solicitation number (override internal IDs)
         if extracted_solicitation:
-            current_rfp = store.get(rfp_id)
-            if not current_rfp.get("solicitation_number"):
+            current_sol = current_rfp.get("solicitation_number", "")
+            is_internal = bool(re.match(r'^RFP[-_]?[A-F0-9]{6,}', current_sol.upper())) if current_sol else True
+
+            if not current_sol or is_internal:
                 update_data["solicitation_number"] = extracted_solicitation
-                print(f"[INFO] Extracted solicitation number: {extracted_solicitation}")
+                print(f"[v6.0.9] Setting solicitation_number: {extracted_solicitation}")
 
         store.update(rfp_id, update_data)
         
@@ -5155,13 +5185,19 @@ async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
                     break
 
         if section_l_text:
-            # Search for official solicitation number patterns
+            # v6.0.9: More flexible patterns for agency solicitation numbers
             sol_patterns = [
-                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(FA\d{4}[-]?\d{2}[-]?[RQ][-]?[A-Z0-9]+)',
-                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(W\d{3}[A-Z]{2}[-]?\d{2}[-]?[A-Z][-]?\d{4})',
-                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(N\d{5}[-]?\d{2}[-]?[A-Z][-]?\d{4})',
-                r'(FA\d{11})',  # Full Air Force contract number
-                r'(FA\d{4}[-]?\d{2}[-]?[RQ][-]?\d{4})',  # Air Force RFP format
+                # v6.0.9: Generic agency patterns (most flexible, try first)
+                r'\b(FA\d{4}[A-Z0-9\-]+)\b',  # Air Force - FA880625RB003
+                r'\b(W\d{3}[A-Z]{2}[A-Z0-9\-]+)\b',  # Army
+                r'\b(N\d{5}[A-Z0-9\-]+)\b',  # Navy
+                r'\b(SP\d{4}[A-Z0-9\-]+)\b',  # DLA
+                r'\b(693JJ4[A-Z0-9]+)\b',  # DOT/FMCSA
+                r'\b(47QF[A-Z0-9\-]+)\b',  # GSA
+                # Labeled patterns (with "Solicitation No:" prefix)
+                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(FA\d{4}[A-Z0-9\-]+)',
+                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(W\d{3}[A-Z]{2}[A-Z0-9\-]+)',
+                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(N\d{5}[A-Z0-9\-]+)',
             ]
 
             for pattern in sol_patterns:
