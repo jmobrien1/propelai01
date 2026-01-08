@@ -474,21 +474,33 @@ class RFQSkeletonBuilder:
 # Structured Error Classes for v6.0.7
 # ============================================================================
 
-@dataclass
-class OutlineGenerationError:
+class OutlineGenerationError(Exception):
     """
     v6.0.7: Structured error for outline generation failures.
 
     Provides detailed context for debugging and user guidance.
     """
-    error_code: str
-    message: str
-    detected_signals: List[str] = field(default_factory=list)
-    missing_elements: List[str] = field(default_factory=list)
-    suggestions: List[str] = field(default_factory=list)
-    procurement_type: Optional[str] = None
-    confidence_score: float = 0.0
-    recoverable: bool = False
+
+    def __init__(
+        self,
+        error_code: str,
+        message: str,
+        detected_signals: Optional[List[str]] = None,
+        missing_elements: Optional[List[str]] = None,
+        suggestions: Optional[List[str]] = None,
+        procurement_type: Optional[str] = None,
+        confidence_score: float = 0.0,
+        recoverable: bool = False
+    ):
+        super().__init__(message)
+        self.error_code = error_code
+        self.message = message
+        self.detected_signals = detected_signals or []
+        self.missing_elements = missing_elements or []
+        self.suggestions = suggestions or []
+        self.procurement_type = procurement_type
+        self.confidence_score = confidence_score
+        self.recoverable = recoverable
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to JSON-serializable dict for API response."""
