@@ -251,6 +251,13 @@ class RFQSkeletonBuilder:
                     sec_title = re.sub(r'[\.\,\;\:]+$', '', sec_title).strip()
                     sec_title = re.sub(r'\s*\([^)]*\)\s*$', '', sec_title).strip()
 
+                    # v6.0.11: HEADER SANITIZATION - 12-word max gate
+                    # Prevents sentence-long extractions from being treated as headers
+                    word_count = len(sec_title.split())
+                    if word_count > 12:
+                        logger.debug(f"[v6.0.11] HEADER GATE: '{sec_title[:50]}...' rejected ({word_count} words > 12 max)")
+                        continue
+
                     # Skip if already seen or title too short
                     if sec_id in seen_ids or len(sec_title) < 3:
                         continue
