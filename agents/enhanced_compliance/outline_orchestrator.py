@@ -890,7 +890,7 @@ class OutlineOrchestrator:
 
         # Inject requirements using standard content injector
         result = self.content_injector.inject(
-            skeleton=skeleton_dict,
+            skeleton_dict=skeleton_dict,
             requirements=requirements,
             evaluation_criteria=evaluation_criteria
         )
