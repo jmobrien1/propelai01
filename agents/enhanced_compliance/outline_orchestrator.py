@@ -1061,13 +1061,13 @@ class OutlineOrchestrator:
             'rfp_title': rfp_title,
             'volumes': [
                 {
-                    'volume_id': v.volume_id,
-                    'volume_title': v.volume_title,
-                    'volume_number': v.volume_number,
-                    'page_limit': v.page_limit,
-                    'sections': v.sections,
-                    'source_reference': v.source_reference,
-                    'is_mandatory': v.is_mandatory,
+                    'volume_id': v['volume_id'],
+                    'volume_title': v['volume_title'],
+                    'volume_number': v['volume_number'],
+                    'page_limit': v.get('page_limit'),
+                    'sections': v.get('sections', []),
+                    'source_reference': v.get('source_reference', ''),
+                    'is_mandatory': v.get('is_mandatory', True),
                 }
                 for v in volumes
             ],
