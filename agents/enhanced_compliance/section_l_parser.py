@@ -1195,7 +1195,9 @@ class SectionLParser:
             return page_limits
 
         # v6.0.5: Volume keyword to volume number mapping (expanded)
+        # v6.0.14: Added OASIS+ Placement Procedures patterns (Sub Factor, SF 1/2, etc.)
         volume_keyword_map = {
+            # Standard UCF volumes
             'technical': ('Technical Volume', 1),
             'tech': ('Technical Volume', 1),
             'executive': ('Executive Summary and Technical Volume', 1),
@@ -1223,6 +1225,23 @@ class SectionLParser:
             'past performance': ('Past Performance Volume', 4),
             'experience': ('Past Performance Volume', 4),
             'references': ('Past Performance Volume', 4),
+            # v6.0.14: OASIS+ Placement Procedures patterns
+            'sub factor 1': ('Sub Factor 1: Management', 1),
+            'subfactor 1': ('Sub Factor 1: Management', 1),
+            'sf 1': ('Sub Factor 1: Management', 1),
+            'sf1': ('Sub Factor 1: Management', 1),
+            'management approach': ('Sub Factor 1: Management', 1),
+            'sub factor 2': ('Sub Factor 2: Infrastructure', 1),
+            'subfactor 2': ('Sub Factor 2: Infrastructure', 1),
+            'sf 2': ('Sub Factor 2: Infrastructure', 1),
+            'sf2': ('Sub Factor 2: Infrastructure', 1),
+            'infrastructure': ('Sub Factor 2: Infrastructure', 1),
+            'infrastructure approach': ('Sub Factor 2: Infrastructure', 1),
+            'executive summary': ('Executive Summary', 1),
+            # v6.0.14: OASIS+ Volume 1 total (when table has "Volume 1" row with total)
+            '1.1': ('Executive Summary', 1),
+            '1.2': ('Sub Factor 1: Management', 1),
+            '1.3': ('Sub Factor 2: Infrastructure', 1),
         }
 
         # v6.0.5: Expanded column header patterns for limit detection
@@ -1508,6 +1527,11 @@ class SectionLParser:
         for key, value in inline_page_limits.items():
             if key not in table_page_limits:
                 table_page_limits[key] = value
+
+        # v6.0.14: CONSTRAINT AUDITOR - Detect and resolve page limit contradictions
+        # This handles cases where Volume 1 = 8 pages but children sum to 21 pages
+        if table_page_limits:
+            table_page_limits = self.audit_page_limit_constraints(table_page_limits, warnings)
 
         # Standard "Volume I: Title" patterns
         for pattern in self.volume_patterns:
@@ -1914,6 +1938,100 @@ class SectionLParser:
                     break
 
         return page_limits
+
+    def audit_page_limit_constraints(
+        self,
+        page_limits: Dict[str, Tuple[str, int]],
+        warnings: List[str]
+    ) -> Dict[str, Tuple[str, int]]:
+        """
+        v6.0.14: CONSTRAINT AUDITOR - Detect and resolve page limit contradictions.
+
+        Problem: Government RFPs often have mathematical errors where:
+        - Volume 1 Total: "8 pages"
+        - But: Exec Summary (1) + SF1 (10) + SF2 (10) = 21 pages
+
+        Resolution Strategy:
+        1. Detect parent-child contradictions
+        2. DEFAULT to the MOST RESTRICTIVE limit (favor compliance)
+        3. Inject CRITICAL COMPLIANCE RISK warning
+
+        Args:
+            page_limits: Dict of title.lower() -> (title, page_limit)
+            warnings: List to append warnings to
+
+        Returns:
+            Audited page_limits dict with contradictions resolved
+        """
+        # v6.0.14: OASIS+ volume hierarchy for contradiction detection
+        volume_hierarchy = {
+            # Parent volume key: list of child section keys
+            'volume 1': ['executive summary', 'sub factor 1', 'sub factor 2', 'sf 1', 'sf 2',
+                         'management approach', 'infrastructure approach', '1.1', '1.2', '1.3'],
+            'technical volume': ['executive summary', 'sub factor 1', 'sub factor 2',
+                                 'management approach', 'infrastructure approach'],
+            'vol 1': ['executive summary', 'sub factor 1', 'sub factor 2', 'sf 1', 'sf 2'],
+        }
+
+        audited_limits = dict(page_limits)
+        contradictions_found = []
+
+        for parent_key, child_keys in volume_hierarchy.items():
+            if parent_key not in page_limits:
+                continue
+
+            parent_title, parent_limit = page_limits[parent_key]
+
+            # Sum child page limits
+            child_sum = 0
+            found_children = []
+            for child_key in child_keys:
+                if child_key in page_limits:
+                    child_title, child_limit = page_limits[child_key]
+                    child_sum += child_limit
+                    found_children.append((child_title, child_limit))
+
+            # Detect contradiction: sum of children exceeds parent
+            if found_children and child_sum > parent_limit:
+                contradiction = {
+                    'parent': parent_title,
+                    'parent_limit': parent_limit,
+                    'children': found_children,
+                    'child_sum': child_sum,
+                    'discrepancy': child_sum - parent_limit
+                }
+                contradictions_found.append(contradiction)
+
+                # v6.0.14: CRITICAL COMPLIANCE RISK - Use restrictive limit
+                print(f"[v6.0.14] CONSTRAINT AUDITOR: Contradiction detected!")
+                print(f"  Parent: '{parent_title}' = {parent_limit} pages")
+                print(f"  Children sum: {child_sum} pages ({found_children})")
+                print(f"  ACTION: Using restrictive limit ({parent_limit} pages)")
+
+                # Add CRITICAL warning
+                warning_msg = (
+                    f"CRITICAL COMPLIANCE RISK: Page limit contradiction in '{parent_title}'. "
+                    f"Volume total states {parent_limit} pages, but subsections sum to {child_sum} pages "
+                    f"({', '.join(f'{t}: {l}p' for t, l in found_children)}). "
+                    f"RECOMMENDATION: Clarify with Contracting Officer. "
+                    f"SYSTEM DEFAULT: Using restrictive limit of {parent_limit} pages."
+                )
+                warnings.append(warning_msg)
+
+                # Scale down child limits proportionally to fit parent
+                if child_sum > 0:
+                    scale_factor = parent_limit / child_sum
+                    for child_key in child_keys:
+                        if child_key in audited_limits:
+                            orig_title, orig_limit = audited_limits[child_key]
+                            scaled_limit = max(1, int(orig_limit * scale_factor))
+                            audited_limits[child_key] = (orig_title, scaled_limit)
+                            print(f"  Scaled '{orig_title}': {orig_limit} -> {scaled_limit} pages")
+
+        if contradictions_found:
+            print(f"[v6.0.14] CONSTRAINT AUDITOR: Resolved {len(contradictions_found)} contradictions")
+
+        return audited_limits
 
     def _extract_volumes_from_mentions(
         self,

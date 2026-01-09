@@ -5173,49 +5173,62 @@ async def export_annotated_outline(rfp_id: str, regenerate: bool = False):
         solicitation_number = stored_sol_num
         print(f"[v6.0.6] Using stored official solicitation: {solicitation_number}")
     else:
-        # v6.0.6: Try to extract from document text
-        # Look for official solicitation patterns in Section L text or requirements
-        section_l_text = ""
+        # v6.0.14: AGGRESSIVE DOCUMENT SCAN - Scan ALL documents for official solicitation
+        # Priority order: solicitation > attachment > section_l > sow
+        all_document_texts = []
+
+        # Collect text from all document sources
         if "section_l" in rfp:
-            section_l_text = rfp.get("section_l", {}).get("text", "")
-        if not section_l_text and "documents" in rfp:
+            all_document_texts.append(("section_l", rfp.get("section_l", {}).get("text", "")))
+        if "documents" in rfp:
             for doc in rfp.get("documents", []):
-                if doc.get("document_type") in ["section_l", "rfp", "solicitation"]:
-                    section_l_text = doc.get("text", "")
-                    break
+                doc_type = doc.get("document_type", "")
+                doc_text = doc.get("text", "")
+                if doc_text:
+                    all_document_texts.append((doc_type, doc_text))
+        if "file_paths" in rfp:
+            # Also check raw extracted text if available
+            for fp in rfp.get("file_paths", []):
+                if isinstance(fp, dict) and fp.get("extracted_text"):
+                    all_document_texts.append(("raw_file", fp.get("extracted_text", "")))
 
-        if section_l_text:
-            # v6.0.9: More flexible patterns for agency solicitation numbers
-            sol_patterns = [
-                # v6.0.9: Generic agency patterns (most flexible, try first)
-                r'\b(FA\d{4}[A-Z0-9\-]+)\b',  # Air Force - FA880625RB003
-                r'\b(W\d{3}[A-Z]{2}[A-Z0-9\-]+)\b',  # Army
-                r'\b(N\d{5}[A-Z0-9\-]+)\b',  # Navy
-                r'\b(SP\d{4}[A-Z0-9\-]+)\b',  # DLA
-                r'\b(693JJ4[A-Z0-9]+)\b',  # DOT/FMCSA
-                r'\b(47QF[A-Z0-9\-]+)\b',  # GSA
-                # Labeled patterns (with "Solicitation No:" prefix)
-                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(FA\d{4}[A-Z0-9\-]+)',
-                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(W\d{3}[A-Z]{2}[A-Z0-9\-]+)',
-                r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*(N\d{5}[A-Z0-9\-]+)',
-            ]
+        # v6.0.14: Enhanced agency patterns - prioritize agency-specific formats
+        sol_patterns = [
+            # Priority 1: Agency-specific patterns (highest confidence)
+            r'\b(FA\d{4}[-]?\d{2}[-]?[A-Z]{1,2}[-]?\d{3,6})\b',  # Air Force full: FA880625RB003
+            r'\b(FA\d{4}[A-Z0-9\-]{4,12})\b',  # Air Force generic
+            r'\b(W\d{3}[A-Z]{2}[A-Z0-9\-]+)\b',  # Army
+            r'\b(N\d{5}[A-Z0-9\-]+)\b',  # Navy
+            r'\b(SP\d{4}[A-Z0-9\-]+)\b',  # DLA
+            r'\b(693JJ4[A-Z0-9]+)\b',  # DOT/FMCSA
+            r'\b(47QF[A-Z0-9\-]+)\b',  # GSA OASIS+
+            r'\b(GS-[A-Z0-9]{2,}-[A-Z0-9]+)\b',  # GSA Schedule
+            # Priority 2: Labeled patterns (with "Solicitation No:" prefix)
+            r'(?:Solicitation|RFP|RFQ|Contract)\s*(?:No\.?|Number|#)?:?\s*([A-Z]{1,2}\d{4,}[A-Z0-9\-]+)',
+        ]
 
+        # Scan all documents
+        for doc_type, doc_text in all_document_texts:
+            if not doc_text:
+                continue
             for pattern in sol_patterns:
-                match = re_module.search(pattern, section_l_text, re_module.IGNORECASE)
+                match = re_module.search(pattern, doc_text, re_module.IGNORECASE)
                 if match:
                     extracted = match.group(1).upper()
                     if is_official_sol_num(extracted):
                         solicitation_number = extracted
-                        print(f"[v6.0.6] EXTRACTED official solicitation from document: {solicitation_number}")
+                        print(f"[v6.0.14] EXTRACTED official solicitation from {doc_type}: {solicitation_number}")
                         # Update the store so future exports use this
                         store.update(rfp_id, {"solicitation_number": solicitation_number})
                         break
+            if solicitation_number:
+                break
 
     # Final fallback - use stored value or rfp_id
     if not solicitation_number:
         solicitation_number = stored_sol_num or rfp_id
         if re_module.match(internal_pattern, (solicitation_number or "").upper()):
-            print(f"[v6.0.6] WARNING: Using internal ID '{solicitation_number}' - no official pattern found")
+            print(f"[v6.0.14] WARNING: Using internal ID '{solicitation_number}' - no official pattern found")
 
     rfp_name = rfp.get("name") or ""
 
