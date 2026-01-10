@@ -2946,8 +2946,39 @@ def process_rfp_best_practices_background(rfp_id: str):
         else:
             print(f"[DEBUG] Solicitation already set: {existing_sol}")
 
+        # v6.0.16: GLOBAL AGENCY ID PRIORITY - Final scan for official solicitation numbers
+        # This runs AFTER existing extraction to ensure agency patterns take highest priority
+        agency_patterns = [
+            (r'\b(FA\d{4}[-]?\d{2}[-]?[A-Z]{0,2}[-]?\w{0,6})\b', 'Air Force'),
+            (r'\b(N\d{5}[A-Z0-9\-]+)\b', 'Navy'),
+            (r'\b(W\d{3}[A-Z]{2}[A-Z0-9\-]+)\b', 'Army'),
+            (r'\b(SP\d{4}[A-Z0-9\-]+)\b', 'DLA'),
+            (r'\b(GS-[A-Z0-9]{2,}-[A-Z0-9]+)\b', 'GSA Schedule'),
+            (r'\b(47Q[A-Z0-9\-]+)\b', 'GSA OASIS+'),
+            (r'\b(693JJ4[A-Z0-9]+)\b', 'DOT/FMCSA'),
+        ]
+
+        # Collect all document text
+        all_text = ""
+        for doc in documents:
+            doc_text = doc.get('text', '')
+            all_text += " " + doc_text[:10000]  # Limit per doc for efficiency
+
+        for pattern, agency in agency_patterns:
+            match = re.search(pattern, all_text, re.IGNORECASE)
+            if match:
+                agency_solicitation = match.group(1).upper()
+                current_sol = update_data.get("solicitation_number", current_rfp.get("solicitation_number", ""))
+                is_internal = bool(re.match(r'^RFP[-_]?[A-F0-9]{6,}', (current_sol or "").upper()))
+
+                if is_internal or not current_sol:
+                    update_data["solicitation_number"] = agency_solicitation
+                    update_data["name"] = agency_solicitation
+                    print(f"[v6.0.16] GLOBAL AGENCY ID: Overriding with {agency} pattern: {agency_solicitation}")
+                break
+
         store.update(rfp_id, update_data)
-        
+
         store.set_status(rfp_id, "completed", 100, "Processing complete", len(requirements))
         
     except Exception as e:
@@ -3267,6 +3298,51 @@ def process_rfp_resilient_background(rfp_id: str):
         if section_l_full_text:
             update_data["section_l_full_text"] = section_l_full_text
             print(f"[v5.0.5] Storing section_l_full_text: {len(section_l_full_text)} chars")
+
+        # v6.0.16: GLOBAL AGENCY ID PRIORITY - Scan all documents for official solicitation number
+        # If found, override internal UUID and update both solicitation_number and name fields
+        agency_patterns = [
+            (r'\b(FA\d{4}[-]?\d{2}[-]?[A-Z]{0,2}[-]?\w{0,6})\b', 'Air Force'),  # FA880625RB003
+            (r'\b(N\d{5}[A-Z0-9\-]+)\b', 'Navy'),
+            (r'\b(W\d{3}[A-Z]{2}[A-Z0-9\-]+)\b', 'Army'),
+            (r'\b(SP\d{4}[A-Z0-9\-]+)\b', 'DLA'),
+            (r'\b(GS-[A-Z0-9]{2,}-[A-Z0-9]+)\b', 'GSA Schedule'),
+            (r'\b(47Q[A-Z0-9\-]+)\b', 'GSA OASIS+'),
+            (r'\b(693JJ4[A-Z0-9]+)\b', 'DOT/FMCSA'),
+        ]
+
+        # Collect all text for scanning
+        all_text = section_l_full_text or ""
+        for doc in parsed_docs.values():
+            if hasattr(doc, 'raw_text') and doc.raw_text:
+                all_text += " " + doc.raw_text
+            elif hasattr(doc, 'text') and doc.text:
+                all_text += " " + doc.text
+
+        agency_solicitation = None
+        agency_name = None
+        for pattern, agency in agency_patterns:
+            match = re.search(pattern, all_text, re.IGNORECASE)
+            if match:
+                agency_solicitation = match.group(1).upper()
+                agency_name = agency
+                print(f"[v6.0.16] GLOBAL AGENCY ID: Found {agency} pattern: {agency_solicitation}")
+                break
+
+        if agency_solicitation:
+            # Check if current ID is an internal UUID
+            current_sol = rfp.get("solicitation_number", "")
+            is_internal = bool(re.match(r'^RFP[-_]?[A-F0-9]{6,}', current_sol.upper())) if current_sol else True
+
+            if is_internal or not current_sol:
+                update_data["solicitation_number"] = agency_solicitation
+                # Also update the RFP name to include the official ID
+                current_name = rfp.get("name", "")
+                if current_name and "RFP-" not in current_name.upper():
+                    update_data["name"] = f"{agency_solicitation} - {current_name}"
+                else:
+                    update_data["name"] = agency_solicitation
+                print(f"[v6.0.16] GLOBAL OVERRIDE: Replaced internal ID with {agency_solicitation}")
 
         store.update(rfp_id, update_data)
 

@@ -1340,18 +1340,17 @@ class SectionLParser:
         warnings: List[str]
     ) -> Dict[str, Tuple[str, int]]:
         """
-        v6.0.5: CONSTRAINT ANCHOR SYSTEM for page limits.
+        v6.0.16: RELATIONAL TABLE INTERSECTION - Column-Index Linking.
 
-        CRITICAL FIX: v6.0.4's header detection failed on nested/multi-line table headers
-        common in Space Force documents. This version:
+        CRITICAL REFACTOR: Transition from "Heuristic Proximity" to "Relational Row-Index Logic".
 
-        1. SCAN ALL ROWS for header patterns (not just first 2)
-        2. BUILD COLUMN INDEX MAP by concatenating multi-line headers
-        3. FIND INTERSECTION of "Technical" row + "Limit/Pages" column
-        4. FORCE-BIND the integer value at that intersection
-
-        The "Constraint Anchor Rule": Page limit is LOCKED to the cell at the
-        intersection of (row containing volume keyword) × (column containing limit header).
+        Algorithm:
+        1. Extract table as grid of cells using pdfplumber
+        2. Identify TITLE column index (contains volume/section names)
+        3. Identify LIMIT column index (contains page numbers)
+        4. For each row: IF Title[row_idx] matches volume keyword,
+           THEN page_limit = EXACT value at Limit[row_idx]
+        5. HARD-BIND: No regex fallbacks can override this intersection value
 
         Args:
             pdf_path: Path to the PDF file
@@ -1365,8 +1364,7 @@ class SectionLParser:
         if not pdf_path or not PDFPLUMBER_AVAILABLE:
             return page_limits
 
-        # v6.0.5: Volume keyword to volume number mapping (expanded)
-        # v6.0.14: Added OASIS+ Placement Procedures patterns (Sub Factor, SF 1/2, etc.)
+        # v6.0.16: Volume keyword to volume number mapping
         volume_keyword_map = {
             # Standard UCF volumes
             'technical': ('Technical Volume', 1),
@@ -1396,7 +1394,7 @@ class SectionLParser:
             'past performance': ('Past Performance Volume', 4),
             'experience': ('Past Performance Volume', 4),
             'references': ('Past Performance Volume', 4),
-            # v6.0.14: OASIS+ Placement Procedures patterns
+            # OASIS+ Placement Procedures patterns
             'sub factor 1': ('Sub Factor 1: Management', 1),
             'subfactor 1': ('Sub Factor 1: Management', 1),
             'sf 1': ('Sub Factor 1: Management', 1),
@@ -1409,17 +1407,23 @@ class SectionLParser:
             'infrastructure': ('Sub Factor 2: Infrastructure', 1),
             'infrastructure approach': ('Sub Factor 2: Infrastructure', 1),
             'executive summary': ('Executive Summary', 1),
-            # v6.0.14: OASIS+ Volume 1 total (when table has "Volume 1" row with total)
             '1.1': ('Executive Summary', 1),
             '1.2': ('Sub Factor 1: Management', 1),
             '1.3': ('Sub Factor 2: Infrastructure', 1),
         }
 
-        # v6.0.5: Expanded column header patterns for limit detection
+        # v6.0.16: Column header patterns for identification
+        title_column_patterns = [
+            'title', 'volume', 'element', 'section', 'factor', 'description',
+            'proposal', 'content', 'requirement', 'name'
+        ]
         limit_column_patterns = [
             'page limit', 'page', 'pages', 'limit', 'maximum', 'max',
             'length', 'size', 'constraint', 'not to exceed', 'nte'
         ]
+
+        # v6.0.16: N/A markers for exclusion
+        na_markers = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED', 'NONE', 'TBD']
 
         try:
             with pdfplumber.open(pdf_path) as pdf:
@@ -1431,102 +1435,122 @@ class SectionLParser:
                             continue
 
                         num_cols = len(table[0]) if table[0] else 0
-                        print(f"[v6.0.5] CONSTRAINT ANCHOR: Table {table_idx + 1} on page {page_num + 1} "
-                              f"({len(table)} rows x {num_cols} cols)")
+                        num_rows = len(table)
+                        print(f"[v6.0.16] RELATIONAL TABLE: Page {page_num + 1}, Table {table_idx + 1} "
+                              f"({num_rows} rows x {num_cols} cols)")
 
-                        # v6.0.5: STEP 1 - Build column text map (concatenate all rows for each column)
-                        # This handles multi-line/nested headers like:
-                        #   Row 0: "Proposal" | ""        | "Page"
-                        #   Row 1: "Element"  | "Content" | "Limit"
-                        # Concatenated: "Proposal Element" | "Content" | "Page Limit"
-                        column_texts: Dict[int, str] = {}
+                        # STEP 1: Build column header map (concatenate first 3 rows)
+                        column_headers: Dict[int, str] = {}
                         for col_idx in range(num_cols):
-                            col_text_parts = []
-                            # Scan first 3 rows for header content
-                            for row_idx in range(min(3, len(table))):
+                            header_parts = []
+                            for row_idx in range(min(3, num_rows)):
                                 if len(table[row_idx]) > col_idx:
                                     cell = str(table[row_idx][col_idx] or '').strip()
-                                    if cell and not re.match(r'^\d{1,3}$', cell):  # Skip pure numbers
-                                        col_text_parts.append(cell)
-                            column_texts[col_idx] = ' '.join(col_text_parts).lower()
+                                    # Skip pure numbers (they're likely data, not headers)
+                                    if cell and not re.match(r'^\d{1,3}$', cell):
+                                        header_parts.append(cell)
+                            column_headers[col_idx] = ' '.join(header_parts).lower()
 
-                        print(f"[v6.0.5] Column texts: {column_texts}")
+                        print(f"[v6.0.16] Column headers: {column_headers}")
 
-                        # v6.0.5: STEP 2 - Find the LIMIT column using pattern matching
+                        # STEP 2: Identify TITLE column index
+                        title_col_idx = None
+                        title_col_score = 0
+                        for col_idx, header in column_headers.items():
+                            for pattern in title_column_patterns:
+                                if pattern in header:
+                                    score = len(pattern) * 2
+                                    if 'title' in header or 'volume' in header:
+                                        score = 100
+                                    if score > title_col_score:
+                                        title_col_idx = col_idx
+                                        title_col_score = score
+
+                        # STEP 3: Identify LIMIT column index
                         limit_col_idx = None
-                        limit_col_confidence = 0
-
-                        for col_idx, col_text in column_texts.items():
+                        limit_col_score = 0
+                        for col_idx, header in column_headers.items():
                             for pattern in limit_column_patterns:
-                                if pattern in col_text:
-                                    # Score by specificity
+                                if pattern in header:
                                     score = len(pattern)
-                                    if 'page limit' in col_text:
-                                        score = 100  # Exact match is highest
-                                    elif 'limit' in col_text and 'page' in col_text:
+                                    if 'page limit' in header:
+                                        score = 100
+                                    elif 'limit' in header and 'page' in header:
                                         score = 90
-                                    elif 'pages' in col_text:
+                                    elif 'pages' in header:
                                         score = 80
-
-                                    if score > limit_col_confidence:
+                                    if score > limit_col_score:
                                         limit_col_idx = col_idx
-                                        limit_col_confidence = score
-                                        print(f"[v6.0.5] LIMIT COLUMN candidate: idx={col_idx}, "
-                                              f"text='{col_text}', score={score}")
+                                        limit_col_score = score
 
-                        # v6.0.5: STEP 3 - If no limit column found in headers, find column with digits
+                        # STEP 3b: Fallback - Find columns by data pattern
                         if limit_col_idx is None:
-                            print(f"[v6.0.5] No limit header found, scanning for digit columns...")
-                            for row in table[1:]:  # Skip potential headers
+                            print(f"[v6.0.16] No limit header found, scanning data rows...")
+                            for row in table[1:]:
                                 for col_idx, cell in enumerate(row):
                                     cell_text = str(cell or '').strip()
                                     if re.match(r'^\d{1,3}(?:\s*pages?)?$', cell_text, re.IGNORECASE):
                                         limit_col_idx = col_idx
-                                        print(f"[v6.0.5] INFERRED limit column at idx={col_idx} from data")
+                                        print(f"[v6.0.16] INFERRED limit column at idx={col_idx}")
                                         break
                                 if limit_col_idx is not None:
                                     break
 
                         if limit_col_idx is None:
-                            print(f"[v6.0.5] ✗ Could not identify limit column in table")
+                            print(f"[v6.0.16] ✗ Could not identify limit column")
                             continue
 
-                        # v6.0.5: STEP 4 - CONSTRAINT ANCHOR: Find rows with volume keywords
-                        print(f"[v6.0.5] Using limit column index: {limit_col_idx}")
+                        # Default title column to first column if not found
+                        if title_col_idx is None:
+                            title_col_idx = 0
+                            print(f"[v6.0.16] Using default title column idx=0")
 
+                        print(f"[v6.0.16] COLUMN MAPPING: Title={title_col_idx}, Limit={limit_col_idx}")
+
+                        # STEP 4: ROW-INDEX INTERSECTION - Extract page limits
                         for row_idx, row in enumerate(table):
-                            if len(row) <= limit_col_idx:
+                            if len(row) <= max(title_col_idx, limit_col_idx):
                                 continue
 
-                            # Concatenate all cells in row for keyword matching
-                            row_text = ' '.join(str(c or '') for c in row).lower()
+                            # Get title cell at this row
+                            title_cell = str(row[title_col_idx] or '').strip()
+                            title_lower = title_cell.lower()
 
-                            # Check for volume keywords
+                            # Get limit cell at this row
+                            limit_cell = str(row[limit_col_idx] or '').strip()
+
+                            # v6.0.16: N/A GATE - Check entire row for N/A markers
+                            row_text = ' '.join(str(c or '').upper() for c in row)
+                            is_na_row = any(na in row_text for na in na_markers)
+                            if is_na_row:
+                                print(f"[v6.0.16] N/A GATE: Row {row_idx} '{title_cell[:30]}' marked N/A - SKIPPED")
+                                continue
+
+                            # Check for volume keywords in title cell
                             matched_volume = None
                             matched_vol_num = None
 
                             for keyword, (vol_title, vol_num) in volume_keyword_map.items():
-                                if keyword in row_text:
+                                if keyword in title_lower:
                                     matched_volume = vol_title
                                     matched_vol_num = vol_num
-                                    print(f"[v6.0.5] Row {row_idx} matched keyword '{keyword}' -> {vol_title}")
+                                    # Use actual title from cell if it's meaningful
+                                    if len(title_cell) > 3 and title_cell.upper() != 'N/A':
+                                        matched_volume = title_cell
                                     break
 
                             if matched_volume:
-                                # v6.0.5: CONSTRAINT ANCHOR - Extract value from limit column intersection
-                                limit_cell = str(row[limit_col_idx] or '').strip()
-
-                                # Extract ANY digits from the intersection cell
+                                # CONSTRAINT ANCHOR: Extract EXACT value from intersection
                                 limit_match = re.search(r'(\d+)', limit_cell)
                                 if limit_match:
                                     limit_value = int(limit_match.group(1))
                                     if 1 <= limit_value <= 500:
                                         key = matched_volume.lower()
-                                        # v6.0.5: FORCE-BIND - This value OVERRIDES any previous
+                                        # v6.0.16: HARD-BIND - This value is LOCKED
                                         page_limits[key] = (matched_volume, limit_value)
-                                        print(f"[v6.0.5] ✓ CONSTRAINT LOCK: Row {row_idx} "
-                                              f"'{row_text[:50]}...' × Col {limit_col_idx} "
-                                              f"'{limit_cell}' -> {limit_value} pages")
+                                        print(f"[v6.0.16] ✓ ROW-INDEX LOCK: "
+                                              f"Row[{row_idx}].Title='{title_cell[:25]}' × "
+                                              f"Row[{row_idx}].Limit='{limit_cell}' = {limit_value} pages")
 
                                         # Add alternate keys for flexible matching
                                         if matched_vol_num == 1:
@@ -1543,22 +1567,15 @@ class SectionLParser:
                                             page_limits['contract documentation'] = (matched_volume, limit_value)
                                             page_limits['vol 3'] = (matched_volume, limit_value)
 
-                        # v6.0.5: FALLBACK - Digit-targeting for tables without clear structure
-                        if not page_limits:
-                            print(f"[v6.0.5] Constraint anchor failed, using digit-targeting fallback...")
-                            page_limits.update(
-                                self._extract_page_limits_digit_targeting(table, page_num, table_idx, volume_keyword_map)
-                            )
-
         except Exception as e:
-            print(f"[v6.0.5] Error in page limit extraction: {e}")
+            print(f"[v6.0.16] Error in relational table extraction: {e}")
             import traceback
             traceback.print_exc()
 
         if page_limits:
-            print(f"[v6.0.5] Extracted {len(page_limits)} page limit entries from PDF tables")
+            print(f"[v6.0.16] RELATIONAL EXTRACTION: {len(page_limits)} page limits bound")
         else:
-            print(f"[v6.0.5] ✗ No page limits extracted from tables")
+            print(f"[v6.0.16] ✗ No page limits extracted via relational logic")
 
         return page_limits
 
@@ -2422,7 +2439,9 @@ class SectionLParser:
                     line_end = len(text)
                 line_text = text[line_start:line_end].upper()
 
-                na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED', 'INTENTIONALLY LEFT BLANK', 'NONE REQUIRED']
+                # v6.0.16: Enhanced N/A patterns including TBD and OMITTED
+                na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED',
+                               'INTENTIONALLY LEFT BLANK', 'NONE REQUIRED', 'TBD', 'OMITTED']
                 is_na_section = any(na_pat in following_text for na_pat in na_patterns)
 
                 # v6.0.9: Also check if N/A appears on the same line (table cell adjacent)
@@ -2430,7 +2449,7 @@ class SectionLParser:
                     is_na_section = any(na_pat in line_text for na_pat in na_patterns)
 
                 if is_na_section:
-                    print(f"[v6.0.9] N/A GATE: Section {sec_id} '{sec_title}' marked as N/A - EXCLUDED")
+                    print(f"[v6.0.16] N/A GATE: Section {sec_id} '{sec_title}' marked as excluded - SKIPPED")
                     continue  # Skip this section entirely
 
                 # Find page limit
@@ -2516,6 +2535,26 @@ class SectionLParser:
                     # v5.0.7: Validate section header is not a false positive
                     if not self._is_valid_section_header(sec_id, sec_title):
                         print(f"[v5.0.7] Rejected invalid header: '{sec_id}. {sec_title[:50]}...'")
+                        continue
+
+                    # v6.0.16: N/A LOGIC GATE - Check for exclusion markers
+                    na_check_start = max(0, match.start() - 50)
+                    na_check_end = min(len(vol_text), match.end() + 150)
+                    na_context = vol_text[na_check_start:na_check_end].upper()
+
+                    # Also check the entire line for table-context N/A
+                    line_start = vol_text.rfind('\n', 0, match.start()) + 1
+                    line_end = vol_text.find('\n', match.end())
+                    if line_end == -1:
+                        line_end = len(vol_text)
+                    line_text = vol_text[line_start:line_end].upper()
+
+                    na_patterns = ['N/A', 'NOT APPLICABLE', 'RESERVED', 'NOT USED',
+                                   'INTENTIONALLY LEFT BLANK', 'NONE REQUIRED', 'TBD', 'OMITTED']
+                    is_na_section = any(na_pat in na_context or na_pat in line_text for na_pat in na_patterns)
+
+                    if is_na_section:
+                        print(f"[v6.0.16] N/A GATE: Section {sec_id} '{sec_title}' marked as excluded - SKIPPED")
                         continue
 
                     # Find page limit for this section
