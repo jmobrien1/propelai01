@@ -3313,11 +3313,10 @@ def process_rfp_resilient_background(rfp_id: str):
 
         # Collect all text for scanning
         all_text = section_l_full_text or ""
-        for doc in parsed_docs.values():
-            if hasattr(doc, 'raw_text') and doc.raw_text:
-                all_text += " " + doc.raw_text
-            elif hasattr(doc, 'text') and doc.text:
-                all_text += " " + doc.text
+        for doc in documents:
+            doc_text = doc.get('text', '')
+            if doc_text:
+                all_text += " " + doc_text
 
         agency_solicitation = None
         agency_name = None
