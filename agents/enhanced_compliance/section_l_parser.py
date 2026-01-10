@@ -375,6 +375,40 @@ class SectionLParser:
         if sf1449_metadata.get('due_time') and not submission_rules.get('due_time'):
             submission_rules['due_time'] = sf1449_metadata['due_time']
 
+        # v6.0.15: TIME TRAVEL DATE VALIDATION
+        # Collect dates from all document sources for cross-reference
+        all_document_dates: List[Tuple[str, str]] = []
+
+        # Add SF1449 date
+        if sf1449_metadata.get('due_date'):
+            all_document_dates.append(('SF1449', sf1449_metadata['due_date']))
+
+        # Extract dates from full text using various patterns
+        date_patterns = [
+            (r'(?:due|deadline|submit|respond).*?(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})', 'text_context'),
+            (r'(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})', 'generic'),
+            (r'([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})', 'us_format'),
+        ]
+        for pattern, source_type in date_patterns:
+            for match in re.finditer(pattern, full_text, re.IGNORECASE):
+                date_str = match.group(1)
+                all_document_dates.append((f'section_l_{source_type}', date_str))
+
+        # Validate the primary due date against time travel
+        if submission_rules.get('due_date'):
+            validated_date, is_time_travel, original_date = self.validate_due_date_time_travel(
+                submission_rules['due_date'],
+                all_document_dates,
+                warnings
+            )
+            if validated_date:
+                submission_rules['due_date'] = validated_date
+            if is_time_travel and original_date:
+                submission_rules['original_due_date'] = original_date
+                submission_rules['date_validation_status'] = 'time_travel_corrected'
+            else:
+                submission_rules['date_validation_status'] = 'valid'
+
         # Extract total page limit
         total_pages = self._extract_total_page_limit(full_text)
 
@@ -659,6 +693,143 @@ class SectionLParser:
                     due_time = time_val
 
         return due_date, due_time
+
+    def validate_due_date_time_travel(
+        self,
+        extracted_date: Optional[str],
+        all_document_dates: List[Tuple[str, str]],  # [(source, date_string), ...]
+        warnings: List[str]
+    ) -> Tuple[Optional[str], bool, Optional[str]]:
+        """
+        v6.0.15: TIME TRAVEL DATE VALIDATOR - Detect past dates and RFP typos.
+
+        Problem: Government RFPs sometimes have date typos (e.g., "2024" when it should be "2025").
+        These create impossible due dates that could cause missed submissions.
+
+        Logic Gate:
+        1. IF Extracted_Due_Date < Current_Date → Flag as "POTENTIAL PAST DATE"
+        2. Cross-reference all documents for alternative dates
+        3. Use most recent VALID date (future date)
+        4. Inject "RFP_DATE_TYPO" warning if discrepancy found
+
+        Args:
+            extracted_date: Primary extracted due date string (e.g., "03 Feb 2024")
+            all_document_dates: List of (source_name, date_string) tuples from all documents
+            warnings: List to append warnings to
+
+        Returns:
+            (validated_date, is_time_travel, original_date) tuple
+            - validated_date: The corrected date to use
+            - is_time_travel: True if the date was in the past (potential typo)
+            - original_date: The original extracted date (for reference)
+        """
+        from datetime import datetime, timedelta
+
+        def parse_date(date_str: str) -> Optional[datetime]:
+            """Parse various date formats into datetime."""
+            if not date_str:
+                return None
+            # Normalize the date string
+            date_str = date_str.strip()
+            formats = [
+                "%d %B %Y",      # "03 February 2025"
+                "%d %b %Y",     # "03 Feb 2025"
+                "%B %d, %Y",    # "February 3, 2025"
+                "%b %d, %Y",    # "Feb 3, 2025"
+                "%m/%d/%Y",     # "02/03/2025"
+                "%m-%d-%Y",     # "02-03-2025"
+                "%Y-%m-%d",     # "2025-02-03"
+                "%d/%m/%Y",     # "03/02/2025" (international)
+            ]
+            for fmt in formats:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+            return None
+
+        now = datetime.now()
+        today = now.date()
+
+        # Parse the primary extracted date
+        primary_date = parse_date(extracted_date) if extracted_date else None
+        is_time_travel = False
+        original_date = extracted_date
+
+        print(f"[v6.0.15] TIME TRAVEL CHECK: Primary date = '{extracted_date}'")
+
+        # Check if primary date is in the past
+        if primary_date and primary_date.date() < today:
+            is_time_travel = True
+            days_past = (today - primary_date.date()).days
+            print(f"[v6.0.15] ⚠️ TIME TRAVEL DETECTED: Date is {days_past} days in the past!")
+
+            # Cross-reference all documents for alternative dates
+            valid_future_dates: List[Tuple[str, datetime, str]] = []
+            for source, date_str in all_document_dates:
+                parsed = parse_date(date_str)
+                if parsed and parsed.date() >= today:
+                    valid_future_dates.append((source, parsed, date_str))
+                    print(f"[v6.0.15] ✓ Found valid future date in '{source}': {date_str}")
+
+            if valid_future_dates:
+                # Use the most recent valid future date
+                valid_future_dates.sort(key=lambda x: x[1])
+                best_source, best_date, best_str = valid_future_dates[0]
+
+                # Check if this looks like a year typo (same month/day, different year)
+                if (primary_date.month == best_date.month and
+                    primary_date.day == best_date.day and
+                    primary_date.year != best_date.year):
+                    year_diff = best_date.year - primary_date.year
+                    warning_msg = (
+                        f"RFP_DATE_TYPO: Potential year typo detected. "
+                        f"Primary date '{extracted_date}' is in the past. "
+                        f"Found corrected date '{best_str}' in '{best_source}' "
+                        f"(year differs by {year_diff}). "
+                        f"RECOMMENDATION: Verify with Contracting Officer. "
+                        f"SYSTEM DEFAULT: Using '{best_str}'."
+                    )
+                else:
+                    warning_msg = (
+                        f"RFP_DATE_DISCREPANCY: Due date '{extracted_date}' is in the past "
+                        f"({days_past} days ago). "
+                        f"Cross-reference found valid date '{best_str}' in '{best_source}'. "
+                        f"RECOMMENDATION: Verify with Contracting Officer."
+                    )
+
+                warnings.append(warning_msg)
+                print(f"[v6.0.15] CORRECTED: '{extracted_date}' → '{best_str}' (from {best_source})")
+                return best_str, is_time_travel, original_date
+
+            else:
+                # No valid future date found - flag as critical
+                warning_msg = (
+                    f"CRITICAL_DATE_ERROR: Extracted due date '{extracted_date}' is {days_past} days "
+                    f"in the past. No valid future dates found in any document. "
+                    f"This RFP may have expired or contain a date typo. "
+                    f"IMMEDIATE ACTION: Contact Contracting Officer to verify submission deadline."
+                )
+                warnings.append(warning_msg)
+                print(f"[v6.0.15] ✗ CRITICAL: No valid future date found!")
+
+                # Attempt auto-correction: Increment year by 1 as heuristic
+                corrected_date = primary_date.replace(year=primary_date.year + 1)
+                if corrected_date.date() >= today:
+                    corrected_str = corrected_date.strftime("%d %B %Y")
+                    warnings.append(
+                        f"AUTO_CORRECTION_APPLIED: System incremented year from "
+                        f"{primary_date.year} to {corrected_date.year}. "
+                        f"New date: {corrected_str}. VERIFY WITH CO."
+                    )
+                    print(f"[v6.0.15] AUTO-FIX: Incremented year → '{corrected_str}'")
+                    return corrected_str, is_time_travel, original_date
+
+        # Date is valid (in future or today)
+        if primary_date:
+            print(f"[v6.0.15] ✓ Date is valid (future or today)")
+
+        return extracted_date, is_time_travel, original_date
 
     def _extract_text_from_bbox(self, page, bbox: Tuple[float, float, float, float]) -> Optional[str]:
         """
